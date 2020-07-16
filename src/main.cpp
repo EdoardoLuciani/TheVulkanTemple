@@ -50,6 +50,7 @@ private:
 	void create_attachments();
 	void create_descriptor_pool_and_layouts();
 	void allocate_pbr_descriptor_sets();
+	void allocate_camera_light_sets();
 	void allocate_smaa_descriptor_sets();
 	void allocate_hdr_descriptor_sets();
 	void create_renderpass();
@@ -121,9 +122,11 @@ private:
 
 	VkDescriptorPool descriptor_pool;
 	std::array<VkDescriptorSetLayout, 1> pbr_descriptor_sets_layout;
+	std::array<VkDescriptorSetLayout, 1> camera_light_sets_layout;
 	std::array<VkDescriptorSetLayout, 4> smaa_descriptor_sets_layout;
 	std::array<VkDescriptorSetLayout, 2> hdr_descriptor_sets_layout;
 	std::array<VkDescriptorSet, 2> pbr_descriptor_sets;
+	std::array<VkDescriptorSet, 2> camera_light_sets;
 	std::array<VkDescriptorSet, 4> smaa_descriptor_sets;
 	std::array<VkDescriptorSet, 2> hdr_descriptor_sets;
 
@@ -477,13 +480,18 @@ void VulkanSSAO::create_host_buffers() {
 	};
 	vkCreateBuffer(device, &buffer_create_info, nullptr, &host_vertex_buffer);
 
-	//	bottle descriptor		box descriptor			smaa_rt_metrics descriptor
-	//	[---------------]-------[---------------]-------[---------------] 
-	//	[ set:0	400b    ] 112b	[ set:0	400b    ] 112b	[ set:1	16b		]
-	//	[ 5*mat4+5*vec4 ]		[ 5*mat4+5*vec4 ]		[ 1*vec4		]
-	//	[---------------]-------[---------------]-------[---------------]
+	//	bottle descriptor		box descriptor			camera descriptor		light_descriptor
+	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
+	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	192b    ] 64b	[ set:2	32b	   	]
+	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4 		]		[ 2*vec4 		]
+	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
+	//	smaa_rt_metrics descriptor
+	//	--------[---------------] 
+	//	 224b	[ set:3	16b		]
+	//			[ 1*vec4		]
+	//	--------[---------------]
 
-	buffer_create_info.size = 2*(sizeof(glm::vec4) * 5 + sizeof(glm::mat4) * 5 + 112)+sizeof(glm::vec4);
+	buffer_create_info.size = 256*4+16;
 	vkCreateBuffer(device, &buffer_create_info, nullptr, &host_uniform_buffer);
 
 	vkGetBufferMemoryRequirements(device, host_vertex_buffer, &host_memory_requirements[0]);
@@ -568,13 +576,18 @@ void VulkanSSAO::create_device_buffers() {
 	};
 	vkCreateBuffer(device, &buffer_create_info, nullptr, &device_vertex_buffer);
 
-	//	bottle descriptor		box descriptor			smaa_rt_metrics descriptor
-	//	[---------------]-------[---------------]-------[---------------] 
-	//	[ set:0	400b    ] 112b	[ set:0	400b    ] 112b	[ set:1	16b		]
-	//	[ 5*mat4+5*vec4 ]		[ 5*mat4+5*vec4 ]		[ 1*vec4		]
-	//	[---------------]-------[---------------]-------[---------------]
-
-	buffer_create_info.size = 2*(sizeof(glm::vec4) * 5 + sizeof(glm::mat4) * 5 + 112)+sizeof(glm::vec4);
+	//	bottle descriptor		box descriptor			camera descriptor		light_descriptor
+	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
+	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	192b    ] 64b	[ set:2	32b	   	]
+	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4 		]		[ 2*vec4 		]
+	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
+	//	smaa_rt_metrics descriptor
+	//	--------[---------------] 
+	//	 224b	[ set:3	16b		]
+	//			[ 1*vec4		]
+	//	--------[---------------]
+	
+	buffer_create_info.size = 256*4+16;
 	buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 	vkCreateBuffer(device, &buffer_create_info, nullptr, &device_uniform_buffer);
 
@@ -889,9 +902,9 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 	};
 	vkCreateDescriptorPool(device, &descriptor_pool_create_info, nullptr, &descriptor_pool);
 
-	// PBR descriptor set layout
 	std::array<VkDescriptorSetLayoutBinding,3> descriptor_set_layout_binding;
 	
+	// Layout for the pbr model
 	descriptor_set_layout_binding[0] = {
 		0,
 		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -914,6 +927,23 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 		descriptor_set_layout_binding.data()
 	};
 	vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &pbr_descriptor_sets_layout[0]);
+
+	// Layout for the camera and light descriptor model
+	descriptor_set_layout_binding[0] = {
+		0,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		1,
+		VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+		nullptr
+	};
+	VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		descriptor_set_layout_binding.data()
+	};
+	vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &camera_light_sets_layout[0]);
 
 	// Layout for the first descriptor for the first smaa pipeline
 	descriptor_set_layout_binding[0] = {
@@ -1043,8 +1073,7 @@ void VulkanSSAO::allocate_pbr_descriptor_sets() {
 	};
 	vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, pbr_descriptor_sets.data());
 
-	VkDescriptorBufferInfo water_bottle_descriptor_buffer_info = { device_uniform_buffer,0,sizeof(glm::vec4) * 5 + sizeof(glm::mat4) * 5 };
-
+	VkDescriptorBufferInfo water_bottle_descriptor_buffer_info = { device_uniform_buffer, 0, 2 * sizeof(glm::mat4) };
 	VkDescriptorImageInfo water_bottle_descriptor_images_info[] = {
 		{ device_water_bottle_sampler, device_water_bottle_color_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
 		{ device_water_bottle_sampler, device_water_bottle_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
@@ -1052,8 +1081,7 @@ void VulkanSSAO::allocate_pbr_descriptor_sets() {
 		{ device_water_bottle_sampler, device_water_bottle_emissive_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
 	};
 
-	VkDescriptorBufferInfo box_descriptor_buffer_info = { device_uniform_buffer,512,sizeof(glm::vec4) * 5 + sizeof(glm::mat4) * 5 };
-
+	VkDescriptorBufferInfo box_descriptor_buffer_info = { device_uniform_buffer, 256, 2 * sizeof(glm::mat4) };
 	VkDescriptorImageInfo box_descriptor_images_info[] = {
 		{ device_water_bottle_sampler, device_box_color_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
 		{ device_water_bottle_sampler, device_box_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
@@ -1113,6 +1141,59 @@ void VulkanSSAO::allocate_pbr_descriptor_sets() {
 	vkUpdateDescriptorSets(device, 4, write_descriptor_set, 0, nullptr);
 }
 
+void VulkanSSAO::allocate_camera_light_sets() {
+	std::array<VkDescriptorSetLayout, 2> layouts_of_sets = {camera_light_sets_layout[0],camera_light_sets_layout[0]};
+	VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
+		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		nullptr,
+		descriptor_pool,
+		layouts_of_sets.size(),
+		layouts_of_sets.data()
+	};
+	vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, camera_light_sets.data());
+	
+	VkDescriptorBufferInfo camera_descriptor_buffer_info = {
+		device_uniform_buffer,
+		512,
+		3*sizeof(glm::mat4)
+	};
+
+	VkDescriptorBufferInfo light_descriptor_buffer_info = {
+		device_uniform_buffer,
+		768,
+		2*sizeof(glm::vec4)
+	};
+
+	// First writes are for the camera descriptor
+	VkWriteDescriptorSet write_descriptor_set[] = { {
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		camera_light_sets[0],
+		0,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		nullptr,
+		&camera_descriptor_buffer_info,
+		nullptr
+	},
+	// Second writes are for the light descriptor
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		camera_light_sets[1],
+		0,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		nullptr,
+		&light_descriptor_buffer_info,
+		nullptr
+	}
+	};
+	vkUpdateDescriptorSets(device, 2, write_descriptor_set, 0, nullptr);
+}
+
 void VulkanSSAO::allocate_smaa_descriptor_sets() {
 	// Allocation of both descriptors using the layouts
 	VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
@@ -1140,7 +1221,7 @@ void VulkanSSAO::allocate_smaa_descriptor_sets() {
 		{ device_render_target_sampler, device_smaa_weight_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
 	};
 
-	VkDescriptorBufferInfo smaa_rt_metrics = {device_uniform_buffer, 2*(sizeof(glm::mat4) * 5 + sizeof(glm::vec4) * 5 + 112), sizeof(glm::vec4)};
+	VkDescriptorBufferInfo smaa_rt_metrics = {device_uniform_buffer, 1024, sizeof(glm::vec4)};
 
 	// First writes are for the smaa edge descriptor 
 	VkWriteDescriptorSet write_descriptor_set[] = { {
@@ -1266,7 +1347,7 @@ void VulkanSSAO::allocate_hdr_descriptor_sets() {
 	};
 	vkUpdateDescriptorSets(device, 4, write_descriptor_set, 0, nullptr);
 }
-
+// TODO: work from here
 void VulkanSSAO::create_renderpass() {
 
 	/* renderpasses
@@ -3356,6 +3437,7 @@ VulkanSSAO::VulkanSSAO() {
 	create_attachments();
 	create_descriptor_pool_and_layouts();
 	allocate_pbr_descriptor_sets();
+	allocate_camera_light_sets();
 	allocate_smaa_descriptor_sets();
 	allocate_hdr_descriptor_sets();
 	create_renderpass();
