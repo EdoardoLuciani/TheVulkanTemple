@@ -59,7 +59,6 @@ private:
 	void create_smaa_edge_pipeline();
 	void create_smaa_weight_pipeline();
 	void create_smaa_blend_pipeline();
-	void create_hdr_luminance_compute_pipeline();
 	void create_hdr_tonemap_pipeline();
 	void upload_input_data();
 	void record_command_buffers();
@@ -112,19 +111,18 @@ private:
 	std::array<VkMemoryRequirements, 6> device_memory_requirements;
 	VkDeviceMemory device_memory;
 
-	VkImage device_depth_image, device_stencil_image, device_render_target_image, device_smaa_image, device_luminance_image;
+	VkImage device_depth_image, device_stencil_image, device_render_target_image, device_smaa_image;
 	VkImageView device_depth_image_view, device_stencil_image_view, device_render_target_image_view,
-		device_render_target_second_image_view, device_smaa_edge_image_view, device_smaa_weight_image_view, device_luminance_image_view,
-		device_average_luminance_image_view;
+		device_render_target_second_image_view, device_smaa_edge_image_view, device_smaa_weight_image_view;
 	VkSampler device_render_target_sampler;
-	std::array<VkMemoryRequirements, 5> device_memory_attachments_requirements;
+	std::array<VkMemoryRequirements, 4> device_memory_attachments_requirements;
 	VkDeviceMemory device_memory_attachments;
 
 	VkDescriptorPool descriptor_pool;
 	std::array<VkDescriptorSetLayout, 1> pbr_descriptor_sets_layout;
 	std::array<VkDescriptorSetLayout, 1> camera_light_sets_layout;
 	std::array<VkDescriptorSetLayout, 4> smaa_descriptor_sets_layout;
-	std::array<VkDescriptorSetLayout, 2> hdr_descriptor_sets_layout;
+	std::array<VkDescriptorSetLayout, 1> hdr_descriptor_sets_layout;
 	std::array<VkDescriptorSet, 2> pbr_descriptor_sets;
 	std::array<VkDescriptorSet, 2> camera_light_sets;
 	std::array<VkDescriptorSet, 4> smaa_descriptor_sets;
@@ -134,8 +132,8 @@ private:
 	std::vector<VkFramebuffer> framebuffers;
 	std::vector<VkImageView> swapchain_images_views;
 
-	VkPipelineLayout pbr_pipeline_layout, smaa_edge_pipeline_layout, smaa_weight_pipeline_layout, smaa_blend_pipeline_layout, hdr_luminance_compute_pipeline_layout, hdr_tonemap_pipeline_layout;
-	VkPipeline pbr_pipeline, smaa_edge_pipeline, smaa_weight_pipeline, smaa_blend_pipeline, hdr_luminance_compute_pipeline, hdr_tonemap_pipeline;
+	VkPipelineLayout pbr_pipeline_layout, smaa_edge_pipeline_layout, smaa_weight_pipeline_layout, smaa_blend_pipeline_layout, hdr_tonemap_pipeline_layout;
+	VkPipeline pbr_pipeline, smaa_edge_pipeline, smaa_weight_pipeline, smaa_blend_pipeline, hdr_tonemap_pipeline;
 
 	std::vector<VkSemaphore> semaphores;
 
@@ -539,7 +537,7 @@ void VulkanSSAO::create_host_buffers() {
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
 		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP },
-		host_data_pointer + offset, box_model_data);
+		static_cast<uint8_t*>(host_data_pointer) + offset, box_model_data);
 
 	box_model_data.host_interleaved_vertex_data_offset += offset;
 	box_model_data.host_index_data_offset += offset;
@@ -758,19 +756,10 @@ void VulkanSSAO::create_attachments() {
 	image_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 	vkCreateImage(device, &image_create_info, nullptr, &device_smaa_image);
 
-	// Luminance image and downsampled one creation
-	image_create_info.format = VK_FORMAT_R32_SFLOAT;
-	image_create_info.mipLevels = glm::floor(glm::log2(std::max(swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height))) + 1;
-	image_create_info.arrayLayers = 1;
-	image_create_info.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-		| VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-	vkCreateImage(device, &image_create_info, nullptr, &device_luminance_image);
-
 	vkGetImageMemoryRequirements(device, device_depth_image, &device_memory_attachments_requirements[0]);
 	vkGetImageMemoryRequirements(device, device_stencil_image, &device_memory_attachments_requirements[1]);
 	vkGetImageMemoryRequirements(device, device_render_target_image, &device_memory_attachments_requirements[2]);
 	vkGetImageMemoryRequirements(device, device_smaa_image, &device_memory_attachments_requirements[3]);
-	vkGetImageMemoryRequirements(device, device_luminance_image, &device_memory_attachments_requirements[4]);
 
 	uint64_t allocation_size = 0;
 	for (const auto& device_memory_attachments_requirement : device_memory_attachments_requirements) {
@@ -799,7 +788,6 @@ void VulkanSSAO::create_attachments() {
 	vkBindImageMemory(device, device_stencil_image, device_memory_attachments, sum_offsets(1));
 	vkBindImageMemory(device, device_render_target_image, device_memory_attachments, sum_offsets(2));
 	vkBindImageMemory(device, device_smaa_image, device_memory_attachments, sum_offsets(3));
-	vkBindImageMemory(device, device_luminance_image, device_memory_attachments, sum_offsets(4));
 
 	VkImageViewCreateInfo image_view_create_info = {
 		VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -838,19 +826,6 @@ void VulkanSSAO::create_attachments() {
 	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1 , 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_weight_image_view);
 
-	// Luminance image view //TODO: eventually remove the mipmaps
-	image_view_create_info.image = device_luminance_image;
-	image_view_create_info.format = VK_FORMAT_R32_SFLOAT;
-	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0 , 1 };
-	vkCreateImageView(device, &image_view_create_info, nullptr, &device_luminance_image_view);
-
-	image_view_create_info.image = device_luminance_image;
-	image_view_create_info.format = VK_FORMAT_R32_SFLOAT;
-	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT,
-		uint32_t(glm::floor(glm::log2(std::max(swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height)))),
-		1, 0 , 1 };
-	vkCreateImageView(device, &image_view_create_info, nullptr, &device_average_luminance_image_view);
-
 	VkSamplerCreateInfo sampler_create_info = {
 		VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		nullptr,
@@ -875,17 +850,16 @@ void VulkanSSAO::create_attachments() {
 }
 
 void VulkanSSAO::create_descriptor_pool_and_layouts() {
-	std::array<VkDescriptorPoolSize, 3> descriptor_pool_size { {
+	std::array<VkDescriptorPoolSize, 2> descriptor_pool_size { {
 	{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5},
-	{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 18 },
-	{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}
+	{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 17 }
 	} };
 
 	VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		nullptr,
 		VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-		10,
+		9,
 		descriptor_pool_size.size(),
 		descriptor_pool_size.data()
 	};
@@ -1002,53 +976,22 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 	};
 	vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &smaa_descriptor_sets_layout[3]);
 
-	// Layout for hdr luminance compute shader
-	descriptor_set_layout_binding[0] = {
-		0,
-		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		1,
-		VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-		nullptr
-	};
-	descriptor_set_layout_binding[1] = {
-		1,
-		VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-		1,
-		VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-		nullptr
-	};
-	descriptor_set_layout_create_info = {
-		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		nullptr,
-		0,
-		2,
-		descriptor_set_layout_binding.data()
-	};
-	vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &hdr_descriptor_sets_layout[0]);
-
 	// Layout for hdr luminance resolve shader
 	descriptor_set_layout_binding[0] = {
 		0,
 		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		1,
-		VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-		nullptr
-	};
-	descriptor_set_layout_binding[1] = {
-		1,
-		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		1,
-		VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+		VK_SHADER_STAGE_FRAGMENT_BIT,
 		nullptr
 	};
 	descriptor_set_layout_create_info = {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		nullptr,
 		0,
-		2,
+		1,
 		descriptor_set_layout_binding.data()
 	};
-	vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &hdr_descriptor_sets_layout[1]);
+	vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &hdr_descriptor_sets_layout[0]);
 }
 
 void VulkanSSAO::allocate_pbr_descriptor_sets() {
@@ -1278,11 +1221,7 @@ void VulkanSSAO::allocate_hdr_descriptor_sets() {
 	};
 	vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, hdr_descriptor_sets.data());
 
-	VkDescriptorImageInfo hdr_descriptor_0_image_info = {device_render_target_sampler, device_render_target_second_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-	VkDescriptorImageInfo hdr_descriptor_0_2_image_info = { device_render_target_sampler, device_luminance_image_view, VK_IMAGE_LAYOUT_GENERAL };
-
-	VkDescriptorImageInfo hdr_descriptor_1_image_info = { device_render_target_sampler, device_render_target_second_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-	VkDescriptorImageInfo hdr_descriptor_1_2_image_info = { device_render_target_sampler, device_average_luminance_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+	VkDescriptorImageInfo hdr_descriptor_image_info = {device_render_target_sampler, device_render_target_second_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
 
 	VkWriteDescriptorSet write_descriptor_set[] = { {
 		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1292,49 +1231,12 @@ void VulkanSSAO::allocate_hdr_descriptor_sets() {
 		0,
 		1,
 		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		&hdr_descriptor_0_image_info,
-		nullptr,
-		nullptr
-	},
-	{
-		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		nullptr,
-		hdr_descriptor_sets[0],
-		1,
-		0,
-		1,
-		VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-		&hdr_descriptor_0_2_image_info,
-		nullptr,
-		nullptr
-	},
-		// second set
-	{
-		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		nullptr,
-		hdr_descriptor_sets[1],
-		0,
-		0,
-		1,
-		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		&hdr_descriptor_1_image_info,
-		nullptr,
-		nullptr
-	},
-	{
-		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		nullptr,
-		hdr_descriptor_sets[1],
-		1,
-		0,
-		1,
-		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		&hdr_descriptor_1_2_image_info,
+		&hdr_descriptor_image_info,
 		nullptr,
 		nullptr
 	}
 	};
-	vkUpdateDescriptorSets(device, 4, write_descriptor_set, 0, nullptr);
+	vkUpdateDescriptorSets(device, 1, write_descriptor_set, 0, nullptr);
 }
 
 void VulkanSSAO::create_renderpass() {
@@ -1671,7 +1573,7 @@ void VulkanSSAO::create_framebuffers() {
 	};
 	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[3]);
 
-	for (int i = 0; i < swapchain_images_count; i++) {
+	for (uint32_t i = 0; i < swapchain_images_count; i++) {
 		VkImageViewCreateInfo image_view_create_info = {
 			VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 			nullptr,
@@ -1792,8 +1694,8 @@ void VulkanSSAO::create_pbr_pipeline() {
 	VkViewport viewport = {
 		0.0f,
 		0.0f,
-		swapchain_create_info.imageExtent.width,
-		swapchain_create_info.imageExtent.height,
+		static_cast<float>(swapchain_create_info.imageExtent.width),
+		static_cast<float>(swapchain_create_info.imageExtent.height),
 		0.0f,
 		1.0f
 	};
@@ -1974,8 +1876,8 @@ void VulkanSSAO::create_smaa_edge_pipeline() {
 	VkViewport viewport = {
 		0.0f,
 		0.0f,
-		swapchain_create_info.imageExtent.width,
-		swapchain_create_info.imageExtent.height,
+		static_cast<float>(swapchain_create_info.imageExtent.width),
+		static_cast<float>(swapchain_create_info.imageExtent.height),
 		0.0f,
 		1.0f
 	};
@@ -2156,8 +2058,8 @@ void VulkanSSAO::create_smaa_weight_pipeline() {
 	VkViewport viewport = {
 		0.0f,
 		0.0f,
-		swapchain_create_info.imageExtent.width,
-		swapchain_create_info.imageExtent.height,
+		static_cast<float>(swapchain_create_info.imageExtent.width),
+		static_cast<float>(swapchain_create_info.imageExtent.height),
 		0.0f,
 		1.0f
 	};
@@ -2338,8 +2240,8 @@ void VulkanSSAO::create_smaa_blend_pipeline() {
 	VkViewport viewport = {
 		0.0f,
 		0.0f,
-		swapchain_create_info.imageExtent.width,
-		swapchain_create_info.imageExtent.height,
+		static_cast<float>(swapchain_create_info.imageExtent.width),
+		static_cast<float>(swapchain_create_info.imageExtent.height),
 		0.0f,
 		1.0f
 	};
@@ -2459,53 +2361,6 @@ void VulkanSSAO::create_smaa_blend_pipeline() {
 	vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
-void VulkanSSAO::create_hdr_luminance_compute_pipeline() {
-	std::vector<uint8_t> shader_contents;
-	vulkan_helper::get_binary_file_content("shaders//luminance.comp.spv", shader_contents);
-	VkShaderModuleCreateInfo shader_module_create_info = {
-		VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		nullptr,
-		0,
-		shader_contents.size(),
-		reinterpret_cast<uint32_t*>(shader_contents.data())
-	};
-	VkShaderModule compute_shader_module;
-	if (vkCreateShaderModule(device, &shader_module_create_info, nullptr, &compute_shader_module)) { throw SHADER_MODULE_CREATION_FAILED; }
-
-	VkPipelineShaderStageCreateInfo pipeline_shader_stage_create_info = {
-		VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-		nullptr,
-		0,
-		VK_SHADER_STAGE_COMPUTE_BIT,
-		compute_shader_module,
-		"main",
-		nullptr
-	};
-
-	VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
-		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-		nullptr,
-		0,
-		hdr_descriptor_sets_layout.size(),
-		hdr_descriptor_sets_layout.data(),
-		0,
-		nullptr
-	};
-	vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &hdr_luminance_compute_pipeline_layout);
-
-	VkComputePipelineCreateInfo compute_pipeline_create_info = {
-		VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-		nullptr,
-		0,
-		pipeline_shader_stage_create_info,
-		hdr_luminance_compute_pipeline_layout,
-		VK_NULL_HANDLE,
-		-1
-	};
-
-	vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &compute_pipeline_create_info, nullptr, &hdr_luminance_compute_pipeline);
-}
-
 void VulkanSSAO::create_hdr_tonemap_pipeline() {
 	std::vector<uint8_t> shader_contents;
 	vulkan_helper::get_binary_file_content("shaders//tonemap.vert.spv", shader_contents);
@@ -2567,8 +2422,8 @@ void VulkanSSAO::create_hdr_tonemap_pipeline() {
 	VkViewport viewport = {
 		0.0f,
 		0.0f,
-		swapchain_create_info.imageExtent.width,
-		swapchain_create_info.imageExtent.height,
+		static_cast<float>(swapchain_create_info.imageExtent.width),
+		static_cast<float>(swapchain_create_info.imageExtent.height),
 		0.0f,
 		1.0f
 	};
@@ -2650,7 +2505,7 @@ void VulkanSSAO::create_hdr_tonemap_pipeline() {
 		{0.0f,0.0f,0.0f,0.0f}
 	};
 
-	std::array<VkDescriptorSetLayout,2> descriptor_sets_layout = { hdr_descriptor_sets_layout[1], smaa_descriptor_sets_layout[3] };
+	std::array<VkDescriptorSetLayout,2> descriptor_sets_layout = { hdr_descriptor_sets_layout[0], smaa_descriptor_sets_layout[3] };
 	VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
 		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		nullptr,
@@ -2865,7 +2720,7 @@ void VulkanSSAO::upload_input_data() {
 		0,
 		nullptr
 	};
-	VkResult res = vkQueueSubmit(queue, 1, &submit_info, fence);
+	vkQueueSubmit(queue, 1, &submit_info, fence);
 
 	vkDeviceWaitIdle(device);
 	vkWaitForFences(device, 1, &fence, VK_TRUE, 20000000);
@@ -2878,7 +2733,7 @@ void VulkanSSAO::record_command_buffers() {
 	clear_colors[0].depthStencil = { 1.0f, 0 };
 	clear_colors[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-	for (int i = 0; i < swapchain_images_count; i++) {
+	for (uint32_t i = 0; i < swapchain_images_count; i++) {
 		VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr };
 		vkBeginCommandBuffer(command_buffers[i], &command_buffer_begin_info);
 
@@ -2989,96 +2844,6 @@ void VulkanSSAO::record_command_buffers() {
 		// Smaa blend renderpass end
 		vkCmdEndRenderPass(command_buffers[i]);
 
-		VkImageMemoryBarrier image_memory_barrier = {
-			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			nullptr,
-			0,
-			VK_ACCESS_SHADER_WRITE_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_GENERAL,
-			VK_QUEUE_FAMILY_IGNORED,
-			VK_QUEUE_FAMILY_IGNORED,
-			device_luminance_image,
-			{ VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1 }
-		};
-		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
-
-		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, hdr_luminance_compute_pipeline);
-		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, hdr_luminance_compute_pipeline_layout, 0, hdr_descriptor_sets.size(), hdr_descriptor_sets.data(), 0, nullptr);
-		//vkCmdFillBuffer(command_buffers[i], device_uniform_buffer, sizeof(glm::vec4) * 6 + sizeof(glm::mat4) * 5 + 112 + 240, sizeof(float), 0.0f);
-		vkCmdDispatch(command_buffers[i], swapchain_create_info.imageExtent.width / 32, swapchain_create_info.imageExtent.height / 32, 1);
-
-		image_memory_barrier = {
-			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			nullptr,
-			VK_ACCESS_SHADER_WRITE_BIT,
-			VK_ACCESS_TRANSFER_WRITE_BIT,
-			VK_IMAGE_LAYOUT_GENERAL,
-			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			VK_QUEUE_FAMILY_IGNORED,
-			VK_QUEUE_FAMILY_IGNORED,
-			device_luminance_image,
-			{ VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1 }
-		};
-		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
-
-		for (uint32_t current_mipmap = 1;
-			current_mipmap < glm::floor(glm::log2(std::max(swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height))) + 1;
-			current_mipmap++) {
-
-			image_memory_barrier = {
-				VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-				nullptr,
-				0,
-				VK_ACCESS_TRANSFER_WRITE_BIT,
-				VK_IMAGE_LAYOUT_UNDEFINED,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				VK_QUEUE_FAMILY_IGNORED,
-				VK_QUEUE_FAMILY_IGNORED,
-				device_luminance_image,
-				{ VK_IMAGE_ASPECT_COLOR_BIT,current_mipmap,1,0,1 }
-			};
-			vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
-
-			// Luminance image downscaling
-			VkImageBlit region = {
-				{ VK_IMAGE_ASPECT_COLOR_BIT,current_mipmap-1,0,1},
-				{{0,0,0},{int32_t(swapchain_create_info.imageExtent.width >> (current_mipmap - 1)),int32_t(swapchain_create_info.imageExtent.height >> (current_mipmap - 1)),1}},
-				{ VK_IMAGE_ASPECT_COLOR_BIT,current_mipmap,0,1},
-				{{0,0,0},{int32_t(swapchain_create_info.imageExtent.width >> current_mipmap),int32_t(swapchain_create_info.imageExtent.height >> current_mipmap),1}}
-			};
-			vkCmdBlitImage(command_buffers[i], device_luminance_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, device_luminance_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				1, &region, VK_FILTER_LINEAR);
-
-			image_memory_barrier = {
-				VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-				nullptr,
-				VK_ACCESS_TRANSFER_WRITE_BIT,
-				VK_ACCESS_TRANSFER_READ_BIT,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				VK_QUEUE_FAMILY_IGNORED,
-				VK_QUEUE_FAMILY_IGNORED,
-				device_luminance_image,
-				{ VK_IMAGE_ASPECT_COLOR_BIT,current_mipmap,1,0,1 }
-			};
-			vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
-		}
-
-		image_memory_barrier = {
-			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			nullptr,
-			VK_ACCESS_TRANSFER_READ_BIT,
-			VK_ACCESS_SHADER_READ_BIT,
-			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			VK_QUEUE_FAMILY_IGNORED,
-			VK_QUEUE_FAMILY_IGNORED,
-			device_luminance_image,
-			{ VK_IMAGE_ASPECT_COLOR_BIT,uint32_t(glm::floor(glm::log2(std::max(swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height))) + 1),1,0,1 }
-		};
-		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
-
 		// HDR tonemap renderpass start
 		render_pass_begin_info = {
 			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -3092,7 +2857,7 @@ void VulkanSSAO::record_command_buffers() {
 		vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
 		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, hdr_tonemap_pipeline);
-		std::array<VkDescriptorSet, 2> descriptor_sets_layout = { hdr_descriptor_sets[1], smaa_descriptor_sets[3] };
+		std::array<VkDescriptorSet, 2> descriptor_sets_layout = { hdr_descriptor_sets[0], smaa_descriptor_sets[3] };
 		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, hdr_tonemap_pipeline_layout, 0, descriptor_sets_layout.size(), descriptor_sets_layout.data(), 0, nullptr);
 		vkCmdDraw(command_buffers[i], 3, 1, 0, 0);
 
@@ -3106,14 +2871,13 @@ void VulkanSSAO::record_command_buffers() {
 	vkDestroyPipelineLayout(device, smaa_edge_pipeline_layout, nullptr);
 	vkDestroyPipelineLayout(device, smaa_weight_pipeline_layout, nullptr);
 	vkDestroyPipelineLayout(device, smaa_blend_pipeline_layout, nullptr);
-	vkDestroyPipelineLayout(device, hdr_luminance_compute_pipeline_layout, nullptr);
 	vkDestroyPipelineLayout(device, hdr_tonemap_pipeline_layout, nullptr);
 }
 
 void VulkanSSAO::create_semaphores() {
 	VkSemaphoreCreateInfo semaphore_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
 	semaphores.resize(2);
-	for (int i = 0; i < semaphores.size(); i++) {
+	for (uint32_t i = 0; i < semaphores.size(); i++) {
 		vkCreateSemaphore(device, &semaphore_create_info, nullptr, &semaphores[i]);
 	}
 }
@@ -3354,7 +3118,6 @@ void VulkanSSAO::on_window_resize() {
 
 	// Pipelines cleaning
 	vkDestroyPipeline(device, hdr_tonemap_pipeline, nullptr);
-	vkDestroyPipeline(device, hdr_luminance_compute_pipeline, nullptr);
 	vkDestroyPipeline(device, smaa_blend_pipeline, nullptr);
 	vkDestroyPipeline(device, smaa_weight_pipeline, nullptr);
 	vkDestroyPipeline(device, smaa_edge_pipeline, nullptr);
@@ -3403,7 +3166,6 @@ void VulkanSSAO::on_window_resize() {
 	create_smaa_edge_pipeline();
 	create_smaa_weight_pipeline();
 	create_smaa_blend_pipeline();
-	create_hdr_luminance_compute_pipeline();
 	create_hdr_tonemap_pipeline();
 	vkResetCommandPool(device, command_pool, 0);
 	record_command_buffers();
@@ -3435,7 +3197,6 @@ VulkanSSAO::VulkanSSAO() {
 	create_smaa_edge_pipeline();
 	create_smaa_weight_pipeline();
 	create_smaa_blend_pipeline();
-	create_hdr_luminance_compute_pipeline();
 	create_hdr_tonemap_pipeline();
 	upload_input_data();
 	record_command_buffers();
@@ -3449,13 +3210,12 @@ void VulkanSSAO::start_main_loop() {
 
 VulkanSSAO::~VulkanSSAO() {
 	vkDeviceWaitIdle(device);
-	for (int i = 0; i < semaphores.size(); i++) {
+	for (uint32_t i = 0; i < semaphores.size(); i++) {
 		vkDestroySemaphore(device, semaphores[i], nullptr);
 	}
 	
 	// Pipelines cleaning
 	vkDestroyPipeline(device, hdr_tonemap_pipeline, nullptr);
-	vkDestroyPipeline(device, hdr_luminance_compute_pipeline, nullptr);
 	vkDestroyPipeline(device, smaa_blend_pipeline, nullptr);
 	vkDestroyPipeline(device, smaa_weight_pipeline, nullptr);
 	vkDestroyPipeline(device, smaa_edge_pipeline, nullptr);
@@ -3501,6 +3261,8 @@ VulkanSSAO::~VulkanSSAO() {
 	vkDestroyDescriptorSetLayout(device, smaa_descriptor_sets_layout[0], nullptr);
 	vkDestroyDescriptorSetLayout(device, smaa_descriptor_sets_layout[1], nullptr);
 	vkDestroyDescriptorSetLayout(device, smaa_descriptor_sets_layout[2], nullptr);
+	vkDestroyDescriptorSetLayout(device, smaa_descriptor_sets_layout[3], nullptr);
+	vkDestroyDescriptorSetLayout(device, camera_light_sets_layout[0], nullptr);
 	vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
 
 	// Host memory cleaning
@@ -3517,6 +3279,12 @@ VulkanSSAO::~VulkanSSAO() {
 	vkDestroyImageView(device, device_water_bottle_normal_image_view, nullptr);
 	vkDestroyImageView(device, device_water_bottle_emissive_image_view, nullptr);
 	vkDestroyImage(device, device_water_bottle_image, nullptr);
+
+	vkDestroyImageView(device, device_box_color_image_view, nullptr);
+	vkDestroyImageView(device, device_box_orm_image_view, nullptr);
+	vkDestroyImageView(device, device_box_normal_image_view, nullptr);
+	vkDestroyImageView(device, device_box_emissive_image_view, nullptr);
+	vkDestroyImage(device, device_box_image, nullptr);
 	vkDestroySampler(device, device_water_bottle_sampler, nullptr);
 
 	vkDestroyImageView(device, device_smaa_search_image_view, nullptr);

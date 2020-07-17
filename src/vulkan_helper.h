@@ -69,6 +69,6 @@ namespace vulkan_helper {
 						   const std::vector<vulkan_helper::t_model_attributes> &t_attributes_to_copy,
                            void *dst_ptr, vulkan_helper::model_data_info &out_data);
 
-	int get_model_data_total_size(const model_data_info &model);
+	uint64_t get_model_data_total_size(const model_data_info &model);
     
 }
