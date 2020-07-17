@@ -1,9 +1,7 @@
 #version 460
-#extension GL_KHR_vulkan_glsl: enable
 #include "ColorSpaces.inc.glsl"
 
 layout( set = 0, binding = 0) uniform sampler2D render_target;
-layout(set = 0, binding = 1) uniform sampler2D average_luminance_tex;
 
 layout( set = 1, binding = 0) uniform uniform_buffer {
 	vec4 smaa_rt_metrics;

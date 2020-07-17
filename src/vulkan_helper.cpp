@@ -537,7 +537,7 @@ namespace vulkan_helper
 
         // Vertex data copy
         out_data.host_interleaved_vertex_data_offset = 0;
-        for (int i = 0; i < out_data.vertices; i++) {
+        for (uint32_t i = 0; i < out_data.vertices; i++) {
             int written_data_size = 0;
             for (const auto& v_attribute : v_attributes_to_copy) {
                 memcpy(static_cast<uint8_t *>(dst_ptr) + (i * group_size) + written_data_size,
@@ -548,7 +548,7 @@ namespace vulkan_helper
         }
 
         out_data.host_index_data_offset = out_data.interleaved_vertex_data_size;
-        for (int i = 0; i < out_data.indices; i++) {
+        for (uint32_t i = 0; i < out_data.indices; i++) {
             memcpy(static_cast<uint8_t *>(dst_ptr) + out_data.host_index_data_offset,
             model.buffers[0].data.data() + off_index,
             out_data.index_data_size);
@@ -566,7 +566,7 @@ namespace vulkan_helper
         
     }
 
-    int get_model_data_total_size(const model_data_info &model) {
+    uint64_t get_model_data_total_size(const model_data_info &model) {
         return model.interleaved_vertex_data_size + model.index_data_size +
         model.image_size.width * model.image_size.height * 4 * model.image_layers;
     }
