@@ -141,7 +141,7 @@ private:
 
 	glm::mat4 water_bottle_m_matrix, water_bottle_normal_matrix, box_m_matrix, box_normal_matrix;
 	glm::mat4 v_matrix, inverse_v_matrix, p_matrix;
-	glm::vec4 camera_pos, camera_dir, light_pos[4];
+	glm::vec4 camera_pos, camera_dir, light_pos[4], light_color[4];
 	double ex_xpos = -1, ex_ypos = -1;
 
 public:
@@ -482,8 +482,8 @@ void VulkanSSAO::create_host_buffers() {
 
 	//	bottle descriptor		box descriptor			camera descriptor		light_descriptor
 	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
-	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	192b    ] 64b	[ set:2	32b	   	]
-	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4 		]		[ 2*vec4 		]
+	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	208b    ] 48b	[ set:2	32b	   	]
+	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4+vec4	]		[ 2*vec4 		]
 	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
 	//	smaa_rt_metrics descriptor
 	//	--------[---------------] 
@@ -575,17 +575,6 @@ void VulkanSSAO::create_device_buffers() {
 		nullptr
 	};
 	vkCreateBuffer(device, &buffer_create_info, nullptr, &device_vertex_buffer);
-
-	//	bottle descriptor		box descriptor			camera descriptor		light_descriptor
-	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
-	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	192b    ] 64b	[ set:2	32b	   	]
-	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4 		]		[ 2*vec4 		]
-	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
-	//	smaa_rt_metrics descriptor
-	//	--------[---------------] 
-	//	 224b	[ set:3	16b		]
-	//			[ 1*vec4		]
-	//	--------[---------------]
 	
 	buffer_create_info.size = 256*4+16;
 	buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
@@ -887,7 +876,7 @@ void VulkanSSAO::create_attachments() {
 
 void VulkanSSAO::create_descriptor_pool_and_layouts() {
 	std::array<VkDescriptorPoolSize, 3> descriptor_pool_size { {
-	{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3},
+	{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5},
 	{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 18 },
 	{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}
 	} };
@@ -896,7 +885,7 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		nullptr,
 		VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-		8,
+		10,
 		descriptor_pool_size.size(),
 		descriptor_pool_size.data()
 	};
@@ -936,7 +925,7 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 		VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 		nullptr
 	};
-	VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+	descriptor_set_layout_create_info = {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		nullptr,
 		0,
@@ -1155,7 +1144,7 @@ void VulkanSSAO::allocate_camera_light_sets() {
 	VkDescriptorBufferInfo camera_descriptor_buffer_info = {
 		device_uniform_buffer,
 		512,
-		3*sizeof(glm::mat4)
+		3*sizeof(glm::mat4)+sizeof(glm::vec4)
 	};
 
 	VkDescriptorBufferInfo light_descriptor_buffer_info = {
@@ -1347,7 +1336,7 @@ void VulkanSSAO::allocate_hdr_descriptor_sets() {
 	};
 	vkUpdateDescriptorSets(device, 4, write_descriptor_set, 0, nullptr);
 }
-// TODO: work from here
+
 void VulkanSSAO::create_renderpass() {
 
 	/* renderpasses
@@ -1886,12 +1875,13 @@ void VulkanSSAO::create_pbr_pipeline() {
 		{0.0f,0.0f,0.0f,0.0f}
 	};
 
+	std::array<VkDescriptorSetLayout,3> descriptor_set_layouts = {pbr_descriptor_sets_layout[0], camera_light_sets_layout[0], camera_light_sets_layout[0]};
 	VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
 		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		nullptr,
 		0,
-		pbr_descriptor_sets_layout.size(),
-		pbr_descriptor_sets_layout.data(),
+		descriptor_set_layouts.size(),
+		descriptor_set_layouts.data(),
 		0,
 		nullptr
 	};
@@ -2893,7 +2883,7 @@ void VulkanSSAO::record_command_buffers() {
 		vkBeginCommandBuffer(command_buffers[i], &command_buffer_begin_info);
 
 		// Copying uniform buffer data for the pbr shader
-		VkBufferCopy buffer_copy = { 0,0,2*(sizeof(glm::vec4) * 5 + sizeof(glm::mat4) * 5 + 112)+sizeof(glm::vec4) };
+		VkBufferCopy buffer_copy = { 0,0,256*4+16};
 		vkCmdCopyBuffer(command_buffers[i], host_uniform_buffer, device_uniform_buffer, 1, &buffer_copy);
 		
 		// Transitioning layout from the write to the shader read
@@ -2923,7 +2913,8 @@ void VulkanSSAO::record_command_buffers() {
 		vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline);
 
-		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, 1, &pbr_descriptor_sets[0], 0, nullptr);
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, 3,
+			std::array<VkDescriptorSet,3> {pbr_descriptor_sets[0], camera_light_sets[0], camera_light_sets[1]}.data(), 0, nullptr);
 		VkDeviceSize offset = water_bottle_model_data.device_interleaved_vertex_data_offset;
 		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
 		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, water_bottle_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
@@ -3014,7 +3005,7 @@ void VulkanSSAO::record_command_buffers() {
 
 		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, hdr_luminance_compute_pipeline);
 		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, hdr_luminance_compute_pipeline_layout, 0, hdr_descriptor_sets.size(), hdr_descriptor_sets.data(), 0, nullptr);
-		vkCmdFillBuffer(command_buffers[i], device_uniform_buffer, sizeof(glm::vec4) * 6 + sizeof(glm::mat4) * 5 + 112 + 240, sizeof(float), 0.0f);
+		//vkCmdFillBuffer(command_buffers[i], device_uniform_buffer, sizeof(glm::vec4) * 6 + sizeof(glm::mat4) * 5 + 112 + 240, sizeof(float), 0.0f);
 		vkCmdDispatch(command_buffers[i], swapchain_create_info.imageExtent.width / 32, swapchain_create_info.imageExtent.height / 32, 1);
 
 		image_memory_barrier = {
@@ -3136,15 +3127,18 @@ void VulkanSSAO::frame_loop() {
 	camera_dir = glm::vec4(0.0f, 0.0f, -10.0f, 1.0f);
 
 	light_pos[0] = glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
-	light_pos[1] = glm::vec4(-1.0f, 1.0f, 0.0f, 1.0f);
-	light_pos[2] = glm::vec4(0.0f, 1.0f, -1.0f, 1.0f);
-	light_pos[3] = glm::vec4(1.0f, 1.0f, 0.0f, 1.0f);
+	light_color[0] = glm::vec4(10.0f, 10.0f, 10.0f, 10.0f);
 
-	//	bottle descriptor		box descriptor			smaa_rt_metrics descriptor
-	//	[---------------]-------[---------------]-------[---------------] 
-	//	[ set:0	400b    ] 112b	[ set:0	400b    ] 112b	[ set:1	16b		]
-	//	[ 5*mat4+5*vec4 ]		[ 5*mat4+5*vec4 ]		[ 1*vec4		]
-	//	[---------------]-------[---------------]-------[---------------]
+	//	bottle descriptor		box descriptor			camera descriptor		light_descriptor
+	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
+	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	208b    ] 48b	[ set:2	32b	   	]
+	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4+vec4	]		[ 2*vec4 		]
+	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
+	//	smaa_rt_metrics descriptor
+	//	--------[---------------] 
+	//	 224b	[ set:3	16b		]
+	//			[ 1*vec4		]
+	//	--------[---------------]
 
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
@@ -3160,35 +3154,30 @@ void VulkanSSAO::frame_loop() {
 		glm::vec4 smaa_rt_metrics = glm::vec4(1.0f / window_size.width, 1.0f / window_size.height, static_cast<float>(window_size.width), static_cast<float>(window_size.height));
 
 		// First descriptor copy for water bottle
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size, glm::value_ptr(water_bottle_m_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size + sizeof(glm::mat4), glm::value_ptr(v_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size + sizeof(glm::mat4) * 2, glm::value_ptr(p_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size + sizeof(glm::mat4) * 3, glm::value_ptr(water_bottle_normal_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size + sizeof(glm::mat4) * 4, glm::value_ptr(inverse_v_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size + sizeof(glm::mat4) * 5, glm::value_ptr(camera_pos), sizeof(glm::vec4));
-
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size + sizeof(glm::mat4) * 5 + sizeof(glm::vec4), glm::value_ptr(light_pos[0]), sizeof(glm::vec4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size + sizeof(glm::mat4) * 5 + sizeof(glm::vec4) * 2, glm::value_ptr(light_pos[1]), sizeof(glm::vec4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size + sizeof(glm::mat4) * 5 + sizeof(glm::vec4) * 3, glm::value_ptr(light_pos[2]), sizeof(glm::vec4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size + sizeof(glm::mat4) * 5 + sizeof(glm::vec4) * 4, glm::value_ptr(light_pos[3]), sizeof(glm::vec4));
-
+		uint8_t *dst_ptr = static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size;
+		memcpy(dst_ptr, glm::value_ptr(water_bottle_m_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(water_bottle_normal_matrix), sizeof(glm::mat4));
+		
 		// Second descriptor copy for box
-		int second_descriptor_offset = host_memory_requirements[0].size + 512;
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset, glm::value_ptr(box_m_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset + sizeof(glm::mat4), glm::value_ptr(v_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset + sizeof(glm::mat4) * 2, glm::value_ptr(p_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset + sizeof(glm::mat4) * 3, glm::value_ptr(box_normal_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset + sizeof(glm::mat4) * 4, glm::value_ptr(inverse_v_matrix), sizeof(glm::mat4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset + sizeof(glm::mat4) * 5, glm::value_ptr(camera_pos), sizeof(glm::vec4));
+		dst_ptr += 256;
+		memcpy(dst_ptr, glm::value_ptr(box_m_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(box_normal_matrix), sizeof(glm::mat4));
 
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset + sizeof(glm::mat4) * 5 + sizeof(glm::vec4), glm::value_ptr(light_pos[0]), sizeof(glm::vec4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset + sizeof(glm::mat4) * 5 + sizeof(glm::vec4) * 2, glm::value_ptr(light_pos[1]), sizeof(glm::vec4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset + sizeof(glm::mat4) * 5 + sizeof(glm::vec4) * 3, glm::value_ptr(light_pos[2]), sizeof(glm::vec4));
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + second_descriptor_offset + sizeof(glm::mat4) * 5 + sizeof(glm::vec4) * 4, glm::value_ptr(light_pos[3]), sizeof(glm::vec4));
+		// Third descriptor copy for camera
+		dst_ptr += 256;
+		memcpy(dst_ptr, glm::value_ptr(v_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(inverse_v_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4) * 2, glm::value_ptr(p_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4) * 3, glm::value_ptr(camera_pos), sizeof(glm::vec4));
 
-		// Third descriptor copy for SMAA_RT_METRICS
-		int third_descriptor_offset = host_memory_requirements[0].size + 512 + 512;
-		memcpy(static_cast<uint8_t*>(host_data_pointer) + third_descriptor_offset, glm::value_ptr(smaa_rt_metrics), sizeof(glm::vec4));
+		// Third descriptor copy for light
+		dst_ptr += 256;
+		memcpy(dst_ptr, glm::value_ptr(light_pos[0]), sizeof(glm::vec4));
+		memcpy(dst_ptr + sizeof(glm::vec4), glm::value_ptr(light_color[0]), sizeof(glm::vec4));
+
+		// Fourth descriptor copy for smaa_rt_metrics
+		dst_ptr += 256;
+		memcpy(dst_ptr, glm::value_ptr(smaa_rt_metrics), sizeof(glm::vec4));
 
 		VkMappedMemoryRange mapped_memory_range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, host_memory,host_memory_requirements[0].size,host_memory_requirements[1].size };
 		vkFlushMappedMemoryRanges(device, 1, &mapped_memory_range);

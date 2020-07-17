@@ -6,12 +6,14 @@ layout(location = 3) in vec4 tangent;
 
 layout (set = 0, binding = 0) uniform uniform_buffer1 {
 	mat4 model;
-	mat4 view;
-	mat4 projection;
 	mat4 normal_model;
-	mat4 normal_view;
+};
+
+layout (set = 1, binding = 0) uniform uniform_buffer2 {
+	mat4 view;
+	mat4 inverse_view;
+	mat4 projection;
 	vec4 camera_pos;
-	vec4 light_pos[4];
 };
 
 layout (location = 0) out VS_OUT {

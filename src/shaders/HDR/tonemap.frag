@@ -1,5 +1,4 @@
 #version 460
-#extension GL_KHR_vulkan_glsl: enable
 #include "ColorSpaces.inc.glsl"
 
 layout( set = 0, binding = 0) uniform sampler2D render_target;

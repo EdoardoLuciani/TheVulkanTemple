@@ -2,15 +2,21 @@
 
 layout (set = 0, binding = 0) uniform uniform_buffer1 {
 	mat4 model;
-	mat4 view;
-	mat4 projection;
 	mat4 normal_model;
-	mat4 normal_view;
+};
+layout (set = 0, binding = 1) uniform sampler2D image[4];
+
+layout (set = 1, binding = 0) uniform uniform_buffer2 {
+	mat4 view;
+	mat4 inverse_view;
+	mat4 projection;
 	vec4 camera_pos;
-	vec4 light_pos[4];
 };
 
-layout (set = 0,binding = 1) uniform sampler2D image[4];
+layout (set = 2, binding = 0) uniform uniform_buffer3 {
+	vec4 light_pos[1];
+	vec4 light_color;
+};
 
 layout (location = 0) in VS_OUT {
 	vec3 position;
@@ -18,7 +24,6 @@ layout (location = 0) in VS_OUT {
 	vec3 normal;
 } fs_in;
 
-vec3 light_intensity = vec3(10.0,10.0,10.0);
 
 layout (location = 0) out vec4 frag_color;
 
@@ -94,7 +99,7 @@ void main() {
     // reflectance equation
     vec3 Lo = vec3(0.0);
 
-    for(int i=0;i<4;i++) {
+    for(int i=0;i<1;i++) {
 
         float attenuation = 1.0;
         vec3 L = vec3(0.0);
@@ -106,7 +111,7 @@ void main() {
             float dist = length(vec3(light_pos[i]) - fs_in.position);
             attenuation = 1.0 / (dist * dist);
         }
-        vec3 radiance = light_intensity * attenuation;
+        vec3 radiance = light_color.rgb * attenuation;
         vec3 H = normalize(V + L);
 
         // Cook-Torrance BRDF
