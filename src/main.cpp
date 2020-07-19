@@ -99,7 +99,7 @@ private:
 	std::array<VkMemoryRequirements, 2> host_memory_requirements;
 	VkDeviceMemory host_memory;
 	void* host_data_pointer;
-	vulkan_helper::model_data_info water_bottle_model_data, box_model_data;
+	vulkan_helper::model_data_info water_bottle_model_data, box_model_data, cube_model_data;
 	int area_tex_size, search_tex_size;
 
 	VkBuffer device_vertex_buffer, device_uniform_buffer;
@@ -398,7 +398,7 @@ void VulkanSSAO::allocate_command_buffers() {
 
 void VulkanSSAO::create_host_buffers() {
 	tinygltf::TinyGLTF loader;
-	tinygltf::Model water_bottle, box;
+	tinygltf::Model water_bottle, box, cube;
 	std::string err;
 	std::string warn;
 
@@ -453,6 +453,16 @@ void VulkanSSAO::create_host_buffers() {
 		nullptr, box_model_data);
 	box_model_data.image_layers++;
 
+	loader.LoadBinaryFromFile(&cube, &err, &warn, "resources//models//Cube//Cube.glb");
+	vulkan_helper::copy_gltf_contents(box,
+		std::vector{
+		vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_NORMAL },
+		true,
+		true,
+		std::vector<vulkan_helper::t_model_attributes>(),
+		nullptr, cube_model_data);
+
 	// images for SMAA
 	// AreaTexDx10.R8G8 is 160x560
 	std::string area_tex_file_path = "resources//textures//AreaTexDX10.R8G8";
@@ -470,6 +480,7 @@ void VulkanSSAO::create_host_buffers() {
 		0,
 		vulkan_helper::get_model_data_total_size(water_bottle_model_data) +
 		vulkan_helper::get_model_data_total_size(box_model_data) +
+		vulkan_helper::get_model_data_total_size(cube_model_data) +
 		area_tex_size + search_tex_size,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_SHARING_MODE_EXCLUSIVE,
@@ -551,6 +562,20 @@ void VulkanSSAO::create_host_buffers() {
 	box_model_data.image_layers++;
 	offset += 2048*2048*4;
 
+	vulkan_helper::copy_gltf_contents(box,
+		std::vector{
+		vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_NORMAL },
+		true,
+		true,
+		std::vector<vulkan_helper::t_model_attributes>(),
+		static_cast<uint8_t*>(host_data_pointer) + offset, cube_model_data);
+	
+	cube_model_data.host_interleaved_vertex_data_offset += offset;
+	cube_model_data.host_index_data_offset += offset;
+
+	offset += vulkan_helper::get_model_data_total_size(cube_model_data);
+
 	// SMAA images copying
 	area_tex.read(reinterpret_cast<char*>(host_data_pointer) + offset, area_tex_size);
 	search_tex.read(static_cast<char*>(host_data_pointer) + offset + area_tex_size, search_tex_size);
@@ -558,7 +583,7 @@ void VulkanSSAO::create_host_buffers() {
 	VkMappedMemoryRange mapped_memory_range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, host_memory,0,host_memory_requirements[0].size };
 	vkFlushMappedMemoryRanges(device, 1, &mapped_memory_range);
 }
-
+// TODO: load cube model data into device memory
 void VulkanSSAO::create_device_buffers() {
 	// vertex data size + index data size for all models
 	VkBufferCreateInfo buffer_create_info = {
