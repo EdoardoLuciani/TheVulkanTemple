@@ -583,7 +583,7 @@ void VulkanSSAO::create_host_buffers() {
 	VkMappedMemoryRange mapped_memory_range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, host_memory,0,host_memory_requirements[0].size };
 	vkFlushMappedMemoryRanges(device, 1, &mapped_memory_range);
 }
-// TODO: load cube model data into device memory
+
 void VulkanSSAO::create_device_buffers() {
 	// vertex data size + index data size for all models
 	VkBufferCreateInfo buffer_create_info = {
@@ -591,7 +591,8 @@ void VulkanSSAO::create_device_buffers() {
 		nullptr,
 		0,
 		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
-		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size,
+		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size +
+		cube_model_data.interleaved_vertex_data_size + cube_model_data.index_data_size,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		VK_SHARING_MODE_EXCLUSIVE,
 		0,
@@ -744,6 +745,9 @@ void VulkanSSAO::create_device_buffers() {
 	box_model_data.device_interleaved_vertex_data_offset = water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size;
 	box_model_data.device_index_data_offset = box_model_data.device_interleaved_vertex_data_offset + box_model_data.interleaved_vertex_data_size;
 	box_model_data.device_image_data_offset = device_memory_requirements[0].size + device_memory_requirements[1].size + alignment + device_memory_requirements[2].size;
+
+	cube_model_data.device_interleaved_vertex_data_offset = box_model_data.device_index_data_offset + box_model_data.index_data_size;
+	cube_model_data.device_index_data_offset = cube_model_data.device_interleaved_vertex_data_offset + cube_model_data.interleaved_vertex_data_size;
 }
 
 void VulkanSSAO::create_attachments() {
@@ -2572,16 +2576,21 @@ void VulkanSSAO::upload_input_data() {
 	VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,nullptr };
 	vkBeginCommandBuffer(command_buffers[0], &command_buffer_begin_info);
 
-	std::array <VkBufferCopy, 2> buffer_copies { {
+	std::array <VkBufferCopy, 3> buffer_copies { {
 	{ 
 		0,0,
 		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size
 	},
 	{
-		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
-		water_bottle_model_data.image_size.width * water_bottle_model_data.image_size.height * 4 * water_bottle_model_data.image_layers,
+		vulkan_helper::get_model_data_total_size(water_bottle_model_data),
 		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size,
 		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size
+	},
+	{
+		vulkan_helper::get_model_data_total_size(water_bottle_model_data) + vulkan_helper::get_model_data_total_size(box_model_data),
+		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
+		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size,
+		cube_model_data.interleaved_vertex_data_size + cube_model_data.index_data_size
 	}}};
 	
 	vkCmdCopyBuffer(command_buffers[0], host_vertex_buffer, device_vertex_buffer, buffer_copies.size(), buffer_copies.data());
@@ -2657,7 +2666,7 @@ void VulkanSSAO::upload_input_data() {
 	vkCmdCopyBufferToImage(command_buffers[0], host_vertex_buffer, device_box_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
 	buffer_image_copy = {
-		box_model_data.host_image_data_offset + (box_model_data.image_size.width*box_model_data.image_size.height*4*box_model_data.image_layers),
+		cube_model_data.host_index_data_offset + cube_model_data.index_data_size,
 		0,
 		0,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
@@ -2667,8 +2676,7 @@ void VulkanSSAO::upload_input_data() {
 	vkCmdCopyBufferToImage(command_buffers[0], host_vertex_buffer, device_smaa_area_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
 	buffer_image_copy = {
-		box_model_data.host_image_data_offset + (box_model_data.image_size.width*box_model_data.image_size.height*4*box_model_data.image_layers) +
-		area_tex_size,
+		cube_model_data.host_index_data_offset + cube_model_data.index_data_size + area_tex_size,
 		0,
 		0,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
