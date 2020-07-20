@@ -14,6 +14,8 @@ layout (set = 1, binding = 0) uniform uniform_buffer2 {
 };
 
 layout (set = 2, binding = 0) uniform uniform_buffer3 {
+    mat4 camera_v;
+    mat4 camera_p;
 	vec4 light_pos[1];
 	vec4 light_color;
 };

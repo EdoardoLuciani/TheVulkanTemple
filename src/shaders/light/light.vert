@@ -10,6 +10,8 @@ layout (set = 0, binding = 0) uniform uniform_buffer {
 };
 
 layout (set = 1, binding = 0) uniform uniform_buffer1 {
+    mat4 camera_v;
+    mat4 camera_p;
 	vec4 light_pos[1];
 	vec4 light_color;
 };
