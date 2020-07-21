@@ -377,7 +377,7 @@ void VulkanSSAO::calculate_projection_matrix() {
 	p_matrix = glm::perspective(glm::radians(90.0f), static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
 	p_matrix[1][1] *= -1;
 
-	camera_p_matrix = glm::perspective(glm::radians(90.0f), static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
+	camera_p_matrix = glm::perspective(glm::radians(120.0f), static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
 	camera_p_matrix[1][1] *= -1;
 }
 
@@ -899,7 +899,7 @@ void VulkanSSAO::create_attachments() {
 		VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
 		VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
 		0.0f,
-		VK_FALSE,
+		VK_TRUE,
 		16.0f,
 		VK_TRUE,
 		VK_COMPARE_OP_LESS,
@@ -1864,9 +1864,9 @@ void VulkanSSAO::create_shadow_map_pipeline() {
 		VK_CULL_MODE_FRONT_BIT,
 		VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		VK_FALSE,
-		1000.0f,
 		0.0f,
-		500.0f,
+		0.0f,
+		0.0f,
 		1.0f
 	};
 
@@ -3512,7 +3512,9 @@ void VulkanSSAO::frame_loop() {
 		v_matrix = glm::lookAt(glm::vec3(camera_pos), glm::vec3(camera_pos + camera_dir), glm::vec3(0.0f, 1.0f, 0.0f));
 		inverse_v_matrix = glm::transpose(glm::inverse(v_matrix));
 
-		water_bottle_m_matrix = glm::translate(glm::vec3(0.0f, 0.0f, 0.0f)) * glm::rotate(static_cast<float>(glfwGetTime() * 1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+		water_bottle_m_matrix = glm::translate(glm::vec3(0.0f, 0.15f + glm::sin(glfwGetTime())/7.0f, 0.0f)) 
+			* glm::rotate(glm::radians(10.0f), glm::vec3(0.0f, 0.0f, 1.0f))
+			* glm::rotate(static_cast<float>(glfwGetTime() * 1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		water_bottle_normal_matrix = glm::transpose(glm::inverse(water_bottle_m_matrix));
 
 		box_m_matrix = glm::translate(glm::vec3(0.0f, -1.0f, 0.0f))*glm::scale(glm::vec3(5.0f,5.0f,5.0f));

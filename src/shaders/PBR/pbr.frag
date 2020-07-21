@@ -141,22 +141,17 @@ void main() {
         // scale light by NdotL
         float NdotL = max(dot(N, L), 0.0);
         
-        
+        float sum = 0;
         float shadow = 1.0;
-        if( fs_in.shadow_coord.z >= 0 ) {
-            shadow = textureProj(shadow_map, fs_in.shadow_coord);
+        vec4 m_shadow_coords = fs_in.shadow_coord;
+        m_shadow_coords.z -= 0.05;
+        if(m_shadow_coords.z >= 0 ) {
+            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(-1,-1));
+            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(-1,1));
+            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(1,1));
+            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(1,-1));
+            shadow = sum * 0.25;
         }
-
-        /*vec3 projCoords = fs_in.shadow_coord.xyz / fs_in.shadow_coord.w;
-        // transform to [0,1] range
-        projCoords = projCoords * 0.5 + 0.5;
-        // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
-        float closestDepth = texture(shadow_map, projCoords.xy).r; 
-        // get depth of current fragment from light's perspective
-        float currentDepth = projCoords.z;
-        // check whether current frag pos is in shadow
-        float shadow = currentDepth > closestDepth  ? 1.0 : 0.0;
-        */
 
         // add to outgoing radiance Lo
         Lo += (kD * albedo / PI + specular) * radiance * NdotL * shadow;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again   

@@ -36,11 +36,11 @@ void main() {
                         	0.0f,0.5f,0.0f,0.0f,
                         	0.0f,0.0f,0.5f,0.0f,
                         	0.5f,0.5f,0.5f,1.0f);
-	//shadow_bias = transpose(shadow_bias);
 
 	vs_out.tex_coord = tex_coord;
 	vs_out.position = vec3(model * vec4(position,1.0f));
 	vs_out.normal = mat3(normal_model) * normal;
+
 	vs_out.shadow_coord = shadow_bias * camera_p * camera_v * model * vec4(position,1.0f);
 
 	gl_Position = projection * view * model * vec4(position,1.0f);
