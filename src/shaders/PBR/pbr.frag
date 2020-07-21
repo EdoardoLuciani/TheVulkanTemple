@@ -5,6 +5,8 @@ layout (set = 0, binding = 0) uniform uniform_buffer1 {
 	mat4 normal_model;
 };
 layout (set = 0, binding = 1) uniform sampler2D image[4];
+layout (set = 0, binding = 2) uniform sampler2DShadow shadow_map;
+//layout (set = 0, binding = 2) uniform sampler2D shadow_map;
 
 layout (set = 1, binding = 0) uniform uniform_buffer2 {
 	mat4 view;
@@ -24,6 +26,7 @@ layout (location = 0) in VS_OUT {
 	vec3 position;
 	vec2 tex_coord;
 	vec3 normal;
+    vec4 shadow_coord;
 } fs_in;
 
 
@@ -46,7 +49,6 @@ vec3 getNormalFromMap() {
 
     return normalize(TBN * tangentNormal);
 }
-
 
 float DistributionGGX(vec3 N, vec3 H, float roughness) {
     float a = roughness*roughness;
@@ -137,13 +139,28 @@ void main() {
         kD *= 1.0 - metallic;	  
 
         // scale light by NdotL
-        float NdotL = max(dot(N, L), 0.0);        
+        float NdotL = max(dot(N, L), 0.0);
+        
+        
+        float shadow = 1.0;
+        if( fs_in.shadow_coord.z >= 0 ) {
+            shadow = textureProj(shadow_map, fs_in.shadow_coord);
+        }
+
+        /*vec3 projCoords = fs_in.shadow_coord.xyz / fs_in.shadow_coord.w;
+        // transform to [0,1] range
+        projCoords = projCoords * 0.5 + 0.5;
+        // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
+        float closestDepth = texture(shadow_map, projCoords.xy).r; 
+        // get depth of current fragment from light's perspective
+        float currentDepth = projCoords.z;
+        // check whether current frag pos is in shadow
+        float shadow = currentDepth > closestDepth  ? 1.0 : 0.0;
+        */
 
         // add to outgoing radiance Lo
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again   
+        Lo += (kD * albedo / PI + specular) * radiance * NdotL * shadow;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again   
     }
-    // ambient lighting (note that the next IBL tutorial will replace 
-    // this ambient lighting with environment lighting).
 
     //note: default for ambient is 0.03
     vec3 ambient = vec3(0.03) * albedo * ao;
