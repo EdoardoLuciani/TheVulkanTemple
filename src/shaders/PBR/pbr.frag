@@ -5,8 +5,7 @@ layout (set = 0, binding = 0) uniform uniform_buffer1 {
 	mat4 normal_model;
 };
 layout (set = 0, binding = 1) uniform sampler2D image[4];
-layout (set = 0, binding = 2) uniform sampler2DShadow shadow_map;
-//layout (set = 0, binding = 2) uniform sampler2D shadow_map;
+layout (set = 0, binding = 2) uniform sampler2D shadow_map;
 
 layout (set = 1, binding = 0) uniform uniform_buffer2 {
 	mat4 view;
@@ -86,6 +85,21 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 // ----------------------------------------------------------------------------
+float ChebyshevUpperBound(vec2 Moments, float t) {
+    // One-tailed inequality valid if t > Moments.x 
+    if (t <= Moments.x) {
+	    return 1.0;
+    }
+    // Compute variance.
+    float Variance = Moments.y - (Moments.x*Moments.x);
+    Variance = max(Variance, 0.002);
+    // Compute probabilistic upper bound.    
+    float d = t - Moments.x;
+    float p_max = Variance / (Variance + d*d);
+    return p_max;
+} 
+
+
 void main() {		
     vec3 albedo     = texture(image[0], fs_in.tex_coord).rgb;
     float metallic  = texture(image[1], fs_in.tex_coord).b;
@@ -141,17 +155,10 @@ void main() {
         // scale light by NdotL
         float NdotL = max(dot(N, L), 0.0);
         
-        float sum = 0;
-        float shadow = 1.0;
-        vec4 m_shadow_coords = fs_in.shadow_coord;
-        m_shadow_coords.z -= 0.05;
-        if(m_shadow_coords.z >= 0 ) {
-            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(-1,-1));
-            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(-1,1));
-            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(1,1));
-            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(1,-1));
-            shadow = sum * 0.25;
-        }
+        // compute chebyshevUpperBound
+        vec4 normalized_shadow_coords = fs_in.shadow_coord / fs_in.shadow_coord.w;
+        vec2 moments = texture(shadow_map,normalized_shadow_coords.xy).rg;
+	    float shadow = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
 
         // add to outgoing radiance Lo
         Lo += (kD * albedo / PI + specular) * radiance * NdotL * shadow;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again   
