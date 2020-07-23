@@ -171,7 +171,7 @@ void main() {
         if (modified_shadow_coords.z >= 0) {
             vec2 moments = texture(shadow_map,normalized_shadow_coords.xy).rg;
 	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
-            shadow = ReduceLightBleeding(p_max, 0.998);
+            shadow = ReduceLightBleeding(p_max, 0.99999);
         }
 
         // add to outgoing radiance Lo

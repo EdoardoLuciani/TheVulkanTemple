@@ -108,7 +108,7 @@ private:
 
 	VkBuffer device_vertex_buffer, device_uniform_buffer;
 	VkImage device_water_bottle_image, device_box_image, device_smaa_area_image, device_smaa_search_image;
-	VkImageView device_shadow_map_depth_image_view, device_water_bottle_color_image_view, device_water_bottle_orm_image_view,
+	VkImageView device_water_bottle_color_image_view, device_water_bottle_orm_image_view,
 		device_water_bottle_normal_image_view, device_water_bottle_emissive_image_view, device_box_normal_image_view,
 		device_box_color_image_view, device_box_orm_image_view, device_box_emissive_image_view, device_smaa_area_image_view,
 		device_smaa_search_image_view;
@@ -774,7 +774,7 @@ void VulkanSSAO::create_attachments() {
 		VK_FORMAT_D32_SFLOAT,
 		{ window_size.width, window_size.height, 1 },
 		1,
-		2,
+		1,
 		VK_SAMPLE_COUNT_1_BIT,
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -784,7 +784,6 @@ void VulkanSSAO::create_attachments() {
 		VK_IMAGE_LAYOUT_UNDEFINED
 	};
 	vkCreateImage(device, &image_create_info, nullptr, &device_depth_image);
-	// TODO: remove here the 2 images
 	
 	// Stencil image for smaa pass
 	image_create_info.format = VK_FORMAT_S8_UINT;
@@ -856,9 +855,6 @@ void VulkanSSAO::create_attachments() {
 		{ VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0 , 1 }
 	};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_depth_image_view);
-
-	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 1 , 1 };
-	vkCreateImageView(device, &image_view_create_info, nullptr, &device_shadow_map_depth_image_view);
 
 	image_view_create_info.image = device_stencil_image;
 	image_view_create_info.format = VK_FORMAT_S8_UINT;
@@ -1522,7 +1518,7 @@ void VulkanSSAO::create_renderpass() {
 		VK_FORMAT_D32_SFLOAT,
 		VK_SAMPLE_COUNT_1_BIT,
 		VK_ATTACHMENT_LOAD_OP_CLEAR,
-		VK_ATTACHMENT_STORE_OP_STORE,
+		VK_ATTACHMENT_STORE_OP_DONT_CARE,
 		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 		VK_ATTACHMENT_STORE_OP_DONT_CARE,
 		VK_IMAGE_LAYOUT_UNDEFINED,
@@ -1812,7 +1808,7 @@ void VulkanSSAO::create_framebuffers() {
 	VkImageView attachments[2];
 	VkFramebufferCreateInfo framebuffer_create_info;
 
-	attachments[0] = { device_shadow_map_depth_image_view };
+	attachments[0] = { device_depth_image_view };
 	attachments[1] = { device_vsm_depth_0_image_view };
 	framebuffer_create_info = {
 		VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
