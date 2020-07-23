@@ -106,8 +106,7 @@ float linstep(float min, float max, float v) {
 float ReduceLightBleeding(float p_max, float Amount) {
     // Remove the [0, Amount] tail and linearly rescale (Amount, 1].
     return linstep(Amount, 1, p_max); 
-} 
-
+}
 
 void main() {		
     vec3 albedo     = texture(image[0], fs_in.tex_coord).rgb;
@@ -164,16 +163,15 @@ void main() {
         // scale light by NdotL
         float NdotL = max(dot(N, L), 0.0);
         
-        // compute chebyshevUpperBound
-
+        // calculate if fragment is in shadow
         float shadow = 1.0f;
         vec4 modified_shadow_coords = fs_in.shadow_coord;
         modified_shadow_coords.z -= 0.05;
         vec4 normalized_shadow_coords = modified_shadow_coords / modified_shadow_coords.w;
         if (modified_shadow_coords.z >= 0) {
             vec2 moments = texture(shadow_map,normalized_shadow_coords.xy).rg;
-	        shadow = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
-            //shadow = ReduceLightBleeding(p_max, 0.6);
+	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
+            shadow = ReduceLightBleeding(p_max, 0.998);
         }
 
         // add to outgoing radiance Lo

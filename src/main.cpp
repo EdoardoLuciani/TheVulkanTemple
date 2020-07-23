@@ -3612,7 +3612,7 @@ void VulkanSSAO::record_command_buffers() {
 		std::array<VkDescriptorSet, 2> gaussian_blur_pipeline_descriptor_sets = { gaussian_blur_descriptor_sets[0], smaa_descriptor_sets[3] };
 		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_xy_pipeline_layouts[0],
 			0, 2, gaussian_blur_pipeline_descriptor_sets.data(), 0, nullptr);
-		vkCmdDispatch(command_buffers[i],swapchain_create_info.imageExtent.width/32, swapchain_create_info.imageExtent.height/32, 1);
+		vkCmdDispatch(command_buffers[i],std::ceil(swapchain_create_info.imageExtent.width/32.0f), std::ceil(swapchain_create_info.imageExtent.height/32.0f), 1);
 
 		image_memory_barriers[0] = {
 			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -3645,7 +3645,7 @@ void VulkanSSAO::record_command_buffers() {
 		gaussian_blur_pipeline_descriptor_sets = { gaussian_blur_descriptor_sets[1], smaa_descriptor_sets[3] };
 		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_xy_pipeline_layouts[1],
 			0, 2, gaussian_blur_pipeline_descriptor_sets.data(), 0, nullptr);
-		vkCmdDispatch(command_buffers[i],swapchain_create_info.imageExtent.width/32, swapchain_create_info.imageExtent.height/32, 1);
+		vkCmdDispatch(command_buffers[i],std::ceil(swapchain_create_info.imageExtent.width/32.0f), std::ceil(swapchain_create_info.imageExtent.height/32.0f), 1);
 
 		image_memory_barriers[0] = {
 			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
