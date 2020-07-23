@@ -23,5 +23,5 @@ layout (location = 0) out VS_OUT {
 
 void main() {
     gl_Position = camera_p * camera_v * model * vec4(position, 1.0f);
-	vs_out.position = camera_v * model * vec4(position, 1.0f);
+	vs_out.position = gl_Position;
 }

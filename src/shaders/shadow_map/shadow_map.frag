@@ -7,8 +7,8 @@ layout (location = 0) in VS_OUT {
 layout (location = 0) out vec2 frag_color;
 
 void main() {
-    //float depth = fs_in.position.z / fs_in.position.w ;
-	float depth = length(fs_in.position);
+    float depth = fs_in.position.z / fs_in.position.w ;
+	//float depth = length(fs_in.position);
 	//depth = depth * 0.5 + 0.5;			//Don't forget to move away from unit cube ([-1,1]) to [0,1] coordinate system
 	
 	float moment1 = depth;

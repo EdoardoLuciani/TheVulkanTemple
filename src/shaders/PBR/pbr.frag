@@ -97,6 +97,15 @@ float ChebyshevUpperBound(vec2 Moments, float t) {
     float d = t - Moments.x;
     float p_max = Variance / (Variance + d*d);
     return p_max;
+}
+
+float linstep(float min, float max, float v) {   
+    return clamp((v - min) / (max - min), 0, 1); 
+} 
+
+float ReduceLightBleeding(float p_max, float Amount) {
+    // Remove the [0, Amount] tail and linearly rescale (Amount, 1].
+    return linstep(Amount, 1, p_max); 
 } 
 
 
@@ -156,9 +165,16 @@ void main() {
         float NdotL = max(dot(N, L), 0.0);
         
         // compute chebyshevUpperBound
-        vec4 normalized_shadow_coords = fs_in.shadow_coord / fs_in.shadow_coord.w;
-        vec2 moments = texture(shadow_map,normalized_shadow_coords.xy).rg;
-	    float shadow = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
+
+        float shadow = 1.0f;
+        vec4 modified_shadow_coords = fs_in.shadow_coord;
+        modified_shadow_coords.z -= 0.05;
+        vec4 normalized_shadow_coords = modified_shadow_coords / modified_shadow_coords.w;
+        if (modified_shadow_coords.z >= 0) {
+            vec2 moments = texture(shadow_map,normalized_shadow_coords.xy).rg;
+	        shadow = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
+            //shadow = ReduceLightBleeding(p_max, 0.6);
+        }
 
         // add to outgoing radiance Lo
         Lo += (kD * albedo / PI + specular) * radiance * NdotL * shadow;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again   

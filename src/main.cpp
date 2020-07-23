@@ -3537,6 +3537,7 @@ void VulkanSSAO::record_command_buffers() {
 	VkClearValue clear_colors[3];
 	clear_colors[0].depthStencil = { 1.0f, 0 };
 	clear_colors[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+	clear_colors[2].color = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 	for (uint32_t i = 0; i < swapchain_images_count; i++) {
 		VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr };
@@ -3561,14 +3562,15 @@ void VulkanSSAO::record_command_buffers() {
 		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
 		
 		// shadow_map Renderpass Start
+		std::array<VkClearValue,2> shadow_map_clear_colors = {clear_colors[0], clear_colors[2]};
 		VkRenderPassBeginInfo render_pass_begin_info = {
 			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			nullptr,
 			shadow_map_render_pass,
 			framebuffers[0],
 			{{0,0},{swapchain_create_info.imageExtent}},
-			2,
-			clear_colors
+			shadow_map_clear_colors.size(),
+			shadow_map_clear_colors.data()
 		};
 		vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
