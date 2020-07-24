@@ -25,11 +25,22 @@ SOURCE_SHADERDIR = $(SDIR)/shaders
 OUT_SHADERDIR = shaders
 VULKANENV = /home/edoardo/vulkan/1.2.141.0/x86_64/bin
 
-shaders: $(SOURCE_SHADERDIR)/PBR/pbr.vert $(SOURCE_SHADERDIR)/PBR/pbr.frag \
+shaders: $(SOURCE_SHADERDIR)/shadow_map/shadow_map.vert $(SOURCE_SHADERDIR)/shadow_map/shadow_map.frag \
+$(SOURCE_SHADERDIR)/shadow_map/gaussian_blur_x.comp $(SOURCE_SHADERDIR)/shadow_map/gaussian_blur_y.comp \
+$(SOURCE_SHADERDIR)/light/light.vert  $(SOURCE_SHADERDIR)/light/light.frag \
+$(SOURCE_SHADERDIR)/PBR/pbr.vert $(SOURCE_SHADERDIR)/PBR/pbr.frag \
 $(SOURCE_SHADERDIR)/SMAA/smaa_edge.vert $(SOURCE_SHADERDIR)/SMAA/smaa_edge.frag \
 $(SOURCE_SHADERDIR)/SMAA/smaa_weight.vert $(SOURCE_SHADERDIR)/SMAA/smaa_weight.frag \
 $(SOURCE_SHADERDIR)/SMAA/smaa_blend.vert $(SOURCE_SHADERDIR)/SMAA/smaa_blend.frag \
-$(SOURCE_SHADERDIR)/HDR/luminance.comp $(SOURCE_SHADERDIR)/HDR/tonemap.vert $(SOURCE_SHADERDIR)/HDR/tonemap.frag
+$(SOURCE_SHADERDIR)/HDR/tonemap.vert $(SOURCE_SHADERDIR)/HDR/tonemap.frag
+# Shadow Map
+	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/shadow_map.vert.spv $(SOURCE_SHADERDIR)/shadow_map/shadow_map.vert
+	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/shadow_map.frag.spv $(SOURCE_SHADERDIR)/shadow_map/shadow_map.frag
+	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/gaussian_blur_x.comp.spv $(SOURCE_SHADERDIR)/shadow_map/gaussian_blur_x.comp
+	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/gaussian_blur_y.comp.spv $(SOURCE_SHADERDIR)/shadow_map/gaussian_blur_y.comp
+# Light
+	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/light.vert.spv $(SOURCE_SHADERDIR)/light/light.vert
+	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/light.frag.spv $(SOURCE_SHADERDIR)/light/light.frag
 # PBR
 	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/pbr.vert.spv $(SOURCE_SHADERDIR)/PBR/pbr.vert
 	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/pbr.frag.spv $(SOURCE_SHADERDIR)/PBR/pbr.frag
@@ -41,7 +52,6 @@ $(SOURCE_SHADERDIR)/HDR/luminance.comp $(SOURCE_SHADERDIR)/HDR/tonemap.vert $(SO
 	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/smaa_blend.vert.spv $(SOURCE_SHADERDIR)/SMAA/smaa_blend.vert
 	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/smaa_blend.frag.spv $(SOURCE_SHADERDIR)/SMAA/smaa_blend.frag
 # HDR
-	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/luminance.comp.spv $(SOURCE_SHADERDIR)/HDR/luminance.comp
 	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/tonemap.vert.spv $(SOURCE_SHADERDIR)/HDR/tonemap.vert
 	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/tonemap.frag.spv $(SOURCE_SHADERDIR)/HDR/tonemap.frag
 

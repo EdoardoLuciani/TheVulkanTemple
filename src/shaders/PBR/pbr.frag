@@ -5,6 +5,7 @@ layout (set = 0, binding = 0) uniform uniform_buffer1 {
 	mat4 normal_model;
 };
 layout (set = 0, binding = 1) uniform sampler2D image[4];
+layout (set = 0, binding = 2) uniform sampler2D shadow_map;
 
 layout (set = 1, binding = 0) uniform uniform_buffer2 {
 	mat4 view;
@@ -14,6 +15,8 @@ layout (set = 1, binding = 0) uniform uniform_buffer2 {
 };
 
 layout (set = 2, binding = 0) uniform uniform_buffer3 {
+    mat4 camera_v;
+    mat4 camera_p;
 	vec4 light_pos[1];
 	vec4 light_color;
 };
@@ -22,6 +25,7 @@ layout (location = 0) in VS_OUT {
 	vec3 position;
 	vec2 tex_coord;
 	vec3 normal;
+    vec4 shadow_coord;
 } fs_in;
 
 
@@ -44,7 +48,6 @@ vec3 getNormalFromMap() {
 
     return normalize(TBN * tangentNormal);
 }
-
 
 float DistributionGGX(vec3 N, vec3 H, float roughness) {
     float a = roughness*roughness;
@@ -82,6 +85,29 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 // ----------------------------------------------------------------------------
+float ChebyshevUpperBound(vec2 Moments, float t) {
+    // One-tailed inequality valid if t > Moments.x 
+    if (t <= Moments.x) {
+	    return 1.0;
+    }
+    // Compute variance.
+    float Variance = Moments.y - (Moments.x*Moments.x);
+    Variance = max(Variance, 0.002);
+    // Compute probabilistic upper bound.    
+    float d = t - Moments.x;
+    float p_max = Variance / (Variance + d*d);
+    return p_max;
+}
+
+float linstep(float min, float max, float v) {   
+    return clamp((v - min) / (max - min), 0, 1); 
+} 
+
+float ReduceLightBleeding(float p_max, float Amount) {
+    // Remove the [0, Amount] tail and linearly rescale (Amount, 1].
+    return linstep(Amount, 1, p_max); 
+}
+
 void main() {		
     vec3 albedo     = texture(image[0], fs_in.tex_coord).rgb;
     float metallic  = texture(image[1], fs_in.tex_coord).b;
@@ -135,13 +161,22 @@ void main() {
         kD *= 1.0 - metallic;	  
 
         // scale light by NdotL
-        float NdotL = max(dot(N, L), 0.0);        
+        float NdotL = max(dot(N, L), 0.0);
+        
+        // calculate if fragment is in shadow
+        float shadow = 1.0f;
+        vec4 modified_shadow_coords = fs_in.shadow_coord;
+        modified_shadow_coords.z -= 0.05;
+        vec4 normalized_shadow_coords = modified_shadow_coords / modified_shadow_coords.w;
+        if (modified_shadow_coords.z >= 0) {
+            vec2 moments = texture(shadow_map,normalized_shadow_coords.xy).rg;
+	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
+            shadow = ReduceLightBleeding(p_max, 0.99999);
+        }
 
         // add to outgoing radiance Lo
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again   
+        Lo += (kD * albedo / PI + specular) * radiance * NdotL * shadow;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again   
     }
-    // ambient lighting (note that the next IBL tutorial will replace 
-    // this ambient lighting with environment lighting).
 
     //note: default for ambient is 0.03
     vec3 ambient = vec3(0.03) * albedo * ao;

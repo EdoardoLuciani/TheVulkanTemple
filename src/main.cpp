@@ -49,12 +49,16 @@ private:
 	void create_device_buffers();
 	void create_attachments();
 	void create_descriptor_pool_and_layouts();
+	void allocate_gaussian_blur_descriptor_sets();
 	void allocate_pbr_descriptor_sets();
 	void allocate_camera_light_sets();
 	void allocate_smaa_descriptor_sets();
 	void allocate_hdr_descriptor_sets();
 	void create_renderpass();
 	void create_framebuffers();
+	void create_shadow_map_pipeline();
+	void create_gaussian_blur_pipelines();
+	void create_light_pipeline();
 	void create_pbr_pipeline();
 	void create_smaa_edge_pipeline();
 	void create_smaa_weight_pipeline();
@@ -99,46 +103,54 @@ private:
 	std::array<VkMemoryRequirements, 2> host_memory_requirements;
 	VkDeviceMemory host_memory;
 	void* host_data_pointer;
-	vulkan_helper::model_data_info water_bottle_model_data, box_model_data;
+	vulkan_helper::model_data_info water_bottle_model_data, box_model_data, cube_model_data;
 	int area_tex_size, search_tex_size;
 
 	VkBuffer device_vertex_buffer, device_uniform_buffer;
 	VkImage device_water_bottle_image, device_box_image, device_smaa_area_image, device_smaa_search_image;
-	VkImageView device_water_bottle_color_image_view, device_water_bottle_orm_image_view, device_water_bottle_normal_image_view,
-		device_water_bottle_emissive_image_view, device_box_normal_image_view, device_box_color_image_view, device_box_orm_image_view,
-		device_box_emissive_image_view, device_smaa_area_image_view, device_smaa_search_image_view;
-	VkSampler device_water_bottle_sampler;
+	VkImageView device_water_bottle_color_image_view, device_water_bottle_orm_image_view,
+		device_water_bottle_normal_image_view, device_water_bottle_emissive_image_view, device_box_normal_image_view,
+		device_box_color_image_view, device_box_orm_image_view, device_box_emissive_image_view, device_smaa_area_image_view,
+		device_smaa_search_image_view;
+	VkSampler device_max_aniso_linear_sampler;
 	std::array<VkMemoryRequirements, 6> device_memory_requirements;
 	VkDeviceMemory device_memory;
 
-	VkImage device_depth_image, device_stencil_image, device_render_target_image, device_smaa_image;
+	VkImage device_depth_image, device_stencil_image, device_render_target_image, device_vsm_depth_image, device_smaa_image;
 	VkImageView device_depth_image_view, device_stencil_image_view, device_render_target_image_view,
-		device_render_target_second_image_view, device_smaa_edge_image_view, device_smaa_weight_image_view;
-	VkSampler device_render_target_sampler;
-	std::array<VkMemoryRequirements, 4> device_memory_attachments_requirements;
+		device_render_target_second_image_view, device_vsm_depth_0_image_view, device_vsm_depth_1_image_view,
+		device_smaa_edge_image_view, device_smaa_weight_image_view;
+	VkSampler device_render_target_sampler, device_shadow_map_sampler;
+	std::array<VkMemoryRequirements, 5> device_memory_attachments_requirements;
 	VkDeviceMemory device_memory_attachments;
 
 	VkDescriptorPool descriptor_pool;
+	std::array<VkDescriptorSetLayout, 1> gaussian_blur_descriptor_sets_layout;
 	std::array<VkDescriptorSetLayout, 1> pbr_descriptor_sets_layout;
 	std::array<VkDescriptorSetLayout, 1> camera_light_sets_layout;
 	std::array<VkDescriptorSetLayout, 4> smaa_descriptor_sets_layout;
 	std::array<VkDescriptorSetLayout, 1> hdr_descriptor_sets_layout;
+	std::array<VkDescriptorSet, 2> gaussian_blur_descriptor_sets;
 	std::array<VkDescriptorSet, 2> pbr_descriptor_sets;
 	std::array<VkDescriptorSet, 2> camera_light_sets;
 	std::array<VkDescriptorSet, 4> smaa_descriptor_sets;
 	std::array<VkDescriptorSet, 2> hdr_descriptor_sets;
 
-	VkRenderPass pbr_render_pass, smaa_edge_renderpass, smaa_weight_renderpass, smaa_blend_renderpass, hdr_tonemap_renderpass;
+	VkRenderPass shadow_map_render_pass, pbr_render_pass, smaa_edge_renderpass, smaa_weight_renderpass, smaa_blend_renderpass, hdr_tonemap_renderpass;
 	std::vector<VkFramebuffer> framebuffers;
 	std::vector<VkImageView> swapchain_images_views;
 
-	VkPipelineLayout pbr_pipeline_layout, smaa_edge_pipeline_layout, smaa_weight_pipeline_layout, smaa_blend_pipeline_layout, hdr_tonemap_pipeline_layout;
-	VkPipeline pbr_pipeline, smaa_edge_pipeline, smaa_weight_pipeline, smaa_blend_pipeline, hdr_tonemap_pipeline;
+	VkPipelineLayout shadow_map_pipeline_layout, light_pipeline_layout, pbr_pipeline_layout, smaa_edge_pipeline_layout, smaa_weight_pipeline_layout,
+					smaa_blend_pipeline_layout, hdr_tonemap_pipeline_layout;
+	VkPipeline shadow_map_pipeline, light_pipeline, pbr_pipeline, smaa_edge_pipeline, smaa_weight_pipeline, smaa_blend_pipeline, hdr_tonemap_pipeline;
+	
+	std::array<VkPipelineLayout,2> gaussian_blur_xy_pipeline_layouts;
+	std::array<VkPipeline,2> gaussian_blur_xy_pipelines;
 
 	std::vector<VkSemaphore> semaphores;
 
 	glm::mat4 water_bottle_m_matrix, water_bottle_normal_matrix, box_m_matrix, box_normal_matrix;
-	glm::mat4 v_matrix, inverse_v_matrix, p_matrix;
+	glm::mat4 v_matrix, inverse_v_matrix, p_matrix, camera_v_matrix, camera_p_matrix;
 	glm::vec4 camera_pos, camera_dir, light_pos[4], light_color[4];
 	double ex_xpos = -1, ex_ypos = -1;
 
@@ -298,7 +310,7 @@ void VulkanSSAO::create_logical_device() {
 		queue_priorities.data()
 		});
 
-	std::vector<const char*> desired_device_level_extensions = { "VK_KHR_swapchain" };
+	std::vector<const char*> desired_device_level_extensions = { "VK_KHR_swapchain"};
 	VkPhysicalDeviceFeatures selected_device_features = { 0 };
 	selected_device_features.samplerAnisotropy = VK_TRUE;
 	selected_device_features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
@@ -370,8 +382,11 @@ void VulkanSSAO::create_swapchain() {
 }
 
 void VulkanSSAO::calculate_projection_matrix() {
-	p_matrix = glm::perspective(45.0f, static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
+	p_matrix = glm::perspective(glm::radians(90.0f), static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
 	p_matrix[1][1] *= -1;
+
+	camera_p_matrix = glm::perspective(glm::radians(120.0f), static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
+	camera_p_matrix[1][1] *= -1;
 }
 
 void VulkanSSAO::create_command_pool() {
@@ -398,7 +413,7 @@ void VulkanSSAO::allocate_command_buffers() {
 
 void VulkanSSAO::create_host_buffers() {
 	tinygltf::TinyGLTF loader;
-	tinygltf::Model water_bottle, box;
+	tinygltf::Model water_bottle, box, cube;
 	std::string err;
 	std::string warn;
 
@@ -453,6 +468,16 @@ void VulkanSSAO::create_host_buffers() {
 		nullptr, box_model_data);
 	box_model_data.image_layers++;
 
+	loader.LoadBinaryFromFile(&cube, &err, &warn, "resources//models//Cube//Cube.glb");
+	vulkan_helper::copy_gltf_contents(box,
+		std::vector{
+		vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_NORMAL },
+		true,
+		true,
+		std::vector<vulkan_helper::t_model_attributes>(),
+		nullptr, cube_model_data);
+
 	// images for SMAA
 	// AreaTexDx10.R8G8 is 160x560
 	std::string area_tex_file_path = "resources//textures//AreaTexDX10.R8G8";
@@ -470,6 +495,7 @@ void VulkanSSAO::create_host_buffers() {
 		0,
 		vulkan_helper::get_model_data_total_size(water_bottle_model_data) +
 		vulkan_helper::get_model_data_total_size(box_model_data) +
+		vulkan_helper::get_model_data_total_size(cube_model_data) +
 		area_tex_size + search_tex_size,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_SHARING_MODE_EXCLUSIVE,
@@ -480,12 +506,12 @@ void VulkanSSAO::create_host_buffers() {
 
 	//	bottle descriptor		box descriptor			camera descriptor		light_descriptor
 	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
-	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	208b    ] 48b	[ set:2	32b	   	]
-	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4+vec4	]		[ 2*vec4 		]
+	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	208b    ] 48b	[ set:2	160b   	]
+	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4+vec4	]		[ 2*mat4+2*vec4	]
 	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
 	//	smaa_rt_metrics descriptor
 	//	--------[---------------] 
-	//	 224b	[ set:3	16b		]
+	//	 96b	[ set:3	16b		]
 	//			[ 1*vec4		]
 	//	--------[---------------]
 
@@ -551,6 +577,20 @@ void VulkanSSAO::create_host_buffers() {
 	box_model_data.image_layers++;
 	offset += 2048*2048*4;
 
+	vulkan_helper::copy_gltf_contents(box,
+		std::vector{
+		vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_NORMAL },
+		true,
+		true,
+		std::vector<vulkan_helper::t_model_attributes>(),
+		static_cast<uint8_t*>(host_data_pointer) + offset, cube_model_data);
+	
+	cube_model_data.host_interleaved_vertex_data_offset += offset;
+	cube_model_data.host_index_data_offset += offset;
+
+	offset += vulkan_helper::get_model_data_total_size(cube_model_data);
+
 	// SMAA images copying
 	area_tex.read(reinterpret_cast<char*>(host_data_pointer) + offset, area_tex_size);
 	search_tex.read(static_cast<char*>(host_data_pointer) + offset + area_tex_size, search_tex_size);
@@ -566,7 +606,8 @@ void VulkanSSAO::create_device_buffers() {
 		nullptr,
 		0,
 		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
-		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size,
+		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size +
+		cube_model_data.interleaved_vertex_data_size + cube_model_data.index_data_size,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		VK_SHARING_MODE_EXCLUSIVE,
 		0,
@@ -710,7 +751,7 @@ void VulkanSSAO::create_device_buffers() {
 		VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
 		VK_FALSE,
 	};
-	vkCreateSampler(device, &sampler_create_info, nullptr, &device_water_bottle_sampler);
+	vkCreateSampler(device, &sampler_create_info, nullptr, &device_max_aniso_linear_sampler);
 
 	water_bottle_model_data.device_interleaved_vertex_data_offset = 0;
 	water_bottle_model_data.device_index_data_offset = water_bottle_model_data.interleaved_vertex_data_size;
@@ -719,6 +760,9 @@ void VulkanSSAO::create_device_buffers() {
 	box_model_data.device_interleaved_vertex_data_offset = water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size;
 	box_model_data.device_index_data_offset = box_model_data.device_interleaved_vertex_data_offset + box_model_data.interleaved_vertex_data_size;
 	box_model_data.device_image_data_offset = device_memory_requirements[0].size + device_memory_requirements[1].size + alignment + device_memory_requirements[2].size;
+
+	cube_model_data.device_interleaved_vertex_data_offset = box_model_data.device_index_data_offset + box_model_data.index_data_size;
+	cube_model_data.device_index_data_offset = cube_model_data.device_interleaved_vertex_data_offset + cube_model_data.interleaved_vertex_data_size;
 }
 
 void VulkanSSAO::create_attachments() {
@@ -727,7 +771,7 @@ void VulkanSSAO::create_attachments() {
 		nullptr,
 		0,
 		VK_IMAGE_TYPE_2D,
-		VK_FORMAT_D16_UNORM,
+		VK_FORMAT_D32_SFLOAT,
 		{ window_size.width, window_size.height, 1 },
 		1,
 		1,
@@ -740,17 +784,26 @@ void VulkanSSAO::create_attachments() {
 		VK_IMAGE_LAYOUT_UNDEFINED
 	};
 	vkCreateImage(device, &image_create_info, nullptr, &device_depth_image);
-
+	
+	// Stencil image for smaa pass
 	image_create_info.format = VK_FORMAT_S8_UINT;
 	image_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	image_create_info.arrayLayers = 1;
 	vkCreateImage(device, &image_create_info, nullptr, &device_stencil_image);
 
+	// Ping Pong HDR buffer
 	image_create_info.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	image_create_info.arrayLayers = 2;
 	image_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 	vkCreateImage(device, &image_create_info, nullptr, &device_render_target_image);
 
-	// smaa image will hold both the blend_tex and edge_tex
+	// Ping Pong R32B32 depth image for variance shadow mapping
+	image_create_info.format = VK_FORMAT_R32G32_SFLOAT;
+	image_create_info.arrayLayers = 2;
+	image_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+	vkCreateImage(device, &image_create_info, nullptr, &device_vsm_depth_image);
+
+	// Smaa image will hold both the blend_tex and edge_tex
 	image_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_create_info.arrayLayers = 2;
 	image_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -759,7 +812,8 @@ void VulkanSSAO::create_attachments() {
 	vkGetImageMemoryRequirements(device, device_depth_image, &device_memory_attachments_requirements[0]);
 	vkGetImageMemoryRequirements(device, device_stencil_image, &device_memory_attachments_requirements[1]);
 	vkGetImageMemoryRequirements(device, device_render_target_image, &device_memory_attachments_requirements[2]);
-	vkGetImageMemoryRequirements(device, device_smaa_image, &device_memory_attachments_requirements[3]);
+	vkGetImageMemoryRequirements(device, device_vsm_depth_image, &device_memory_attachments_requirements[3]);
+	vkGetImageMemoryRequirements(device, device_smaa_image, &device_memory_attachments_requirements[4]);
 
 	uint64_t allocation_size = 0;
 	for (const auto& device_memory_attachments_requirement : device_memory_attachments_requirements) {
@@ -787,7 +841,8 @@ void VulkanSSAO::create_attachments() {
 	vkBindImageMemory(device, device_depth_image, device_memory_attachments, 0);
 	vkBindImageMemory(device, device_stencil_image, device_memory_attachments, sum_offsets(1));
 	vkBindImageMemory(device, device_render_target_image, device_memory_attachments, sum_offsets(2));
-	vkBindImageMemory(device, device_smaa_image, device_memory_attachments, sum_offsets(3));
+	vkBindImageMemory(device, device_vsm_depth_image, device_memory_attachments, sum_offsets(3));
+	vkBindImageMemory(device, device_smaa_image, device_memory_attachments, sum_offsets(4));
 
 	VkImageViewCreateInfo image_view_create_info = {
 		VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -795,7 +850,7 @@ void VulkanSSAO::create_attachments() {
 		0,
 		device_depth_image,
 		VK_IMAGE_VIEW_TYPE_2D,
-		VK_FORMAT_D16_UNORM,
+		VK_FORMAT_D32_SFLOAT,
 		{VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
 		{ VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0 , 1 }
 	};
@@ -809,21 +864,31 @@ void VulkanSSAO::create_attachments() {
 	// Render targets image views
 	image_view_create_info.image = device_render_target_image;
 	image_view_create_info.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0 , 1 };
+	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_render_target_image_view);
 
 	image_view_create_info.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1 , 1 };
+	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_render_target_second_image_view);
+
+	// VSM image views
+	image_view_create_info.image = device_vsm_depth_image;
+	image_view_create_info.format = VK_FORMAT_R32G32_SFLOAT;
+	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1 };
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_vsm_depth_0_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R32G32_SFLOAT;
+	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 };
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_vsm_depth_1_image_view);
 
 	// SMAA image views
 	image_view_create_info.image = device_smaa_image;
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0 , 1 };
+	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_edge_image_view);
 
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1 , 1 };
+	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_weight_image_view);
 
 	VkSamplerCreateInfo sampler_create_info = {
@@ -847,19 +912,42 @@ void VulkanSSAO::create_attachments() {
 		VK_FALSE,
 	};
 	vkCreateSampler(device, &sampler_create_info, nullptr, &device_render_target_sampler);
+
+	sampler_create_info = {
+		VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		nullptr,
+		0,
+		VK_FILTER_LINEAR,
+		VK_FILTER_LINEAR,
+		VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+		VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+		VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+		0.0f,
+		VK_TRUE,
+		16.0f,
+		VK_FALSE,
+		VK_COMPARE_OP_LESS,
+		0.0f,
+		1.0f,
+		VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+		VK_FALSE,
+	};
+	vkCreateSampler(device, &sampler_create_info, nullptr, &device_shadow_map_sampler);
 }
 
 void VulkanSSAO::create_descriptor_pool_and_layouts() {
-	std::array<VkDescriptorPoolSize, 2> descriptor_pool_size { {
+	std::array<VkDescriptorPoolSize, 3> descriptor_pool_size { {
 	{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5},
-	{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 17 }
+	{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 20 },
+	{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 }
 	} };
 
 	VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		nullptr,
 		VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-		9,
+		11,
 		descriptor_pool_size.size(),
 		descriptor_pool_size.data()
 	};
@@ -867,6 +955,30 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 
 	std::array<VkDescriptorSetLayoutBinding,3> descriptor_set_layout_binding;
 	
+	// Layout of the depth r32g32 images for the gaussian blur pipelines
+	descriptor_set_layout_binding[0] = {
+		0,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		1,
+		VK_SHADER_STAGE_COMPUTE_BIT,
+		nullptr
+	};
+	descriptor_set_layout_binding[1] = {
+		1,
+		VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+		1,
+		VK_SHADER_STAGE_COMPUTE_BIT,
+		nullptr
+	};
+	VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		nullptr,
+		0,
+		2,
+		descriptor_set_layout_binding.data()
+	};
+	vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &gaussian_blur_descriptor_sets_layout[0]);
+
 	// Layout for the pbr model
 	descriptor_set_layout_binding[0] = {
 		0,
@@ -882,11 +994,18 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 		VK_SHADER_STAGE_FRAGMENT_BIT,
 		nullptr
 	};
-	VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+	descriptor_set_layout_binding[2] = {
+		2,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		1,
+		VK_SHADER_STAGE_FRAGMENT_BIT,
+		nullptr
+	};
+	descriptor_set_layout_create_info = {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		nullptr,
 		0,
-		2,
+		3,
 		descriptor_set_layout_binding.data()
 	};
 	vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &pbr_descriptor_sets_layout[0]);
@@ -964,7 +1083,7 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 		0,
 		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
 		1,
-		VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+		VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
 		nullptr
 	};
 	descriptor_set_layout_create_info = {
@@ -994,6 +1113,95 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 	vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &hdr_descriptor_sets_layout[0]);
 }
 
+void VulkanSSAO::allocate_gaussian_blur_descriptor_sets() {
+	std::array<VkDescriptorSetLayout, 2> layouts_of_sets = {gaussian_blur_descriptor_sets_layout[0],gaussian_blur_descriptor_sets_layout[0]};
+	VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
+		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		nullptr,
+		descriptor_pool,
+		layouts_of_sets.size(),
+		layouts_of_sets.data()
+	};
+	vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, gaussian_blur_descriptor_sets.data());
+	
+	VkDescriptorImageInfo in_shadow_map_descriptor_buffer_info_0 = {
+		device_max_aniso_linear_sampler,
+		device_vsm_depth_0_image_view,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+	};
+	VkDescriptorImageInfo out_shadow_map_descriptor_buffer_info_0 = {
+		device_max_aniso_linear_sampler,
+		device_vsm_depth_1_image_view,
+		VK_IMAGE_LAYOUT_GENERAL
+	};
+
+	VkDescriptorImageInfo in_shadow_map_descriptor_buffer_info_1 = {
+		device_max_aniso_linear_sampler,
+		device_vsm_depth_1_image_view,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+	};
+	VkDescriptorImageInfo out_shadow_map_descriptor_buffer_info_1 = {
+		device_max_aniso_linear_sampler,
+		device_vsm_depth_0_image_view,
+		VK_IMAGE_LAYOUT_GENERAL
+	};
+
+	// Second writes are for the gaussian blur x pipeline
+	VkWriteDescriptorSet write_descriptor_set[] = { 
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		gaussian_blur_descriptor_sets[0],
+		0,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		&in_shadow_map_descriptor_buffer_info_0,
+		nullptr,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		gaussian_blur_descriptor_sets[0],
+		1,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+		&out_shadow_map_descriptor_buffer_info_0,
+		nullptr,
+		nullptr
+	},
+	// Second writes are for the gaussian blur y pipeline
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		gaussian_blur_descriptor_sets[1],
+		0,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		&in_shadow_map_descriptor_buffer_info_1,
+		nullptr,
+		nullptr
+	},
+	
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		gaussian_blur_descriptor_sets[1],
+		1,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+		&out_shadow_map_descriptor_buffer_info_1,
+		nullptr,
+		nullptr
+	}
+	};
+	vkUpdateDescriptorSets(device, 4, write_descriptor_set, 0, nullptr);
+}
+
 void VulkanSSAO::allocate_pbr_descriptor_sets() {
 	std::array<VkDescriptorSetLayout, 2> layouts_of_sets = {pbr_descriptor_sets_layout[0],pbr_descriptor_sets_layout[0]};
 	VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
@@ -1007,18 +1215,22 @@ void VulkanSSAO::allocate_pbr_descriptor_sets() {
 
 	VkDescriptorBufferInfo water_bottle_descriptor_buffer_info = { device_uniform_buffer, 0, 2 * sizeof(glm::mat4) };
 	VkDescriptorImageInfo water_bottle_descriptor_images_info[] = {
-		{ device_water_bottle_sampler, device_water_bottle_color_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-		{ device_water_bottle_sampler, device_water_bottle_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-		{ device_water_bottle_sampler, device_water_bottle_normal_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-		{ device_water_bottle_sampler, device_water_bottle_emissive_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+		{ device_max_aniso_linear_sampler, device_water_bottle_color_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_water_bottle_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_water_bottle_normal_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_water_bottle_emissive_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
 	};
 
 	VkDescriptorBufferInfo box_descriptor_buffer_info = { device_uniform_buffer, 256, 2 * sizeof(glm::mat4) };
 	VkDescriptorImageInfo box_descriptor_images_info[] = {
-		{ device_water_bottle_sampler, device_box_color_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-		{ device_water_bottle_sampler, device_box_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-		{ device_water_bottle_sampler, device_box_normal_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-		{ device_water_bottle_sampler, device_box_emissive_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+		{ device_max_aniso_linear_sampler, device_box_color_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_box_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_box_normal_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_box_emissive_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+	};
+
+	VkDescriptorImageInfo shadow_map_image_info = {
+		device_shadow_map_sampler, device_vsm_depth_0_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 	};
 
 	VkWriteDescriptorSet write_descriptor_set[] = { {
@@ -1048,6 +1260,18 @@ void VulkanSSAO::allocate_pbr_descriptor_sets() {
 	{
 		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 		nullptr,
+		pbr_descriptor_sets[0],
+		2,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		&shadow_map_image_info,
+		nullptr,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
 		pbr_descriptor_sets[1],
 		0,
 		0,
@@ -1068,9 +1292,21 @@ void VulkanSSAO::allocate_pbr_descriptor_sets() {
 		box_descriptor_images_info,
 		nullptr,
 		nullptr
-	} 
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[1],
+		2,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		&shadow_map_image_info,
+		nullptr,
+		nullptr
+	}
 	};
-	vkUpdateDescriptorSets(device, 4, write_descriptor_set, 0, nullptr);
+	vkUpdateDescriptorSets(device, 6, write_descriptor_set, 0, nullptr);
 }
 
 void VulkanSSAO::allocate_camera_light_sets() {
@@ -1093,7 +1329,7 @@ void VulkanSSAO::allocate_camera_light_sets() {
 	VkDescriptorBufferInfo light_descriptor_buffer_info = {
 		device_uniform_buffer,
 		768,
-		2*sizeof(glm::vec4)
+		2*sizeof(glm::mat4)+2*sizeof(glm::vec4)
 	};
 
 	// First writes are for the camera descriptor
@@ -1271,34 +1507,37 @@ void VulkanSSAO::create_renderpass() {
 	*	|-----------------------------------|
 	*/
 
-	VkAttachmentDescription attachment_description[] = {
-	{
-		0,
-		VK_FORMAT_D16_UNORM,
-		VK_SAMPLE_COUNT_1_BIT,
-		VK_ATTACHMENT_LOAD_OP_CLEAR,
-		VK_ATTACHMENT_STORE_OP_STORE,
-		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-		VK_ATTACHMENT_STORE_OP_DONT_CARE,
-		VK_IMAGE_LAYOUT_UNDEFINED,
-		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-	},
-	{
-		0,
-		VK_FORMAT_R32G32B32A32_SFLOAT,
-		VK_SAMPLE_COUNT_1_BIT,
-		VK_ATTACHMENT_LOAD_OP_CLEAR,
-		VK_ATTACHMENT_STORE_OP_STORE,
-		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-		VK_ATTACHMENT_STORE_OP_DONT_CARE,
-		VK_IMAGE_LAYOUT_UNDEFINED,
-		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-	} };
+	VkAttachmentDescription attachment_description[2];
+	VkAttachmentReference attachment_reference[2];
+	VkSubpassDescription subpass_description;
+	VkRenderPassCreateInfo render_pass_create_info;
 
-	VkAttachmentReference attachment_reference[] = {
-		{ 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL },
-		{ 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } };
-	VkSubpassDescription subpass_description = {
+	// shadow_map renderpass creation
+	attachment_description[0] = {
+		0,
+		VK_FORMAT_D32_SFLOAT,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_ATTACHMENT_LOAD_OP_CLEAR,
+		VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL
+	};
+	attachment_description[1] = {
+		0,
+		VK_FORMAT_R32G32_SFLOAT,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_ATTACHMENT_LOAD_OP_CLEAR,
+		VK_ATTACHMENT_STORE_OP_STORE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+	};
+	attachment_reference[0] = { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+	attachment_reference[1] = { 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+	subpass_description = {
 		0,
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
 		0,
@@ -1311,7 +1550,59 @@ void VulkanSSAO::create_renderpass() {
 		nullptr
 	};
 
-	VkRenderPassCreateInfo render_pass_create_info = {
+	render_pass_create_info = {
+		VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+		nullptr,
+		0,
+		2,
+		attachment_description,
+		1,
+		&subpass_description,
+		0,
+		nullptr
+	};
+	vkCreateRenderPass(device, &render_pass_create_info, nullptr, &shadow_map_render_pass);
+
+	// PBR renderpass creation
+	attachment_description[0] = {
+		0,
+		VK_FORMAT_D32_SFLOAT,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_ATTACHMENT_LOAD_OP_CLEAR,
+		VK_ATTACHMENT_STORE_OP_STORE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+	};
+	attachment_description[1] = {
+		0,
+		VK_FORMAT_R32G32B32A32_SFLOAT,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_ATTACHMENT_LOAD_OP_CLEAR,
+		VK_ATTACHMENT_STORE_OP_STORE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+	};
+
+	attachment_reference[0] = { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+	attachment_reference[1] = { 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+	subpass_description = {
+		0,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		0,
+		nullptr,
+		1,
+		&attachment_reference[1],
+		nullptr,
+		&attachment_reference[0],
+		0,
+		nullptr
+	};
+
+	render_pass_create_info = {
 		VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
 		nullptr,
 		0,
@@ -1511,11 +1802,30 @@ void VulkanSSAO::create_renderpass() {
 }
 
 void VulkanSSAO::create_framebuffers() {
-	framebuffers.resize(4+swapchain_images_count);
+	framebuffers.resize(5+swapchain_images_count);
 	swapchain_images_views.resize(swapchain_images_count);
 
-	VkImageView attachments[] = { device_depth_image_view, device_render_target_image_view };
-	VkFramebufferCreateInfo framebuffer_create_info = {
+	VkImageView attachments[2];
+	VkFramebufferCreateInfo framebuffer_create_info;
+
+	attachments[0] = { device_depth_image_view };
+	attachments[1] = { device_vsm_depth_0_image_view };
+	framebuffer_create_info = {
+		VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+		nullptr,
+		0,
+		shadow_map_render_pass,
+		2,
+		attachments,
+		swapchain_create_info.imageExtent.width,
+		swapchain_create_info.imageExtent.height,
+		swapchain_create_info.imageArrayLayers
+	};
+	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[0]);
+
+	attachments[0] = { device_depth_image_view};
+	attachments[1] = { device_render_target_image_view };
+	framebuffer_create_info = {
 		VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
 		nullptr,
 		0,
@@ -1526,7 +1836,7 @@ void VulkanSSAO::create_framebuffers() {
 		swapchain_create_info.imageExtent.height,
 		swapchain_create_info.imageArrayLayers
 	};
-	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[0]);
+	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[1]);
 
 	attachments[0] = { device_stencil_image_view };
 	attachments[1] = { device_smaa_edge_image_view };
@@ -1541,7 +1851,7 @@ void VulkanSSAO::create_framebuffers() {
 		swapchain_create_info.imageExtent.height,
 		swapchain_create_info.imageArrayLayers
 	};
-	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[1]);
+	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[2]);
 
 	attachments[0] = { device_stencil_image_view };
 	attachments[1] = { device_smaa_weight_image_view };
@@ -1556,7 +1866,7 @@ void VulkanSSAO::create_framebuffers() {
 		swapchain_create_info.imageExtent.height,
 		swapchain_create_info.imageArrayLayers
 	};
-	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[2]);
+	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[3]);
 
 
 	attachments[0] = { device_render_target_second_image_view };
@@ -1571,7 +1881,7 @@ void VulkanSSAO::create_framebuffers() {
 		swapchain_create_info.imageExtent.height,
 		swapchain_create_info.imageArrayLayers
 	};
-	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[3]);
+	vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[4]);
 
 	for (uint32_t i = 0; i < swapchain_images_count; i++) {
 		VkImageViewCreateInfo image_view_create_info = {
@@ -1598,9 +1908,496 @@ void VulkanSSAO::create_framebuffers() {
 			swapchain_create_info.imageExtent.height,
 			swapchain_create_info.imageArrayLayers
 		};
-		vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[i + 4]);
+		vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[i + 5]);
 	}
 
+}
+
+void VulkanSSAO::create_shadow_map_pipeline() {
+	std::vector<uint8_t> shader_contents;
+	vulkan_helper::get_binary_file_content("shaders//shadow_map.vert.spv", shader_contents);
+	VkShaderModuleCreateInfo shader_module_create_info = {
+		VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		nullptr,
+		0,
+		shader_contents.size(),
+		reinterpret_cast<uint32_t*>(shader_contents.data())
+	};
+	VkShaderModule vertex_shader_module;
+	if (vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module)) { throw SHADER_MODULE_CREATION_FAILED; }
+
+	vulkan_helper::get_binary_file_content("shaders//shadow_map.frag.spv", shader_contents);
+	shader_module_create_info.codeSize = shader_contents.size();
+	shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+	VkShaderModule fragment_shader_module;
+	if (vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module)) { throw SHADER_MODULE_CREATION_FAILED; }
+
+	VkPipelineShaderStageCreateInfo pipeline_shaders_stage_create_info[2] = {
+	{
+		VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_SHADER_STAGE_VERTEX_BIT,
+		vertex_shader_module,
+		"main",
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_SHADER_STAGE_FRAGMENT_BIT,
+		fragment_shader_module,
+		"main",
+		nullptr
+	}};
+
+	VkVertexInputBindingDescription vertex_input_binding_description = {
+		0,
+		12 * sizeof(float),
+		VK_VERTEX_INPUT_RATE_VERTEX
+	};
+	VkVertexInputAttributeDescription vertex_input_attribute_description[] = { {
+		0,
+		0,
+		VK_FORMAT_R32G32B32_SFLOAT,
+		0
+	},
+	{
+		1,
+		0,
+		VK_FORMAT_R32G32_SFLOAT,
+		3 * sizeof(float)
+	},
+	{
+		2,
+		0,
+		VK_FORMAT_R32G32B32_SFLOAT,
+		5 * sizeof(float)
+	},
+	{
+		3,
+		0,
+		VK_FORMAT_R32G32B32A32_SFLOAT,
+		8 * sizeof(float)
+	}
+	};
+	VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		&vertex_input_binding_description,
+		4,
+		vertex_input_attribute_description
+	};
+
+	VkPipelineInputAssemblyStateCreateInfo pipeline_input_assembly_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+		VK_FALSE
+	};
+
+	VkViewport viewport = {
+		0.0f,
+		0.0f,
+		static_cast<float>(swapchain_create_info.imageExtent.width),
+		static_cast<float>(swapchain_create_info.imageExtent.height),
+		0.0f,
+		1.0f
+	};
+	VkRect2D scissor = {
+		{0,0},
+		swapchain_create_info.imageExtent
+	};
+	VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		&viewport,
+		1,
+		&scissor
+	};
+
+	VkPipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_FALSE,
+		VK_FALSE,
+		VK_POLYGON_MODE_FILL,
+		VK_CULL_MODE_FRONT_BIT,
+		VK_FRONT_FACE_COUNTER_CLOCKWISE,
+		VK_FALSE,
+		0.0f,
+		0.0f,
+		0.0f,
+		1.0f
+	};
+
+	VkPipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_FALSE,
+		1.0f,
+		nullptr,
+		VK_FALSE,
+		VK_FALSE
+	};
+
+	VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_TRUE,
+		VK_TRUE,
+		VK_COMPARE_OP_LESS,
+		VK_FALSE,
+		VK_FALSE,
+		{},
+		{},
+		0.0f,
+		1.0f
+	};
+
+	VkPipelineColorBlendAttachmentState pipeline_color_blend_attachment_state = {
+		VK_FALSE,
+		VK_BLEND_FACTOR_ONE,
+		VK_BLEND_FACTOR_ZERO,
+		VK_BLEND_OP_ADD,
+		VK_BLEND_FACTOR_ONE,
+		VK_BLEND_FACTOR_ZERO,
+		VK_BLEND_OP_ADD,
+		VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+	};
+	VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_FALSE,
+		VK_LOGIC_OP_COPY,
+		1,
+		&pipeline_color_blend_attachment_state,
+		{0.0f,0.0f,0.0f,0.0f}
+	};
+
+	std::array<VkDescriptorSetLayout,2> descriptor_set_layouts = { pbr_descriptor_sets_layout[0], camera_light_sets_layout[0] };
+	VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		nullptr,
+		0,
+		descriptor_set_layouts.size(),
+		descriptor_set_layouts.data(),
+		0,
+		nullptr
+	};
+	vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &shadow_map_pipeline_layout);
+
+	VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+		VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+		nullptr,
+		0,
+		2,
+		pipeline_shaders_stage_create_info,
+		&pipeline_vertex_input_state_create_info,
+		&pipeline_input_assembly_create_info,
+		nullptr,
+		&pipeline_viewport_state_create_info,
+		&pipeline_rasterization_state_create_info,
+		&pipeline_multisample_state_create_info,
+		&pipeline_depth_stencil_state_create_info,
+		&pipeline_color_blend_state_create_info,
+		nullptr,
+		shadow_map_pipeline_layout,
+		shadow_map_render_pass,
+		0,
+		VK_NULL_HANDLE,
+		-1
+	};
+
+	vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &shadow_map_pipeline);
+	vkDestroyShaderModule(device, vertex_shader_module, nullptr);
+}
+
+void VulkanSSAO::create_gaussian_blur_pipelines() {
+	std::vector<uint8_t> shader_contents;
+	vulkan_helper::get_binary_file_content("shaders//gaussian_blur_x.comp.spv", shader_contents);
+	VkShaderModuleCreateInfo shader_module_create_info = {
+		VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		nullptr,
+		0,
+		shader_contents.size(),
+		reinterpret_cast<uint32_t*>(shader_contents.data())
+	};
+	std::array<VkShaderModule,2> shader_modules;
+	if (vkCreateShaderModule(device, &shader_module_create_info, nullptr, &shader_modules[0])) { throw SHADER_MODULE_CREATION_FAILED; }
+
+	vulkan_helper::get_binary_file_content("shaders//gaussian_blur_y.comp.spv", shader_contents);
+	shader_module_create_info.codeSize = shader_contents.size();
+	shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+	if (vkCreateShaderModule(device, &shader_module_create_info, nullptr, &shader_modules[1])) { throw SHADER_MODULE_CREATION_FAILED; }
+
+	std::array<VkPipelineShaderStageCreateInfo,2> pipeline_shaders_stage_create_infos;
+	pipeline_shaders_stage_create_infos[0] = {
+		VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_SHADER_STAGE_COMPUTE_BIT,
+		shader_modules[0],
+		"main",
+		nullptr
+	};
+	pipeline_shaders_stage_create_infos[1] = {
+		VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_SHADER_STAGE_COMPUTE_BIT,
+		shader_modules[1],
+		"main",
+		nullptr
+	};
+
+	std::array<VkDescriptorSetLayout,2> descriptor_set_layouts = {gaussian_blur_descriptor_sets_layout[0], smaa_descriptor_sets_layout[3]};
+	VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		nullptr,
+		0,
+		descriptor_set_layouts.size(),
+		descriptor_set_layouts.data(),
+		0,
+		nullptr
+	};
+	vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &gaussian_blur_xy_pipeline_layouts[0]);
+	vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &gaussian_blur_xy_pipeline_layouts[1]);
+
+	std::array<VkComputePipelineCreateInfo,2> compute_pipeline_create_infos;
+	compute_pipeline_create_infos[0] = {
+		VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+		nullptr,
+		0,
+		pipeline_shaders_stage_create_infos[0],
+		gaussian_blur_xy_pipeline_layouts[0],
+		VK_NULL_HANDLE,
+		-1
+	};
+	compute_pipeline_create_infos[1] = {
+		VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+		nullptr,
+		0,
+		pipeline_shaders_stage_create_infos[1],
+		gaussian_blur_xy_pipeline_layouts[1],
+		VK_NULL_HANDLE,
+		-1
+	};
+
+	vkCreateComputePipelines(device, VK_NULL_HANDLE, compute_pipeline_create_infos.size(),
+	 	compute_pipeline_create_infos.data(), nullptr, gaussian_blur_xy_pipelines.data() );
+}
+
+void VulkanSSAO::create_light_pipeline() {
+	std::vector<uint8_t> shader_contents;
+	vulkan_helper::get_binary_file_content("shaders//light.vert.spv", shader_contents);
+	VkShaderModuleCreateInfo shader_module_create_info = {
+		VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		nullptr,
+		0,
+		shader_contents.size(),
+		reinterpret_cast<uint32_t*>(shader_contents.data())
+	};
+	VkShaderModule vertex_shader_module;
+	if (vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module)) { throw SHADER_MODULE_CREATION_FAILED; }
+
+	vulkan_helper::get_binary_file_content("shaders//light.frag.spv", shader_contents);
+	shader_module_create_info.codeSize = shader_contents.size();
+	shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+	VkShaderModule fragment_shader_module;
+	if (vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module)) { throw SHADER_MODULE_CREATION_FAILED; }
+
+	VkPipelineShaderStageCreateInfo pipeline_shaders_stage_create_info[2] = {
+		{
+			VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			nullptr,
+			0,
+			VK_SHADER_STAGE_VERTEX_BIT,
+			vertex_shader_module,
+			"main",
+			nullptr
+		},
+		{
+			VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			nullptr,
+			0,
+			VK_SHADER_STAGE_FRAGMENT_BIT,
+			fragment_shader_module,
+			"main",
+			nullptr
+		}
+	};
+
+	VkVertexInputBindingDescription vertex_input_binding_description = {
+		0,
+		6 * sizeof(float),
+		VK_VERTEX_INPUT_RATE_VERTEX
+	};
+	VkVertexInputAttributeDescription vertex_input_attribute_description[] = { {
+		0,
+		0,
+		VK_FORMAT_R32G32B32_SFLOAT,
+		0
+	},
+	{
+		1,
+		0,
+		VK_FORMAT_R32G32B32_SFLOAT,
+		3 * sizeof(float)
+	}
+	};
+	VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		&vertex_input_binding_description,
+		2,
+		vertex_input_attribute_description
+	};
+
+	VkPipelineInputAssemblyStateCreateInfo pipeline_input_assembly_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+		VK_FALSE
+	};
+
+	VkViewport viewport = {
+		0.0f,
+		0.0f,
+		static_cast<float>(swapchain_create_info.imageExtent.width),
+		static_cast<float>(swapchain_create_info.imageExtent.height),
+		0.0f,
+		1.0f
+	};
+	VkRect2D scissor = {
+		{0,0},
+		swapchain_create_info.imageExtent
+	};
+	VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		&viewport,
+		1,
+		&scissor
+	};
+
+	VkPipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_FALSE,
+		VK_FALSE,
+		VK_POLYGON_MODE_FILL,
+		VK_CULL_MODE_NONE,
+		VK_FRONT_FACE_COUNTER_CLOCKWISE,
+		VK_FALSE,
+		0.0f,
+		0.0f,
+		0.0f,
+		1.0f
+	};
+
+	VkPipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_FALSE,
+		1.0f,
+		nullptr,
+		VK_FALSE,
+		VK_FALSE
+	};
+
+	VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_TRUE,
+		VK_TRUE,
+		VK_COMPARE_OP_LESS,
+		VK_FALSE,
+		VK_FALSE,
+		{},
+		{},
+		0.0f,
+		1.0f
+	};
+
+	VkPipelineColorBlendAttachmentState pipeline_color_blend_attachment_state = {
+		VK_FALSE,
+		VK_BLEND_FACTOR_ONE,
+		VK_BLEND_FACTOR_ZERO,
+		VK_BLEND_OP_ADD,
+		VK_BLEND_FACTOR_ONE,
+		VK_BLEND_FACTOR_ZERO,
+		VK_BLEND_OP_ADD,
+		VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+	};
+	VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_FALSE,
+		VK_LOGIC_OP_COPY,
+		1,
+		&pipeline_color_blend_attachment_state,
+		{0.0f,0.0f,0.0f,0.0f}
+	};
+
+	std::array<VkDescriptorSetLayout,2> descriptor_set_layouts = { camera_light_sets_layout[0], camera_light_sets_layout[0] };
+	VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		nullptr,
+		0,
+		descriptor_set_layouts.size(),
+		descriptor_set_layouts.data(),
+		0,
+		nullptr
+	};
+	vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &light_pipeline_layout);
+
+	VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+		VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+		nullptr,
+		0,
+		2,
+		pipeline_shaders_stage_create_info,
+		&pipeline_vertex_input_state_create_info,
+		&pipeline_input_assembly_create_info,
+		nullptr,
+		&pipeline_viewport_state_create_info,
+		&pipeline_rasterization_state_create_info,
+		&pipeline_multisample_state_create_info,
+		&pipeline_depth_stencil_state_create_info,
+		&pipeline_color_blend_state_create_info,
+		nullptr,
+		light_pipeline_layout,
+		pbr_render_pass,
+		0,
+		VK_NULL_HANDLE,
+		-1
+	};
+
+	vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &light_pipeline);
+	vkDestroyShaderModule(device, vertex_shader_module, nullptr);
+	vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
 void VulkanSSAO::create_pbr_pipeline() {
@@ -2547,16 +3344,21 @@ void VulkanSSAO::upload_input_data() {
 	VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,nullptr };
 	vkBeginCommandBuffer(command_buffers[0], &command_buffer_begin_info);
 
-	std::array <VkBufferCopy, 2> buffer_copies { {
+	std::array <VkBufferCopy, 3> buffer_copies { {
 	{ 
 		0,0,
 		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size
 	},
 	{
-		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
-		water_bottle_model_data.image_size.width * water_bottle_model_data.image_size.height * 4 * water_bottle_model_data.image_layers,
+		vulkan_helper::get_model_data_total_size(water_bottle_model_data),
 		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size,
 		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size
+	},
+	{
+		vulkan_helper::get_model_data_total_size(water_bottle_model_data) + vulkan_helper::get_model_data_total_size(box_model_data),
+		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
+		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size,
+		cube_model_data.interleaved_vertex_data_size + cube_model_data.index_data_size
 	}}};
 	
 	vkCmdCopyBuffer(command_buffers[0], host_vertex_buffer, device_vertex_buffer, buffer_copies.size(), buffer_copies.data());
@@ -2632,7 +3434,7 @@ void VulkanSSAO::upload_input_data() {
 	vkCmdCopyBufferToImage(command_buffers[0], host_vertex_buffer, device_box_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
 	buffer_image_copy = {
-		box_model_data.host_image_data_offset + (box_model_data.image_size.width*box_model_data.image_size.height*4*box_model_data.image_layers),
+		cube_model_data.host_index_data_offset + cube_model_data.index_data_size,
 		0,
 		0,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
@@ -2642,8 +3444,7 @@ void VulkanSSAO::upload_input_data() {
 	vkCmdCopyBufferToImage(command_buffers[0], host_vertex_buffer, device_smaa_area_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
 	buffer_image_copy = {
-		box_model_data.host_image_data_offset + (box_model_data.image_size.width*box_model_data.image_size.height*4*box_model_data.image_layers) +
-		area_tex_size,
+		cube_model_data.host_index_data_offset + cube_model_data.index_data_size + area_tex_size,
 		0,
 		0,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
@@ -2732,6 +3533,7 @@ void VulkanSSAO::record_command_buffers() {
 	VkClearValue clear_colors[3];
 	clear_colors[0].depthStencil = { 1.0f, 0 };
 	clear_colors[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
+	clear_colors[2].color = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 	for (uint32_t i = 0; i < swapchain_images_count; i++) {
 		VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr };
@@ -2755,22 +3557,123 @@ void VulkanSSAO::record_command_buffers() {
 		};
 		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
 		
-		// PBR Renderpass Start
+		// shadow_map Renderpass Start
+		std::array<VkClearValue,2> shadow_map_clear_colors = {clear_colors[0], clear_colors[2]};
 		VkRenderPassBeginInfo render_pass_begin_info = {
 			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			nullptr,
-			pbr_render_pass,
+			shadow_map_render_pass,
 			framebuffers[0],
+			{{0,0},{swapchain_create_info.imageExtent}},
+			shadow_map_clear_colors.size(),
+			shadow_map_clear_colors.data()
+		};
+		vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline);
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_layout, 0, 2,
+			std::array<VkDescriptorSet,2> {pbr_descriptor_sets[0], camera_light_sets[1]}.data(), 0, nullptr);
+		VkDeviceSize offset = water_bottle_model_data.device_interleaved_vertex_data_offset;
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, water_bottle_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], water_bottle_model_data.indices, 1, 0, 0, 0);
+
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_layout, 0, 1, &pbr_descriptor_sets[1], 0, nullptr);
+		offset = box_model_data.device_interleaved_vertex_data_offset;
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, box_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], box_model_data.indices, 1, 0, 0, 0);
+
+		// shadow_map Renderpass End
+		vkCmdEndRenderPass(command_buffers[i]);
+
+		// Transitioning the rg32 shadow map layout from unknown to general (for writing)
+		std::array<VkImageMemoryBarrier,2> image_memory_barriers;
+		image_memory_barriers[0] = {
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			nullptr,
+			0,
+			VK_ACCESS_SHADER_WRITE_BIT,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			device_vsm_depth_image,
+			{ VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 }
+		};
+		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			0, 0, nullptr, 0, nullptr, 1, image_memory_barriers.data());
+
+		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_xy_pipelines[0]);
+		std::array<VkDescriptorSet, 2> gaussian_blur_pipeline_descriptor_sets = { gaussian_blur_descriptor_sets[0], smaa_descriptor_sets[3] };
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_xy_pipeline_layouts[0],
+			0, 2, gaussian_blur_pipeline_descriptor_sets.data(), 0, nullptr);
+		vkCmdDispatch(command_buffers[i],std::ceil(swapchain_create_info.imageExtent.width/32.0f), std::ceil(swapchain_create_info.imageExtent.height/32.0f), 1);
+
+		image_memory_barriers[0] = {
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			nullptr,
+			VK_ACCESS_SHADER_READ_BIT,
+			VK_ACCESS_SHADER_WRITE_BIT,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			device_vsm_depth_image,
+			{ VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1 }
+		};
+		image_memory_barriers[1] = {
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			nullptr,
+			VK_ACCESS_SHADER_WRITE_BIT,
+			VK_ACCESS_SHADER_READ_BIT,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			device_vsm_depth_image,
+			{ VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 }
+		};
+		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			0, 0, nullptr, 0, nullptr, 2, image_memory_barriers.data());
+
+		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_xy_pipelines[1]);
+		gaussian_blur_pipeline_descriptor_sets = { gaussian_blur_descriptor_sets[1], smaa_descriptor_sets[3] };
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_xy_pipeline_layouts[1],
+			0, 2, gaussian_blur_pipeline_descriptor_sets.data(), 0, nullptr);
+		vkCmdDispatch(command_buffers[i],std::ceil(swapchain_create_info.imageExtent.width/32.0f), std::ceil(swapchain_create_info.imageExtent.height/32.0f), 1);
+
+		image_memory_barriers[0] = {
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			nullptr,
+			VK_ACCESS_SHADER_WRITE_BIT,
+			VK_ACCESS_SHADER_READ_BIT,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			device_vsm_depth_image,
+			{ VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1 }
+		};
+		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			0, 0, nullptr, 0, nullptr, 1, image_memory_barriers.data());
+
+		// PBR Renderpass Start
+		render_pass_begin_info = {
+			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+			nullptr,
+			pbr_render_pass,
+			framebuffers[1],
 			{{0,0},{swapchain_create_info.imageExtent}},
 			2,
 			clear_colors
 		};
 		vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline);
 
+		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline);
 		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, 3,
 			std::array<VkDescriptorSet,3> {pbr_descriptor_sets[0], camera_light_sets[0], camera_light_sets[1]}.data(), 0, nullptr);
-		VkDeviceSize offset = water_bottle_model_data.device_interleaved_vertex_data_offset;
+		offset = water_bottle_model_data.device_interleaved_vertex_data_offset;
 		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
 		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, water_bottle_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
 		vkCmdDrawIndexed(command_buffers[i], water_bottle_model_data.indices, 1, 0, 0, 0);
@@ -2781,6 +3684,14 @@ void VulkanSSAO::record_command_buffers() {
 		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, box_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
 		vkCmdDrawIndexed(command_buffers[i], box_model_data.indices, 1, 0, 0, 0);
 
+		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, light_pipeline);
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, light_pipeline_layout, 0, 2,
+			std::array<VkDescriptorSet,2> {camera_light_sets[0], camera_light_sets[1]}.data(), 0, nullptr);
+		offset = cube_model_data.device_interleaved_vertex_data_offset;
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, cube_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], cube_model_data.indices, 1, 0, 0, 0);
+
 		// PBR Renderpass end
 		vkCmdEndRenderPass(command_buffers[i]);
 
@@ -2789,7 +3700,7 @@ void VulkanSSAO::record_command_buffers() {
 			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			nullptr,
 			smaa_edge_renderpass,
-			framebuffers[1],
+			framebuffers[2],
 			{{0,0},{swapchain_create_info.imageExtent}},
 			2,
 			&clear_colors[0]
@@ -2809,7 +3720,7 @@ void VulkanSSAO::record_command_buffers() {
 			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			nullptr,
 			smaa_weight_renderpass,
-			framebuffers[2],
+			framebuffers[3],
 			{{0,0},{swapchain_create_info.imageExtent}},
 			2,
 			&clear_colors[0]
@@ -2829,7 +3740,7 @@ void VulkanSSAO::record_command_buffers() {
 			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			nullptr,
 			smaa_blend_renderpass,
-			framebuffers[3],
+			framebuffers[4],
 			{{0,0},{swapchain_create_info.imageExtent}},
 			1,
 			&clear_colors[1]
@@ -2849,7 +3760,7 @@ void VulkanSSAO::record_command_buffers() {
 			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			nullptr,
 			hdr_tonemap_renderpass,
-			framebuffers[4+i],
+			framebuffers[5+i],
 			{{0,0},{swapchain_create_info.imageExtent}},
 			1,
 			&clear_colors[1]
@@ -2896,7 +3807,7 @@ void VulkanSSAO::frame_loop() {
 	//	bottle descriptor		box descriptor			camera descriptor		light_descriptor
 	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
 	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	208b    ] 48b	[ set:2	32b	   	]
-	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4+vec4	]		[ 2*vec4 		]
+	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4+vec4	]		[ 2*mat4+2*vec4	]
 	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
 	//	smaa_rt_metrics descriptor
 	//	--------[---------------] 
@@ -2910,10 +3821,15 @@ void VulkanSSAO::frame_loop() {
 		v_matrix = glm::lookAt(glm::vec3(camera_pos), glm::vec3(camera_pos + camera_dir), glm::vec3(0.0f, 1.0f, 0.0f));
 		inverse_v_matrix = glm::transpose(glm::inverse(v_matrix));
 
-		water_bottle_m_matrix = glm::translate(glm::vec3(0.0f, 0.0f, 0.0f)) * glm::rotate(static_cast<float>(glfwGetTime() * 1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+		water_bottle_m_matrix = glm::translate(glm::vec3(0.0f, 0.15f + glm::sin(glfwGetTime())/7.0f, 0.0f)) 
+			* glm::rotate(glm::radians(10.0f), glm::vec3(0.0f, 0.0f, 1.0f))
+			* glm::rotate(static_cast<float>(glfwGetTime() * 1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		water_bottle_normal_matrix = glm::transpose(glm::inverse(water_bottle_m_matrix));
+
 		box_m_matrix = glm::translate(glm::vec3(0.0f, -1.0f, 0.0f))*glm::scale(glm::vec3(5.0f,5.0f,5.0f));
 		box_normal_matrix = glm::transpose(glm::inverse(box_m_matrix));
+
+		camera_v_matrix = glm::lookAt(glm::vec3(light_pos[0]),glm::vec3(0.0f, 0.0f, 0.0f),glm::vec3(0.0f,1.0f,0.0f));
 
 		glm::vec4 smaa_rt_metrics = glm::vec4(1.0f / window_size.width, 1.0f / window_size.height, static_cast<float>(window_size.width), static_cast<float>(window_size.height));
 
@@ -2936,8 +3852,10 @@ void VulkanSSAO::frame_loop() {
 
 		// Third descriptor copy for light
 		dst_ptr += 256;
-		memcpy(dst_ptr, glm::value_ptr(light_pos[0]), sizeof(glm::vec4));
-		memcpy(dst_ptr + sizeof(glm::vec4), glm::value_ptr(light_color[0]), sizeof(glm::vec4));
+		memcpy(dst_ptr, glm::value_ptr(camera_v_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(camera_p_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4)*2, glm::value_ptr(light_pos[0]), sizeof(glm::vec4));
+		memcpy(dst_ptr + sizeof(glm::mat4)*2 + sizeof(glm::vec4), glm::value_ptr(light_color[0]), sizeof(glm::vec4));
 
 		// Fourth descriptor copy for smaa_rt_metrics
 		dst_ptr += 256;
@@ -3187,12 +4105,16 @@ VulkanSSAO::VulkanSSAO() {
 	create_device_buffers();
 	create_attachments();
 	create_descriptor_pool_and_layouts();
+	allocate_gaussian_blur_descriptor_sets();
 	allocate_pbr_descriptor_sets();
 	allocate_camera_light_sets();
 	allocate_smaa_descriptor_sets();
 	allocate_hdr_descriptor_sets();
 	create_renderpass();
 	create_framebuffers();
+	create_shadow_map_pipeline();
+	create_gaussian_blur_pipelines();
+	create_light_pipeline();
 	create_pbr_pipeline();
 	create_smaa_edge_pipeline();
 	create_smaa_weight_pipeline();
@@ -3285,7 +4207,7 @@ VulkanSSAO::~VulkanSSAO() {
 	vkDestroyImageView(device, device_box_normal_image_view, nullptr);
 	vkDestroyImageView(device, device_box_emissive_image_view, nullptr);
 	vkDestroyImage(device, device_box_image, nullptr);
-	vkDestroySampler(device, device_water_bottle_sampler, nullptr);
+	vkDestroySampler(device, device_max_aniso_linear_sampler, nullptr);
 
 	vkDestroyImageView(device, device_smaa_search_image_view, nullptr);
 	vkDestroyImage(device, device_smaa_search_image, nullptr);

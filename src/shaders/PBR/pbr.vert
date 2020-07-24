@@ -16,16 +16,32 @@ layout (set = 1, binding = 0) uniform uniform_buffer2 {
 	vec4 camera_pos;
 };
 
+layout (set = 2, binding = 0) uniform uniform_buffer3 {
+    mat4 camera_v;
+    mat4 camera_p;
+	vec4 light_pos[1];
+	vec4 light_color;
+};
+
 layout (location = 0) out VS_OUT {
 	vec3 position;
 	vec2 tex_coord;
 	vec3 normal;
+	vec4 shadow_coord;
 } vs_out;
 
 void main() {
+
+	mat4 shadow_bias = mat4(0.5f,0.0f,0.0f,0.0f,
+                        	0.0f,0.5f,0.0f,0.0f,
+                        	0.0f,0.0f,0.5f,0.0f,
+                        	0.5f,0.5f,0.5f,1.0f);
+
 	vs_out.tex_coord = tex_coord;
 	vs_out.position = vec3(model * vec4(position,1.0f));
 	vs_out.normal = mat3(normal_model) * normal;
+
+	vs_out.shadow_coord = shadow_bias * camera_p * camera_v * model * vec4(position,1.0f);
 
 	gl_Position = projection * view * model * vec4(position,1.0f);
 }
