@@ -25,7 +25,8 @@ SOURCE_SHADERDIR = $(SDIR)/shaders
 OUT_SHADERDIR = shaders
 VULKANENV = /home/edoardo/vulkan/1.2.141.0/x86_64/bin
 
-shaders: $(SOURCE_SHADERDIR)/shadow_map/shadow_map.vert \
+shaders: $(SOURCE_SHADERDIR)/shadow_map/shadow_map.vert $(SOURCE_SHADERDIR)/shadow_map/shadow_map.frag \
+$(SOURCE_SHADERDIR)/shadow_map/gaussian_blur_x.comp $(SOURCE_SHADERDIR)/shadow_map/gaussian_blur_y.comp \
 $(SOURCE_SHADERDIR)/light/light.vert  $(SOURCE_SHADERDIR)/light/light.frag \
 $(SOURCE_SHADERDIR)/PBR/pbr.vert $(SOURCE_SHADERDIR)/PBR/pbr.frag \
 $(SOURCE_SHADERDIR)/SMAA/smaa_edge.vert $(SOURCE_SHADERDIR)/SMAA/smaa_edge.frag \
@@ -34,6 +35,9 @@ $(SOURCE_SHADERDIR)/SMAA/smaa_blend.vert $(SOURCE_SHADERDIR)/SMAA/smaa_blend.fra
 $(SOURCE_SHADERDIR)/HDR/tonemap.vert $(SOURCE_SHADERDIR)/HDR/tonemap.frag
 # Shadow Map
 	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/shadow_map.vert.spv $(SOURCE_SHADERDIR)/shadow_map/shadow_map.vert
+	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/shadow_map.frag.spv $(SOURCE_SHADERDIR)/shadow_map/shadow_map.frag
+	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/gaussian_blur_x.comp.spv $(SOURCE_SHADERDIR)/shadow_map/gaussian_blur_x.comp
+	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/gaussian_blur_y.comp.spv $(SOURCE_SHADERDIR)/shadow_map/gaussian_blur_y.comp
 # Light
 	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/light.vert.spv $(SOURCE_SHADERDIR)/light/light.vert
 	$(VULKANENV)/glslc -c -o $(OUT_SHADERDIR)/light.frag.spv $(SOURCE_SHADERDIR)/light/light.frag

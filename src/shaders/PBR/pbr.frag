@@ -5,8 +5,7 @@ layout (set = 0, binding = 0) uniform uniform_buffer1 {
 	mat4 normal_model;
 };
 layout (set = 0, binding = 1) uniform sampler2D image[4];
-layout (set = 0, binding = 2) uniform sampler2DShadow shadow_map;
-//layout (set = 0, binding = 2) uniform sampler2D shadow_map;
+layout (set = 0, binding = 2) uniform sampler2D shadow_map;
 
 layout (set = 1, binding = 0) uniform uniform_buffer2 {
 	mat4 view;
@@ -86,6 +85,29 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 // ----------------------------------------------------------------------------
+float ChebyshevUpperBound(vec2 Moments, float t) {
+    // One-tailed inequality valid if t > Moments.x 
+    if (t <= Moments.x) {
+	    return 1.0;
+    }
+    // Compute variance.
+    float Variance = Moments.y - (Moments.x*Moments.x);
+    Variance = max(Variance, 0.002);
+    // Compute probabilistic upper bound.    
+    float d = t - Moments.x;
+    float p_max = Variance / (Variance + d*d);
+    return p_max;
+}
+
+float linstep(float min, float max, float v) {   
+    return clamp((v - min) / (max - min), 0, 1); 
+} 
+
+float ReduceLightBleeding(float p_max, float Amount) {
+    // Remove the [0, Amount] tail and linearly rescale (Amount, 1].
+    return linstep(Amount, 1, p_max); 
+}
+
 void main() {		
     vec3 albedo     = texture(image[0], fs_in.tex_coord).rgb;
     float metallic  = texture(image[1], fs_in.tex_coord).b;
@@ -141,16 +163,15 @@ void main() {
         // scale light by NdotL
         float NdotL = max(dot(N, L), 0.0);
         
-        float sum = 0;
-        float shadow = 1.0;
-        vec4 m_shadow_coords = fs_in.shadow_coord;
-        m_shadow_coords.z -= 0.05;
-        if(m_shadow_coords.z >= 0 ) {
-            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(-1,-1));
-            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(-1,1));
-            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(1,1));
-            sum += textureProjOffset(shadow_map, m_shadow_coords, ivec2(1,-1));
-            shadow = sum * 0.25;
+        // calculate if fragment is in shadow
+        float shadow = 1.0f;
+        vec4 modified_shadow_coords = fs_in.shadow_coord;
+        modified_shadow_coords.z -= 0.05;
+        vec4 normalized_shadow_coords = modified_shadow_coords / modified_shadow_coords.w;
+        if (modified_shadow_coords.z >= 0) {
+            vec2 moments = texture(shadow_map,normalized_shadow_coords.xy).rg;
+	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
+            shadow = ReduceLightBleeding(p_max, 0.99999);
         }
 
         // add to outgoing radiance Lo
