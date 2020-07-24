@@ -18,12 +18,12 @@ layout (set = 1, binding = 0) uniform uniform_buffer1 {
 
 void main() {
 
-	mat4 model_s = mat4(	0.1f, 0, 0, 0,
-							0, 0.1f, 0, 0,
-							0, 0, 0.1f, 0,
+	mat4 model_s = mat4(	0.05f, 0, 0, 0,
+							0, 0.05f, 0, 0,
+							0, 0, 0.05f, 0,
 							0, 0, 0, 1
 	);
-	mat4 model_t = mat4(	1.0f, 0, 0, 0,
+	mat4 model_t = mat4(1.0f, 0, 0, 0,
 						0, 1.0f, 0, 0,
 						0, 0, 1.0f, 0,
 						light_pos[0].x, light_pos[0].y, light_pos[0].z, 1.0f

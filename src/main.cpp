@@ -468,8 +468,8 @@ void VulkanSSAO::create_host_buffers() {
 		nullptr, box_model_data);
 	box_model_data.image_layers++;
 
-	loader.LoadBinaryFromFile(&cube, &err, &warn, "resources//models//Cube//Cube.glb");
-	vulkan_helper::copy_gltf_contents(box,
+	loader.LoadBinaryFromFile(&cube, &err, &warn, "resources//models//Sphere//Sphere.glb");
+	vulkan_helper::copy_gltf_contents(cube,
 		std::vector{
 		vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_NORMAL },
@@ -577,7 +577,7 @@ void VulkanSSAO::create_host_buffers() {
 	box_model_data.image_layers++;
 	offset += 2048*2048*4;
 
-	vulkan_helper::copy_gltf_contents(box,
+	vulkan_helper::copy_gltf_contents(cube,
 		std::vector{
 		vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_NORMAL },
@@ -2122,6 +2122,7 @@ void VulkanSSAO::create_shadow_map_pipeline() {
 
 	vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &shadow_map_pipeline);
 	vkDestroyShaderModule(device, vertex_shader_module, nullptr);
+	vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
 void VulkanSSAO::create_gaussian_blur_pipelines() {
@@ -2197,6 +2198,9 @@ void VulkanSSAO::create_gaussian_blur_pipelines() {
 
 	vkCreateComputePipelines(device, VK_NULL_HANDLE, compute_pipeline_create_infos.size(),
 	 	compute_pipeline_create_infos.data(), nullptr, gaussian_blur_xy_pipelines.data() );
+
+	vkDestroyShaderModule(device, shader_modules[0], nullptr);
+	vkDestroyShaderModule(device, shader_modules[1], nullptr);
 }
 
 void VulkanSSAO::create_light_pipeline() {
@@ -3778,11 +3782,15 @@ void VulkanSSAO::record_command_buffers() {
 		vkEndCommandBuffer(command_buffers[i]);
 	}
 
+	vkDestroyPipelineLayout(device, light_pipeline_layout, nullptr);
 	vkDestroyPipelineLayout(device, pbr_pipeline_layout, nullptr);
 	vkDestroyPipelineLayout(device, smaa_edge_pipeline_layout, nullptr);
 	vkDestroyPipelineLayout(device, smaa_weight_pipeline_layout, nullptr);
 	vkDestroyPipelineLayout(device, smaa_blend_pipeline_layout, nullptr);
 	vkDestroyPipelineLayout(device, hdr_tonemap_pipeline_layout, nullptr);
+	vkDestroyPipelineLayout(device, shadow_map_pipeline_layout, nullptr);
+	vkDestroyPipelineLayout(device, gaussian_blur_xy_pipeline_layouts[0], nullptr);
+	vkDestroyPipelineLayout(device, gaussian_blur_xy_pipeline_layouts[1], nullptr);
 }
 
 void VulkanSSAO::create_semaphores() {
@@ -3796,7 +3804,6 @@ void VulkanSSAO::create_semaphores() {
 void VulkanSSAO::frame_loop() {
 	uint32_t rendered_frames = 0;
 	std::chrono::steady_clock::time_point t1;
-	std::chrono::steady_clock::time_point t2;
 
 	camera_pos = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
 	camera_dir = glm::vec4(0.0f, 0.0f, -10.0f, 1.0f);
@@ -3906,9 +3913,10 @@ void VulkanSSAO::frame_loop() {
 		glfwPollEvents();
 
 		rendered_frames++;
-		if (rendered_frames % 3000 == 0) {
-			t2 = std::chrono::steady_clock::now();
-			std::cout << "Msec/frame: " << (std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() / 3000) * 1000 << std::endl;
+		uint32_t time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t1).count();
+		if ( time_diff > 1000) {
+			std::cout << "Msec/frame: " << ( time_diff / static_cast<float>(rendered_frames)) << std::endl;
+			rendered_frames = 0;
 			t1 = std::chrono::steady_clock::now();
 		}
 	}
@@ -3986,7 +3994,6 @@ void VulkanSSAO::key_callback(GLFWwindow* window, int key, int scancode, int act
 	else if (key == GLFW_KEY_ESCAPE) {
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
 	}
-	printf("%f %f %f\n", camera_pos[0], camera_pos[1], camera_pos[2]);
 }
 
 void VulkanSSAO::cursor_position_callback_static(GLFWwindow* window, double xpos, double ypos) {
@@ -4137,6 +4144,10 @@ VulkanSSAO::~VulkanSSAO() {
 	}
 	
 	// Pipelines cleaning
+	vkDestroyPipeline(device, gaussian_blur_xy_pipelines[0], nullptr);
+	vkDestroyPipeline(device, gaussian_blur_xy_pipelines[1], nullptr);
+	vkDestroyPipeline(device, light_pipeline, nullptr);
+	vkDestroyPipeline(device, shadow_map_pipeline, nullptr);
 	vkDestroyPipeline(device, hdr_tonemap_pipeline, nullptr);
 	vkDestroyPipeline(device, smaa_blend_pipeline, nullptr);
 	vkDestroyPipeline(device, smaa_weight_pipeline, nullptr);
@@ -4157,7 +4168,13 @@ VulkanSSAO::~VulkanSSAO() {
 
 	vkDestroyImageView(device, device_depth_image_view, nullptr);
 	vkDestroyImage(device, device_depth_image, nullptr);
+
+	vkDestroyImageView(device, device_vsm_depth_0_image_view, nullptr);
+	vkDestroyImageView(device, device_vsm_depth_1_image_view, nullptr);
+	vkDestroyImage(device, device_vsm_depth_image, nullptr);
+
 	vkDestroySampler(device, device_render_target_sampler, nullptr);
+	vkDestroySampler(device, device_shadow_map_sampler, nullptr);
 
 	vkFreeMemory(device, device_memory_attachments, nullptr);
 
@@ -4171,6 +4188,7 @@ VulkanSSAO::~VulkanSSAO() {
 	}
 
 	// Renderpasses cleaning
+	vkDestroyRenderPass(device, shadow_map_render_pass, nullptr);
 	vkDestroyRenderPass(device, hdr_tonemap_renderpass, nullptr);
 	vkDestroyRenderPass(device, pbr_render_pass, nullptr);
 	vkDestroyRenderPass(device, smaa_edge_renderpass, nullptr);
@@ -4185,6 +4203,7 @@ VulkanSSAO::~VulkanSSAO() {
 	vkDestroyDescriptorSetLayout(device, smaa_descriptor_sets_layout[2], nullptr);
 	vkDestroyDescriptorSetLayout(device, smaa_descriptor_sets_layout[3], nullptr);
 	vkDestroyDescriptorSetLayout(device, camera_light_sets_layout[0], nullptr);
+	vkDestroyDescriptorSetLayout(device, gaussian_blur_descriptor_sets_layout[0], nullptr);
 	vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
 
 	// Host memory cleaning
