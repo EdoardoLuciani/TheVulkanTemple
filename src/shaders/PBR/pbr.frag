@@ -49,40 +49,21 @@ vec3 getNormalFromMap() {
     return normalize(TBN * tangentNormal);
 }
 
-float DistributionGGX(vec3 N, vec3 H, float roughness) {
-    float a = roughness*roughness;
-    float a2 = a*a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH*NdotH;
-
-    float nom   = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
-
-    return nom / denom;
+float DistributionGGX(float NdotH, float roughness) {
+    float alpha2 = roughness*roughness*roughness*roughness;
+    float denom = (NdotH*NdotH) * (alpha2 - 1.0) + 1.0;
+    return alpha2 / (PI * denom * denom);
 }
 // ----------------------------------------------------------------------------
-float GeometrySchlickGGX(float NdotV, float roughness) {
-    float r = (roughness + 1.0);
-    float k = (r*r) / 8.0;
-
-    float nom   = NdotV;
+float GeometrySmith(float NdotV, float roughness) {
+    float k = ((roughness + 1.0)*(roughness + 1.0)) / 8.0;
     float denom = NdotV * (1.0 - k) + k;
 
-    return nom / denom;
+    return NdotV / denom;
 }
 // ----------------------------------------------------------------------------
-float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
-
-    return ggx1 * ggx2;
-}
-// ----------------------------------------------------------------------------
-vec3 fresnelSchlick(float cosTheta, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+vec3 fresnelSchlick(float HdotV, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
 }
 // ----------------------------------------------------------------------------
 float ChebyshevUpperBound(vec2 Moments, float t) {
@@ -140,17 +121,15 @@ void main() {
         vec3 radiance = light_color.rgb * attenuation;
         vec3 H = normalize(V + L);
 
-        // Cook-Torrance BRDF
-        float D = DistributionGGX(N, H, roughness);   
-        float G   = GeometrySmith(N, V, L, roughness);      
-        vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);
-           
-        vec3 nominator    = D * G * F; 
+        // Cook-Torrance BRDF        
+        vec3 nominator =    DistributionGGX(max(dot(N, H),0.0), roughness) * fresnelSchlick(max(dot(H, V), 0.0), F0) *
+                            GeometrySmith(max(dot(N, L),0.0), roughness) * GeometrySmith(max(dot(N, V),0.0), roughness);
+
         float denominator = 4 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001; // 0.001 to prevent divide by zero.
         vec3 specular = nominator / denominator;
         
         // kS is equal to Fresnel
-        vec3 kS = F;
+        vec3 kS = fresnelSchlick(max(dot(H, V), 0.0), F0);
         // for energy conservation, the diffuse and specular light can't
         // be above 1.0 (unless the surface emits light); to preserve this
         // relationship the diffuse component (kD) should equal 1.0 - kS.
