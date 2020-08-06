@@ -27,12 +27,11 @@ layout (location = 0) in VS_OUT {
 	vec3 normal;
     vec4 shadow_coord;
 } fs_in;
-
-
 layout (location = 0) out vec4 frag_color;
 
 const float PI = 3.14159265358979323846;
 
+// Utility function(s)
 vec3 getNormalFromMap() {
     vec3 tangentNormal = texture(image[2], fs_in.tex_coord).xyz * 2.0 - 1.0;
 
@@ -49,23 +48,103 @@ vec3 getNormalFromMap() {
     return normalize(TBN * tangentNormal);
 }
 
-float DistributionGGX(float NdotH, float roughness) {
+// Distribution function(s)
+float D_TrowbridgeReitzGGX(float NdotH, float roughness) {
     float alpha2 = roughness*roughness*roughness*roughness;
     float denom = (NdotH*NdotH) * (alpha2 - 1.0) + 1.0;
     return alpha2 / (PI * denom * denom);
 }
-// ----------------------------------------------------------------------------
-float GeometrySmith(float NdotV, float roughness) {
-    float k = ((roughness + 1.0)*(roughness + 1.0)) / 8.0;
-    float denom = NdotV * (1.0 - k) + k;
 
-    return NdotV / denom;
+float D_Beckmann(float x, float roughness) {
+  float NdotH = max(x, 0.0001);
+  float cos2Alpha = NdotH * NdotH;
+  float tan2Alpha = (cos2Alpha - 1.0) / cos2Alpha;
+  float roughness2 = roughness * roughness;
+  float denom = PI * roughness2 * cos2Alpha * cos2Alpha;
+  return exp(tan2Alpha / roughness2) / denom;
 }
-// ----------------------------------------------------------------------------
-vec3 fresnelSchlick(float HdotV, vec3 F0) {
+
+float D_BlinnPhong(float NdotH, float roughness) {
+    float alpha2 = roughness*roughness*roughness*roughness;
+    float nom = pow(NdotH, (2 / alpha2) - 2);
+    return nom / (PI * alpha2);
+}
+
+
+// Geometry function(s)
+float G_Neumann(float NdotL,float NdotV, float roughness) {
+    return (NdotL*NdotV)/max(NdotL,NdotV);
+}
+
+float G_Kelemen(float NdotL,float NdotV, float HdotV, float roughness) {
+    return (NdotL*NdotV)/pow(HdotV,2);
+}
+
+float G_Smith_c(float NdotV, float roughness) {
+    float r = (roughness + 1.0);
+    float k = (r*r) / 8.0;
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+    return nom / denom;
+}
+float G_Smith(float NdotL, float NdotV, float roughness) {
+    float ggx2 = G_Smith_c(NdotV, roughness);
+    float ggx1 = G_Smith_c(NdotL, roughness);
+    return ggx1 * ggx2;
+}
+
+float G_Beckmann_c(float NdotV, float alpha) {
+    float c = NdotV / (alpha*sqrt(1-(NdotV*NdotV)));
+    float result = 1;
+    if (c < 1.6) {
+        result = (3.535*c+2.181*c*c)/(1+2.276*c+2.577*c*c);
+    }
+    return result;
+}
+float G_Beckmann(float NdotL, float NdotV, float roughness) {
+    float alpha = roughness*roughness;
+    float ggx2 = G_Beckmann_c(NdotV, alpha);
+    float ggx1 = G_Beckmann_c(NdotL, alpha);
+    return ggx1 * ggx2;
+}
+
+
+float G_GGX_c(float NdotV, float alpha2) {
+    float denom = NdotV + sqrt(alpha2+(1-alpha2)*NdotV*NdotV);
+    return (2*NdotV) / denom;
+}
+float G_GGX(float NdotL, float NdotV, float roughness) {
+    float alpha2 = roughness*roughness*roughness*roughness;
+    float ggx2 = G_GGX_c(NdotV, alpha2);
+    float ggx1 = G_GGX_c(NdotL, alpha2);
+    return ggx1 * ggx2;
+}
+
+float G_SchlickBeckmann_c(float NdotV, float k) {
+    return NdotV / ( NdotV * (1-k) + k);
+}
+float G_SchlickBeckmann(float NdotL, float NdotV, float roughness) {
+    float alpha = roughness*roughness;
+    float k = alpha*sqrt(2.0/PI);
+    float ggx2 = G_SchlickBeckmann_c(NdotV, k);
+    float ggx1 = G_SchlickBeckmann_c(NdotL, k);
+    return ggx1 * ggx2;
+}
+
+
+// Fresnel function(s)
+vec3 F_Schlick(float HdotV, vec3 F0) {
     return F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
 }
-// ----------------------------------------------------------------------------
+
+vec3 F_CookTorrance(float HdotV, vec3 F0) {
+    vec3 n = (1 + sqrt(F0)) / (1 - sqrt(F0));
+    vec3 g = sqrt( (n*n) + pow(HdotV, 2) - 1);
+    return 0.5 * ((g-HdotV)/(g+HdotV)*(g-HdotV)/(g+HdotV)) *
+                (1 + ( ((g+HdotV)*HdotV-1) / ((g-HdotV)*HdotV+1)*((g+HdotV)*HdotV-1) / ((g-HdotV)*HdotV+1)) );
+}
+
+
 float ChebyshevUpperBound(vec2 Moments, float t) {
     // One-tailed inequality valid if t > Moments.x 
     if (t <= Moments.x) {
@@ -122,14 +201,15 @@ void main() {
         vec3 H = normalize(V + L);
 
         // Cook-Torrance BRDF        
-        vec3 nominator =    DistributionGGX(max(dot(N, H),0.0), roughness) * fresnelSchlick(max(dot(H, V), 0.0), F0) *
-                            GeometrySmith(max(dot(N, L),0.0), roughness) * GeometrySmith(max(dot(N, V),0.0), roughness);
+        vec3 nominator =    D_TrowbridgeReitzGGX(max(dot(N, H),0.0), roughness) * F_CookTorrance(max(dot(H, V), 0.0), F0) *
+                            G_SchlickBeckmann(max(dot(N, L),0.0),max(dot(N, V),0.0),roughness);
+                            //G_Kelemen(max(dot(N, L),0.0),max(dot(N, V),0.0),max(dot(H, V),0.0), roughness);
 
         float denominator = 4 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001; // 0.001 to prevent divide by zero.
         vec3 specular = nominator / denominator;
         
         // kS is equal to Fresnel
-        vec3 kS = fresnelSchlick(max(dot(H, V), 0.0), F0);
+        vec3 kS = F_CookTorrance(max(dot(H, V), 0.0), F0);
         // for energy conservation, the diffuse and specular light can't
         // be above 1.0 (unless the surface emits light); to preserve this
         // relationship the diffuse component (kD) should equal 1.0 - kS.
