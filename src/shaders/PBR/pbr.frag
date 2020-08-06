@@ -43,15 +43,11 @@ float AshikhminShirley_specular(float nu, float nv, float NdotH, float HdotV, fl
 }
 
 vec3 AshikhminShirley_diffuse(vec3 Rd, vec3 Rs, float NdotL, float NdotV) {
-    return 28/(23*PI) * Rd * (1-Rs) * (1-pow(1-NdotV/2, 5)) * (1-pow(1-NdotL/2, 5));
+    return ((28*Rd)/(23*PI)) * (1-Rs) * (1-pow(1-NdotL/2, 5)) * (1-pow(1-NdotV/2, 5));
 }
 
 // Fresnel function
 vec3 F_Schlick(float HdotV, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
-}
-
-float F_Schlick(float HdotV, float F0) {
     return F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
 }
 
@@ -106,7 +102,6 @@ void main() {
     // TODO: port this here with also the getNormalFromMap function in pbr.vert
     vec3 T  = fs_in.tangent;
     vec3 B  = fs_in.bitangent;
-
     // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
     vec3 F0 = vec3(0.04); 
@@ -138,8 +133,18 @@ void main() {
         float HdotB = max(dot(H, B),0.0);
 
         // Ashikhman Shirley BRDF
-        vec3 rho_s = AshikhminShirley_specular(10.0f, 100.0f, NdotH, HdotV, NdotL, NdotV, HdotT, HdotB) * F_Schlick(HdotV, F0);
-        vec3 rho_d = AshikhminShirley_diffuse(albedo, F0, NdotL, NdotV);
+
+        /*
+        vec3 Rs = mix(vec3(0.04), albedo, metallic);
+        vec3 Rd = (1.0 - metallic) * albedo;
+        float phong_shininess = 2/pow(roughness,4) - 2;
+        */
+        vec3 Rs = mix(vec3(0.04), albedo, metallic);
+        vec3 Rd = albedo*(1-metallic);
+        float phong_shininess = 2/pow(roughness,4) - 2;
+
+        vec3 rho_s = AshikhminShirley_specular(phong_shininess, phong_shininess, NdotH, HdotV, NdotL, NdotV, HdotT, HdotB) * F_Schlick(HdotV, Rs);
+        vec3 rho_d = AshikhminShirley_diffuse(Rd, Rs, NdotL, NdotV);
         
         // calculate if fragment is in shadow
         float shadow = 1.0f;
@@ -151,7 +156,7 @@ void main() {
 	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
             shadow = ReduceLightBleeding(p_max, 0.99999);
         }
-        rho = (rho_d + rho_s);
+        rho += (rho_d + rho_s) * radiance * shadow;
     }
 
     //note: default for ambient is 0.03
