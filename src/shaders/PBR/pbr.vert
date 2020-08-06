@@ -28,6 +28,8 @@ layout (location = 0) out VS_OUT {
 	vec2 tex_coord;
 	vec3 normal;
 	vec4 shadow_coord;
+	vec3 tangent;
+	vec3 bitangent;
 } vs_out;
 
 void main() {
@@ -42,6 +44,9 @@ void main() {
 	vs_out.normal = mat3(normal_model) * normal;
 
 	vs_out.shadow_coord = shadow_bias * camera_p * camera_v * model * vec4(position,1.0f);
+
+	vs_out.tangent = normalize(mat3(normal_model) * tangent.xyz);
+    vs_out.bitangent = cross(vs_out.normal, vs_out.tangent);
 
 	gl_Position = projection * view * model * vec4(position,1.0f);
 }

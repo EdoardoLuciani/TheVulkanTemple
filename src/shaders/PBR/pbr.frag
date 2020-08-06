@@ -25,14 +25,18 @@ layout (location = 0) in VS_OUT {
 	vec3 position;
 	vec2 tex_coord;
 	vec3 normal;
-    vec4 shadow_coord;
+	vec4 shadow_coord;
+	vec3 tangent;
+	vec3 bitangent;
 } fs_in;
 layout (location = 0) out vec4 frag_color;
 
 const float PI = 3.14159265358979323846;
 
 float AshikhminShirley_specular(float nu, float nv, float NdotH, float HdotV, float NdotL, float NdotV, float HdotT, float HdotB) {
-    float n = (nu*(HdotT*HdotT) + nv*(HdotB*HdotB))/(1-(NdotH*NdotH));
+    //float n = (nu*(HdotT*HdotT) + nv*(HdotB*HdotB))/(1-(NdotH*NdotH));
+    bool isotropic = true;
+    float n = isotropic ? nu :(nu*(HdotT*HdotT) + nv*(HdotB*HdotB)) /(1-(NdotH*NdotH));
     float term_1 = sqrt((nu+1)*(nv+1)) / (8*PI);
     float term_2 = pow(NdotH,n) / (HdotV*max(NdotL, NdotV));
     return term_1 * term_2;
@@ -100,12 +104,8 @@ void main() {
     vec3 V = normalize(vec3(camera_pos) - fs_in.position);
 
     // TODO: port this here with also the getNormalFromMap function in pbr.vert
-    vec3 Q1  = dFdx(fs_in.position);
-    vec3 Q2  = dFdy(fs_in.position);
-    vec2 st1 = dFdx(fs_in.tex_coord);
-    vec2 st2 = dFdy(fs_in.tex_coord);
-    vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
-    vec3 B  = -normalize(cross(normalize(fs_in.normal), T));
+    vec3 T  = fs_in.tangent;
+    vec3 B  = fs_in.bitangent;
 
     // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
@@ -138,7 +138,7 @@ void main() {
         float HdotB = max(dot(H, B),0.0);
 
         // Ashikhman Shirley BRDF
-        vec3 rho_s = AshikhminShirley_specular(50.0f, 50.0f, NdotH, HdotV, NdotL, NdotV, HdotT, HdotB) * F_Schlick(HdotV, F0);
+        vec3 rho_s = AshikhminShirley_specular(10.0f, 100.0f, NdotH, HdotV, NdotL, NdotV, HdotT, HdotB) * F_Schlick(HdotV, F0);
         vec3 rho_d = AshikhminShirley_diffuse(albedo, F0, NdotL, NdotV);
         
         // calculate if fragment is in shadow
@@ -151,7 +151,7 @@ void main() {
 	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
             shadow = ReduceLightBleeding(p_max, 0.99999);
         }
-        rho = (rho_s);
+        rho = (rho_d + rho_s);
     }
 
     //note: default for ambient is 0.03
