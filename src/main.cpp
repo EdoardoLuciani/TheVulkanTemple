@@ -694,13 +694,15 @@ void VulkanSSAO::create_device_buffers() {
 	};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_water_bottle_color_image_view);
 
-	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 };
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_water_bottle_orm_image_view);
 
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_water_bottle_normal_image_view);
 
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 3, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_water_bottle_emissive_image_view);
 
@@ -718,6 +720,7 @@ void VulkanSSAO::create_device_buffers() {
 	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_orm_image_view);
 
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 3, 1};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_emissive_image_view);
 

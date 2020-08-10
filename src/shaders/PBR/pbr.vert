@@ -46,7 +46,9 @@ void main() {
 	vs_out.shadow_coord = shadow_bias * camera_p * camera_v * model * vec4(position,1.0f);
 
 	vs_out.tangent = normalize(mat3(normal_model) * tangent.xyz);
-    vs_out.bitangent = cross(vs_out.normal, vs_out.tangent);
+	vs_out.tangent = normalize(vs_out.tangent - dot(vs_out.tangent, vs_out.normal) * vs_out.normal);
+	
+    vs_out.bitangent = cross(vs_out.normal, vs_out.tangent) * tangent.w;
 
 	gl_Position = projection * view * model * vec4(position,1.0f);
 }
