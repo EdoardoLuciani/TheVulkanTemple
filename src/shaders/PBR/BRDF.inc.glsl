@@ -1,3 +1,32 @@
+float D_GGX(float NdotH, float alphaG) {
+    float alpha2 = alphaG*alphaG;
+    float denom = (NdotH*NdotH) * (alpha2 - 1.0) + 1.0;
+    return alpha2 / (PI * denom * denom);
+}
+
+float G_GGX(float NdotV, float alphaG) {
+    return 2/(1 + sqrt(1 + alphaG*alphaG * (1-NdotV*NdotV)/(NdotV*NdotV)));
+}
+
+float F_Walter(float HdotV, float ior) {
+    float g = sqrt(ior*ior -1 + HdotV*HdotV);
+    return 0.5 * pow(g-HdotV,2) / pow(g+HdotV,2) * (1 + pow(HdotV*(g+HdotV)-1,2) / pow(HdotV*(g-HdotV)+1,2));
+}
+
+vec3 F_Schlick(float HdotV, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
+}
+
+vec3 Walter07_specular(float NdotL, float NdotV, float NdotH, float HdotV, float roughness, float ior, vec3 Ks) {
+    float roughness2 = roughness*roughness;
+    float D = D_GGX(NdotH, roughness2);
+    float G = G_GGX(NdotL, roughness2) * G_GGX(NdotV, roughness2);
+    float F = F_Walter(HdotV, ior);
+
+    // I removed from the denominator NdotL!, because it looks bad
+    return (Ks * D * G * F) / (4 * NdotV);
+}
+
 /*
 The MIT License (MIT)
 
@@ -21,7 +50,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-
 vec3 OrenNayar_diffuse( float LdotV, float NdotL, float NdotV, float roughness, vec3 Kd) {
   float s = LdotV - NdotL * NdotV;
   float t = mix(1.0, max(NdotL, NdotV), step(0.0, s));
