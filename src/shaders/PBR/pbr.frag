@@ -1,6 +1,7 @@
 #version 440
 const float PI = 3.14159265358979323846;
-#include "AshikhminShirleyBRDF.inc.glsl"
+#include "WalterBRDF.inc.glsl"
+#include "OrenNayarBRDF.inc.glsl"
 
 layout (set = 0, binding = 0) uniform uniform_buffer1 {
 	mat4 model;
@@ -86,7 +87,6 @@ void main() {
     vec3 B  = fs_in.bitangent;
     // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
-    vec3 F0 = mix(vec3(0.04), albedo, vec3(metallic));
 
     vec3 rho = vec3(0.0);
 
@@ -108,18 +108,20 @@ void main() {
         float NdotH = max(dot(N, H),0.0);
         float NdotV = max(dot(N, V),0.0);
         float NdotL = max(dot(N, L),0.0);
-
         float HdotV = max(dot(H, V),0.0);
-        float HdotT = max(dot(H, T),0.0);
-        float HdotB = max(dot(H, B),0.0);
+        float LdotV = max(dot(L, V),0.0);
 
-        vec3 Rs = F0;
-        vec3 Rd = albedo;
-        float phong_shininess = 2/pow(roughness,4) - 2;
+        vec3 F0 = mix(vec3(0.04), albedo, metallic);
+        float ior = (1+sqrt(F0.x)) / (1-sqrt(F0.x));
+        ior += (1+sqrt(F0.y)) / (1-sqrt(F0.y));
+        ior += (1+sqrt(F0.z)) / (1-sqrt(F0.z));
 
-        vec3 rho_s = AshikhminShirley_specular(phong_shininess, phong_shininess, NdotH, HdotV, NdotL, NdotV, HdotT, HdotB) * F_Schlick(HdotV, Rs);
-        vec3 rho_d = AshikhminShirley_diffuse(Rd, Rs, NdotL, NdotV);
-        
+        vec3 Ks = F_CookTorrance(HdotV, F0);
+        vec3 Kd = (vec3(1.0) - Ks)*(1.0 - metallic)*albedo;
+
+        vec3 rho_s = Walter07_specular(NdotL, NdotV, NdotH, HdotV, roughness, ior, Ks);
+        vec3 rho_d = OrenNayar_diffuse(LdotV, NdotL, NdotV, roughness, Kd);
+
         // calculate if fragment is in shadow
         float shadow = 1.0f;
         vec4 modified_shadow_coords = fs_in.shadow_coord;
@@ -130,14 +132,12 @@ void main() {
 	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
             shadow = ReduceLightBleeding(p_max, 0.99999);
         }
-        rho += (rho_d + rho_s) * radiance /** shadow*/;
+        rho += (rho_d + rho_s) * radiance * shadow;
     }
 
-    //note: default for ambient is 0.03
     vec3 ambient = vec3(0.03) * albedo * ao;
-    
-    //vec3 color = ambient + rho + vec3(texture(image[3],fs_in.tex_coord));
-    vec3 color = rho;
+
+    vec3 color = ambient + rho + vec3(texture(image[3],fs_in.tex_coord));
     color = pow(color, vec3(1.0/2.2)); 
 
     frag_color = vec4(color, 1.0);
