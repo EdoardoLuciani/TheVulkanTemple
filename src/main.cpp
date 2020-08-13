@@ -338,7 +338,7 @@ void VulkanSSAO::create_swapchain() {
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &presentation_modes_number, nullptr);
 	std::vector<VkPresentModeKHR> presentation_modes(presentation_modes_number);
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &presentation_modes_number, presentation_modes.data());
-	VkPresentModeKHR selected_present_mode = vulkan_helper::select_presentation_mode(presentation_modes, VK_PRESENT_MODE_MAILBOX_KHR);
+	VkPresentModeKHR selected_present_mode = vulkan_helper::select_presentation_mode(presentation_modes, VK_PRESENT_MODE_IMMEDIATE_KHR);
 
 	VkSurfaceCapabilitiesKHR surface_capabilities;
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities);
@@ -694,13 +694,15 @@ void VulkanSSAO::create_device_buffers() {
 	};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_water_bottle_color_image_view);
 
-	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 };
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_water_bottle_orm_image_view);
 
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_water_bottle_normal_image_view);
 
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 3, 1 };
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_water_bottle_emissive_image_view);
 
@@ -718,6 +720,7 @@ void VulkanSSAO::create_device_buffers() {
 	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_orm_image_view);
 
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 3, 1};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_emissive_image_view);
 
@@ -3833,7 +3836,7 @@ void VulkanSSAO::frame_loop() {
 			* glm::rotate(static_cast<float>(glfwGetTime() * 1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		water_bottle_normal_matrix = glm::transpose(glm::inverse(water_bottle_m_matrix));
 
-		box_m_matrix = glm::translate(glm::vec3(0.0f, -1.0f, 0.0f))*glm::scale(glm::vec3(5.0f,5.0f,5.0f));
+		box_m_matrix = glm::translate(glm::vec3(0.0f, -1.0f, 0.0f))*glm::scale(glm::vec3(3.0f,3.0f,3.0f));
 		box_normal_matrix = glm::transpose(glm::inverse(box_m_matrix));
 
 		camera_v_matrix = glm::lookAt(glm::vec3(light_pos[0]),glm::vec3(0.0f, 0.0f, 0.0f),glm::vec3(0.0f,1.0f,0.0f));
