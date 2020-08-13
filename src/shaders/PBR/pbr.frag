@@ -2,19 +2,8 @@
 const float PI = 3.14159265358979323846;
 #include "BRDF.inc.glsl"
 
-layout (set = 0, binding = 0) uniform uniform_buffer1 {
-	mat4 model;
-	mat4 normal_model;
-};
 layout (set = 0, binding = 1) uniform sampler2D image[4];
 layout (set = 0, binding = 2) uniform sampler2D shadow_map;
-
-layout (set = 1, binding = 0) uniform uniform_buffer2 {
-	mat4 view;
-	mat4 inverse_view;
-	mat4 projection;
-	vec4 camera_pos;
-};
 
 layout (set = 2, binding = 0) uniform uniform_buffer3 {
     mat4 camera_v;
@@ -26,32 +15,17 @@ layout (set = 2, binding = 0) uniform uniform_buffer3 {
 layout (location = 0) in VS_OUT {
 	vec3 position;
 	vec2 tex_coord;
-	vec3 normal;
 	vec4 shadow_coord;
-	mat3 tbn;
+	vec3 V;
+	vec3 L[1];
 } fs_in;
 layout (location = 0) out vec4 frag_color;
 
 // Utility function(s)
-float get_sphere_light_attenuation(float dist, float dist_max) {
+float get_sphere_light_attenuation(vec3 light_p, float dist_max) {
+    float dist = length(light_p - fs_in.position);
     float d = dist / (1 - pow(dist/dist_max,2));
     return 1/pow(d/2+1,2);
-}
-
-vec3 getNormalFromMap() {
-    vec3 tangentNormal = texture(image[2], fs_in.tex_coord).xyz * 2.0 - 1.0;
-
-    vec3 Q1  = dFdx(fs_in.position);
-    vec3 Q2  = dFdy(fs_in.position);
-    vec2 st1 = dFdx(fs_in.tex_coord);
-    vec2 st2 = dFdy(fs_in.tex_coord);
-
-    vec3 N = normalize(fs_in.normal);
-    vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
-    vec3 B  = -normalize(cross(N, T));
-    mat3 TBN = mat3(T, B, N);
-
-    return normalize(TBN * tangentNormal);
 }
 
 // Shadow Helping functions
@@ -83,8 +57,8 @@ void main() {
     float roughness = texture(image[1], fs_in.tex_coord).g;
     float ao        = texture(image[1], fs_in.tex_coord).r;
 
-    vec3 N = getNormalFromMap();
-    vec3 V = normalize(vec3(camera_pos) - fs_in.position);
+    vec3 N = normalize(texture(image[2], fs_in.tex_coord).xyz * 2.0 - 1.0);
+    vec3 V = normalize(fs_in.V);
 
     // For the normal incidence, if it is a diaelectric use a F0 of 0.04,
     // otherwise use albedo
@@ -104,19 +78,11 @@ void main() {
     
     // color without ambient
     vec3 rho = vec3(0.0);
-    for(int i=0;i<1;i++) {
-
-        float attenuation = 1.0;
-        vec3 L = vec3(0.0);
-        if (light_pos[i].w == 0.0) {
-            L = normalize(vec3(light_pos[i]));
-        }
-        else {
-            L = normalize(vec3(light_pos[i]) - fs_in.position);
-            float dist = length(vec3(light_pos[i]) - fs_in.position);
-            attenuation = get_sphere_light_attenuation(dist, 100.0f);
-        }
+    for(int i=0; i<1; i++) {
+        float attenuation = (light_pos[i].w == 0.0) ? 1.0 : get_sphere_light_attenuation(vec3(light_pos[i]), 100.0f);
         vec3 radiance = light_color.rgb * attenuation;
+
+        vec3 L = normalize(fs_in.L[i]);
         vec3 H = normalize(V + L);
         
         float NdotH = max(dot(N, H),0.0);
@@ -138,7 +104,7 @@ void main() {
         vec4 modified_shadow_coords = fs_in.shadow_coord;
         modified_shadow_coords.z -= 0.05;
         vec4 normalized_shadow_coords = modified_shadow_coords / modified_shadow_coords.w;
-        if (modified_shadow_coords.z >= 0) {
+        if ( modified_shadow_coords.z >= 0) {
             vec2 moments = texture(shadow_map,normalized_shadow_coords.xy).rg;
 	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
             shadow = ReduceLightBleeding(p_max, 0.99999);

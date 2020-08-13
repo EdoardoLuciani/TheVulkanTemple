@@ -26,28 +26,38 @@ layout (set = 2, binding = 0) uniform uniform_buffer3 {
 layout (location = 0) out VS_OUT {
 	vec3 position;
 	vec2 tex_coord;
-	vec3 normal;
 	vec4 shadow_coord;
-	mat3 tbn;
+	vec3 V;
+	vec3 L[1];
 } vs_out;
 
 void main() {
+	vs_out.tex_coord = tex_coord;
+	vs_out.position = vec3(model * vec4(position,1.0f));
 
 	mat4 shadow_bias = mat4(0.5f,0.0f,0.0f,0.0f,
                         	0.0f,0.5f,0.0f,0.0f,
                         	0.0f,0.0f,0.5f,0.0f,
                         	0.5f,0.5f,0.5f,1.0f);
-
-	vs_out.tex_coord = tex_coord;
-	vs_out.position = vec3(model * vec4(position,1.0f));
-	vs_out.normal = mat3(normal_model) * normal;
 	vs_out.shadow_coord = shadow_bias * camera_p * camera_v * model * vec4(position,1.0f);
 
+	vec3 N = normalize(mat3(normal_model) * normal);
 	vec3 T = normalize(mat3(normal_model) * tangent.xyz);
-	T = normalize(T - dot(T, vs_out.normal) * vs_out.normal);
-    vec3 B = cross(vs_out.normal, T) * tangent.w;
+	T = normalize(T - dot(T, N) * N);
+    vec3 B = normalize(cross(N, T)) * tangent.w;
+	mat3 tbn = mat3( 	T.x, B.x, N.x,
+						T.y, B.y, N.y,
+						T.z, B.z, N.z);
 
-	vs_out.tbn = mat3(T, B, vs_out.normal); 
-
+    vs_out.V = tbn * (vec3(camera_pos) - vs_out.position);
+	
+	for(int i=0; i<1; i++) {
+		if (light_pos[0].w == 0.0) {
+			vs_out.L[0] = tbn * normalize(vec3(light_pos[0]));
+		}
+		else {
+			vs_out.L[0] = tbn * (vec3(light_pos[0]) - vs_out.position);
+		}
+	}
 	gl_Position = projection * view * model * vec4(position,1.0f);
 }
