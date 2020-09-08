@@ -215,9 +215,9 @@ void VulkanSSAO::create_instance() {
 		nullptr,
 		0,
 		&application_info,
-		desired_validation_layers.size(),
+		static_cast<uint32_t>(desired_validation_layers.size()),
 		desired_validation_layers.data(),
-		desired_instance_level_extensions.size(),
+		static_cast<uint32_t>(desired_instance_level_extensions.size()),
 		desired_instance_level_extensions.data()
 	};
 
@@ -323,11 +323,11 @@ void VulkanSSAO::create_logical_device() {
 		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 		nullptr,
 		0,
-		queue_create_info.size(),
+		static_cast<uint32_t>(queue_create_info.size()),
 		queue_create_info.data(),
 		0,
 		nullptr,
-		desired_device_level_extensions.size(),
+		static_cast<uint32_t>(desired_device_level_extensions.size()),
 		desired_device_level_extensions.data(),
 		&selected_device_features
 	};
@@ -386,7 +386,7 @@ void VulkanSSAO::create_swapchain() {
 }
 
 void VulkanSSAO::calculate_projection_matrix() {
-	p_matrix = glm::perspective(glm::radians(90.0f), static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
+	p_matrix = glm::perspective(glm::radians(90.0f), static_cast<float>(window_size.width) / window_size.height, 0.001f, 1000.0f);
 	p_matrix[1][1] *= -1;
 
 	camera_p_matrix = glm::perspective(glm::radians(120.0f), static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
@@ -423,15 +423,13 @@ void VulkanSSAO::create_host_buffers() {
 
 	loader.LoadBinaryFromFile(&water_bottle, &err, &warn, "resources//models//WaterBottle//WaterBottle.glb");
 	vulkan_helper::copy_gltf_contents(water_bottle,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
 		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
@@ -439,77 +437,68 @@ void VulkanSSAO::create_host_buffers() {
 
 	loader.LoadBinaryFromFile(&box, &err, &warn, "resources//models//Box//Box.glb");
 	vulkan_helper::copy_gltf_contents(box,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
-		vulkan_helper::t_model_attributes::T_ORM_MAP },
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP ,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP },
 		nullptr, box_model_data);
 	box_model_data.image_layers++;
 
 	loader.LoadBinaryFromFile(&table, &err, &warn, "resources//models//Table//Table.glb");
 	vulkan_helper::copy_gltf_contents(table,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
-		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP},
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
 		nullptr, table_model_data);
 
 	loader.LoadBinaryFromFile(&fish, &err, &warn, "resources//models//Fish//Fish.glb");
 	vulkan_helper::copy_gltf_contents(fish,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
-		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP},
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
 		nullptr, fish_model_data);
 
 	// https://sketchfab.com/3d-models/crow-45a169ef98804f06a9b7a4af1a04d6f9
 	loader.LoadBinaryFromFile(&crow, &err, &warn, "resources//models//Crow//Crow.glb");
 	vulkan_helper::copy_gltf_contents(crow,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
-		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP},
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
 		nullptr, crow_model_data);
 
 	loader.LoadBinaryFromFile(&sphere, &err, &warn, "resources//models//Sphere//Sphere.glb");
 	vulkan_helper::copy_gltf_contents(sphere,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_NORMAL },
 		true,
 		true,
-		std::vector<vulkan_helper::t_model_attributes>(),
+		{},
 		nullptr, sphere_model_data);
 
 	// images for SMAA
@@ -577,15 +566,13 @@ void VulkanSSAO::create_host_buffers() {
 	vkMapMemory(device, host_memory, 0, VK_WHOLE_SIZE, 0, &host_data_pointer);
 
 	vulkan_helper::copy_gltf_contents(water_bottle,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
 		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
@@ -594,17 +581,15 @@ void VulkanSSAO::create_host_buffers() {
 	int offset = vulkan_helper::get_model_data_total_size(water_bottle_model_data);
 	
 	vulkan_helper::copy_gltf_contents(box,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
-		vulkan_helper::t_model_attributes::T_ORM_MAP },
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP },
 		static_cast<uint8_t*>(host_data_pointer) + offset, box_model_data);
 
 	box_model_data.host_interleaved_vertex_data_offset += offset;
@@ -620,18 +605,16 @@ void VulkanSSAO::create_host_buffers() {
 	offset += 2048*2048*4;
 
 	vulkan_helper::copy_gltf_contents(table,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
-		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP},
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
 		static_cast<uint8_t*>(host_data_pointer) + offset, table_model_data);
 	table_model_data.host_interleaved_vertex_data_offset += offset;
 	table_model_data.host_index_data_offset += offset;
@@ -639,18 +622,16 @@ void VulkanSSAO::create_host_buffers() {
 	offset += vulkan_helper::get_model_data_total_size(table_model_data);
 
 	vulkan_helper::copy_gltf_contents(fish,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
-		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP},
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
 		static_cast<uint8_t*>(host_data_pointer) + offset, fish_model_data);
 	fish_model_data.host_interleaved_vertex_data_offset += offset;
 	fish_model_data.host_index_data_offset += offset;
@@ -658,15 +639,13 @@ void VulkanSSAO::create_host_buffers() {
 	offset += vulkan_helper::get_model_data_total_size(fish_model_data);
 
 	vulkan_helper::copy_gltf_contents(crow,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
 		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP},
@@ -677,8 +656,7 @@ void VulkanSSAO::create_host_buffers() {
 	offset += vulkan_helper::get_model_data_total_size(crow_model_data);
 
 	vulkan_helper::copy_gltf_contents(sphere,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_NORMAL },
 		true,
 		true,
@@ -834,17 +812,17 @@ void VulkanSSAO::create_device_buffers() {
 
 	// Box image view creation
 	image_view_create_info.image = device_box_image;
-	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
-	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_normal_image_view);
-
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1};
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_color_image_view);
 
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1};
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_orm_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_normal_image_view);
 
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 3, 1};
@@ -1695,7 +1673,7 @@ void VulkanSSAO::allocate_smaa_descriptor_sets() {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		nullptr,
 		descriptor_pool,
-		smaa_descriptor_sets_layout.size(),
+		static_cast<uint32_t>(smaa_descriptor_sets_layout.size()),
 		smaa_descriptor_sets_layout.data()
 	};
 	vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, smaa_descriptor_sets.data());
@@ -1779,7 +1757,7 @@ void VulkanSSAO::allocate_hdr_descriptor_sets() {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		nullptr,
 		descriptor_pool,
-		hdr_descriptor_sets_layout.size(),
+		static_cast<uint32_t>(hdr_descriptor_sets_layout.size()),
 		hdr_descriptor_sets_layout.data()
 	};
 	vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, hdr_descriptor_sets.data());

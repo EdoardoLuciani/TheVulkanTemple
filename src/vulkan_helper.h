@@ -24,6 +24,7 @@ namespace vulkan_helper {
 		uint32_t device_index_data_offset;
 		uint32_t index_data_size;
 		uint32_t indices;
+		VkIndexType single_index_size;
 
 		uint32_t host_image_data_offset;
 		uint32_t device_image_data_offset;

@@ -251,177 +251,10 @@ namespace vulkan_helper
 
     // RETURN CODES:
     // 0: success
-    // -1 V_VERTEX or V_NORMALIZED_VERTEX not found in the model
-    // -2 V_NORMAL not found in the model
-    // -3 V_TEX_COORD not found in the model
-    // -4 V_TANGENT not found in the model
-    // -5 I_INDEX not found in the model
-    // -6 T_ALBEDO_MAP not found in the model
-    // -7 T_NORMAL_MAP not found in the model
-    // -8 T_ORM_MAP not found in the model
-    // -9 T_EMISSIVE_MAP not found in the model
-    // -10 size mismatch in V attributes
-
-    /*
-    int copy_gltf_contents(const tinygltf::Model &model,
-                           const std::vector<model_attributes> &attributes_to_copy,
-                           void *dst_ptr, model_data_info &out_data) {
-        int n_vertex, off_vertex, len_vertex;
-        int n_normal, off_normal, len_normal;
-        int n_tex_coord, off_tex_coord, len_tex_coord;
-        int n_tangent, off_tangent, len_tangent;
-        int n_index, off_index, len_index;
-
-        bool to_normalize = false;
-
-        int albedo_map_index, normal_map_index, orm_map_index, emissive_map_index;
-        std::pair<int,int> albedo_map_size, normal_map_size, orm_map_size, emissive_map_size;
-
-        memset( &out_data, 0, sizeof( model_data_info ) );
-
-        for (const auto &attribute : attributes_to_copy) {
-            switch (attribute) {
-            case model_attributes::V_NORMALIZED_VERTEX:
-                to_normalize = true;
-            case model_attributes::V_VERTEX: {
-                auto it = model.meshes[0].primitives[0].attributes.find("POSITION");
-                if (it != model.meshes[0].primitives[0].attributes.end()) {
-                    off_vertex = model.accessors[it->second].byteOffset;
-                    off_vertex += model.bufferViews[model.accessors[it->second].bufferView].byteOffset;
-                    len_vertex = model.bufferViews[model.accessors[it->second].bufferView].byteLength;
-                    n_vertex = len_vertex / sizeof(glm::vec3);
-                    out_data.interleaved_vertex_data_size += len_vertex;
-                    out_data.vertices = n_vertex;
-                }
-                else {
-                    return -1;
-                }
-                break;
-                }
-            case model_attributes::V_NORMAL: {
-                auto it = model.meshes[0].primitives[0].attributes.find("NORMAL");
-                if (it != model.meshes[0].primitives[0].attributes.end()) {
-                    off_normal = model.accessors[it->second].byteOffset;
-                    off_normal += model.bufferViews[model.accessors[it->second].bufferView].byteOffset;
-                    len_normal = model.bufferViews[model.accessors[it->second].bufferView].byteLength;
-                    n_normal = len_normal / sizeof(glm::vec3);
-                    out_data.interleaved_vertex_data_size += len_normal;
-                }
-                else {
-                    return -2;
-                }
-                break;
-                }
-            case model_attributes::V_TEX_COORD: {
-                auto it = model.meshes[0].primitives[0].attributes.find("TEXCOORD_0");
-                if (it != model.meshes[0].primitives[0].attributes.end()) {
-                    off_tex_coord = model.accessors[it->second].byteOffset;
-                    off_tex_coord += model.bufferViews[model.accessors[it->second].bufferView].byteOffset;
-                    len_tex_coord = model.bufferViews[model.accessors[it->second].bufferView].byteLength;
-                    n_tex_coord = len_tex_coord / sizeof(glm::vec2);
-                    out_data.interleaved_vertex_data_size += len_tex_coord;
-                }
-                else {
-                    return -3;
-                }
-                break;
-                }
-            case model_attributes::V_TANGENT: {
-                auto it = model.meshes[0].primitives[0].attributes.find("TANGENT");
-                if (it != model.meshes[0].primitives[0].attributes.end()) {
-                    off_tangent = model.accessors[it->second].byteOffset;
-                    off_tangent += model.bufferViews[model.accessors[it->second].bufferView].byteOffset;
-                    len_tangent = model.bufferViews[model.accessors[it->second].bufferView].byteLength;
-                    n_tangent = len_tangent / sizeof(glm::vec4);
-                    out_data.interleaved_vertex_data_size += len_tangent;
-                }
-                else {
-                    return -4;
-                }
-                break;
-                }
-            case model_attributes::I_INDEX: {
-                int acc_indices = model.meshes[0].primitives[0].indices;
-                if (acc_indices != -1) {
-                    off_index = model.accessors[acc_indices].byteOffset;
-                    off_index += model.bufferViews[model.accessors[acc_indices].bufferView].byteOffset;
-                    len_index = model.bufferViews[model.accessors[acc_indices].bufferView].byteLength;
-                    if (model.accessors[acc_indices].componentType == 5123) {
-                        n_index = len_index / sizeof(uint16_t);
-                    }
-                    else if (model.accessors[acc_indices].componentType == 5125) {
-                        n_index = len_index / sizeof(uint32_t);
-                    }
-                    out_data.indices = n_index;
-                    out_data.index_data_size = len_index;
-                }
-                else {
-                    return -5;
-                }
-                break;
-                }
-            case model_attributes::T_ALBEDO_MAP: {
-                albedo_map_index = model.materials[0].pbrMetallicRoughness.baseColorTexture.index;
-                if (albedo_map_index != -1) {
-                    albedo_map_size.first = model.images[albedo_map_index].width;
-                    albedo_map_size.second = model.images[albedo_map_index].height;
-                    out_data.image_layers++;
-                } else {
-                    return -6;
-                }
-                break;
-                }
-            case model_attributes::T_NORMAL_MAP: {
-                normal_map_index = model.materials[0].normalTexture.index;
-                if (normal_map_index != -1) {
-                    normal_map_size.first = model.images[normal_map_index].width;
-                    normal_map_size.second = model.images[normal_map_index].height;
-                    out_data.image_layers++;
-                } else {
-                    return -7;
-                }
-                break;
-                }
-            case model_attributes::T_ORM_MAP: {
-                orm_map_index = model.materials[0].pbrMetallicRoughness.metallicRoughnessTexture.index;
-                if (orm_map_index != -1) {
-                    orm_map_size.first = model.images[orm_map_index].width;
-                    orm_map_size.second = model.images[orm_map_index].height;
-                    out_data.image_layers++;
-                } else {
-                    return -8;
-                }
-                break;
-                }
-            case model_attributes::T_EMISSIVE_MAP: {
-                emissive_map_index = model.materials[0].emissiveTexture.index;
-                if (emissive_map_index != -1) {
-                    emissive_map_size.first = model.images[emissive_map_index].width;
-                    emissive_map_size.second = model.images[emissive_map_index].height;
-                    out_data.image_layers++;
-                } else {
-                    return -9;
-                }
-                break;
-                }
-            }
-        }
-        out_data.image_size.width = albedo_map_size.first;
-        out_data.image_size.height = albedo_map_size.second;
-        out_data.image_size.depth = 1;
-
-        // Parse only, no copy
-        if (dst_ptr == nullptr) {
-            return 0;
-        }
-
-        // Copy
-        
-
-
-    }
-
-    */
+    // -1 v_attributes not all present in same quantities
+    // -2 requested a not available v_attribute 
+    // -3 index data not present in the model
+    // -4 not all textures have the same size
 
 	int copy_gltf_contents(tinygltf::Model &model,
                            const std::vector<vulkan_helper::v_model_attributes> &v_attributes_to_copy,
@@ -430,16 +263,16 @@ namespace vulkan_helper
 						   const std::vector<vulkan_helper::t_model_attributes> &t_attributes_to_copy,
                            void *dst_ptr, vulkan_helper::model_data_info &out_data) {
 
-        std::array<int,4> v_attr_n_elem;
-        std::array<int,4> v_attr_off;
-        std::array<int,4> v_attr_len;
-        int n_index, off_index, len_index;
+        std::array<uint32_t, 4> v_attr_n_elem;
+        std::array<uint32_t, 4> v_attr_off;
+        std::array<uint32_t, 4> v_attr_len;
+        int32_t off_index = 0;
 
         // 0 albedo_map_index, 1 normal_map_index, 2 orm_map_index, 3 emissive_map_index;
-        std::array<int,4> map_index;
-        std::array<std::pair<int,int>,4> map_size;
+        std::array<int32_t, 4> map_index;
+        std::array<std::pair<uint32_t, uint32_t>, 4> map_size;
 
-        memset( &out_data, 0, sizeof( model_data_info ) );
+        memset(&out_data, 0, sizeof(model_data_info));
 
         std::array<const char*,4> v_model_attributes_string {
 		    "POSITION",
@@ -464,11 +297,17 @@ namespace vulkan_helper
                 v_attr_n_elem[v_attribute] = v_attr_len[v_attribute] / v_model_attributes_sizes[v_attribute];
                 out_data.interleaved_vertex_data_size += v_attr_len[v_attribute];
 
-                // maybe check if all the content is the same number
-                out_data.vertices = v_attr_n_elem[v_attribute];
+                // only the first time in the cycle
+                if (out_data.vertices == 0) {
+                    out_data.vertices = v_attr_n_elem[v_attribute];
+                }
+                else if (out_data.vertices != v_attr_n_elem[v_attribute]) {
+                    return -1;
+                }
+                
             }
             else {
-                return -1;
+                return -2;
             }
         }
 
@@ -477,18 +316,17 @@ namespace vulkan_helper
             if (acc_indices != -1) {
                 off_index = model.accessors[acc_indices].byteOffset;
                 off_index += model.bufferViews[model.accessors[acc_indices].bufferView].byteOffset;
-                len_index = model.bufferViews[model.accessors[acc_indices].bufferView].byteLength;
+                out_data.index_data_size = model.bufferViews[model.accessors[acc_indices].bufferView].byteLength;
                 if (model.accessors[acc_indices].componentType == 5123) {
-                    n_index = len_index / sizeof(uint16_t);
+                    out_data.single_index_size = VK_INDEX_TYPE_UINT16;
                 }
                 else if (model.accessors[acc_indices].componentType == 5125) {
-                    n_index = len_index / sizeof(uint32_t);
+                    out_data.single_index_size = VK_INDEX_TYPE_UINT32;
                 }
-                out_data.indices = n_index;
-                out_data.index_data_size = len_index;
+                out_data.indices = out_data.index_data_size / (2 + out_data.single_index_size*2);
             }
             else {
-                return -2;
+                return -3;
             }
         }
 
@@ -512,9 +350,14 @@ namespace vulkan_helper
                 map_size[t_attribute].second = model.images[map_index[t_attribute]].height;
                 out_data.image_layers++;
                 
-                // maybe check if all the images size is the same number
-                out_data.image_size.width = map_size[t_attribute].first;
-                out_data.image_size.height = map_size[t_attribute].second;
+                if (out_data.image_size.width == 0 && out_data.image_size.height == 0) {
+                    out_data.image_size.width = map_size[t_attribute].first;
+                    out_data.image_size.height = map_size[t_attribute].second;
+                }
+                else if (out_data.image_size.width != map_size[t_attribute].first || out_data.image_size.height != map_size[t_attribute].second) {
+                    return -4;
+                }
+
             }
         }
         out_data.image_size.depth = 1;
