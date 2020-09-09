@@ -103,17 +103,20 @@ private:
 	std::array<VkMemoryRequirements, 2> host_memory_requirements;
 	VkDeviceMemory host_memory;
 	void* host_data_pointer;
-	vulkan_helper::model_data_info water_bottle_model_data, box_model_data, cube_model_data;
+	vulkan_helper::model_data_info water_bottle_model_data, box_model_data, table_model_data, fish_model_data, crow_model_data, sphere_model_data;
 	int area_tex_size, search_tex_size;
 
 	VkBuffer device_vertex_buffer, device_uniform_buffer;
-	VkImage device_water_bottle_image, device_box_image, device_smaa_area_image, device_smaa_search_image;
+	VkImage device_water_bottle_image, device_box_image, device_table_image, device_fish_image, device_crow_image, device_smaa_area_image, device_smaa_search_image;
 	VkImageView device_water_bottle_color_image_view, device_water_bottle_orm_image_view,
 		device_water_bottle_normal_image_view, device_water_bottle_emissive_image_view, device_box_normal_image_view,
-		device_box_color_image_view, device_box_orm_image_view, device_box_emissive_image_view, device_smaa_area_image_view,
-		device_smaa_search_image_view;
+		device_box_color_image_view, device_box_orm_image_view, device_box_emissive_image_view,
+		device_table_color_image_view, device_table_orm_image_view, device_table_normal_image_view, device_table_emissive_image_view,
+		device_fish_color_image_view, device_fish_orm_image_view, device_fish_normal_image_view, device_fish_emissive_image_view,
+		device_crow_color_image_view, device_crow_orm_image_view, device_crow_normal_image_view, device_crow_emissive_image_view,
+		device_smaa_area_image_view, device_smaa_search_image_view;
 	VkSampler device_max_aniso_linear_sampler;
-	std::array<VkMemoryRequirements, 6> device_memory_requirements;
+	std::array<VkMemoryRequirements, 9> device_memory_requirements;
 	VkDeviceMemory device_memory;
 
 	VkImage device_depth_image, device_stencil_image, device_render_target_image, device_vsm_depth_image, device_smaa_image;
@@ -131,7 +134,7 @@ private:
 	std::array<VkDescriptorSetLayout, 4> smaa_descriptor_sets_layout;
 	std::array<VkDescriptorSetLayout, 1> hdr_descriptor_sets_layout;
 	std::array<VkDescriptorSet, 2> gaussian_blur_descriptor_sets;
-	std::array<VkDescriptorSet, 2> pbr_descriptor_sets;
+	std::array<VkDescriptorSet, 5> pbr_descriptor_sets;
 	std::array<VkDescriptorSet, 2> camera_light_sets;
 	std::array<VkDescriptorSet, 4> smaa_descriptor_sets;
 	std::array<VkDescriptorSet, 2> hdr_descriptor_sets;
@@ -149,7 +152,8 @@ private:
 
 	std::vector<VkSemaphore> semaphores;
 
-	glm::mat4 water_bottle_m_matrix, water_bottle_normal_matrix, box_m_matrix, box_normal_matrix;
+	glm::mat4 water_bottle_m_matrix, water_bottle_normal_matrix, box_m_matrix, box_normal_matrix, table_m_matrix, table_normal_matrix,
+		fish_m_matrix, fish_normal_matrix, crow_m_matrix, crow_normal_matrix;
 	glm::mat4 v_matrix, inverse_v_matrix, p_matrix, camera_v_matrix, camera_p_matrix;
 	glm::vec4 camera_pos, camera_dir, light_pos[4], light_color[4];
 	double ex_xpos = -1, ex_ypos = -1;
@@ -211,9 +215,9 @@ void VulkanSSAO::create_instance() {
 		nullptr,
 		0,
 		&application_info,
-		desired_validation_layers.size(),
+		static_cast<uint32_t>(desired_validation_layers.size()),
 		desired_validation_layers.data(),
-		desired_instance_level_extensions.size(),
+		static_cast<uint32_t>(desired_instance_level_extensions.size()),
 		desired_instance_level_extensions.data()
 	};
 
@@ -319,11 +323,11 @@ void VulkanSSAO::create_logical_device() {
 		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 		nullptr,
 		0,
-		queue_create_info.size(),
+		static_cast<uint32_t>(queue_create_info.size()),
 		queue_create_info.data(),
 		0,
 		nullptr,
-		desired_device_level_extensions.size(),
+		static_cast<uint32_t>(desired_device_level_extensions.size()),
 		desired_device_level_extensions.data(),
 		&selected_device_features
 	};
@@ -382,7 +386,7 @@ void VulkanSSAO::create_swapchain() {
 }
 
 void VulkanSSAO::calculate_projection_matrix() {
-	p_matrix = glm::perspective(glm::radians(90.0f), static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
+	p_matrix = glm::perspective(glm::radians(90.0f), static_cast<float>(window_size.width) / window_size.height, 0.001f, 1000.0f);
 	p_matrix[1][1] *= -1;
 
 	camera_p_matrix = glm::perspective(glm::radians(120.0f), static_cast<float>(window_size.width) / window_size.height, 0.1f, 1000.0f);
@@ -413,70 +417,89 @@ void VulkanSSAO::allocate_command_buffers() {
 
 void VulkanSSAO::create_host_buffers() {
 	tinygltf::TinyGLTF loader;
-	tinygltf::Model water_bottle, box, cube;
+	tinygltf::Model water_bottle, box, table, fish, crow, sphere;
 	std::string err;
 	std::string warn;
 
 	loader.LoadBinaryFromFile(&water_bottle, &err, &warn, "resources//models//WaterBottle//WaterBottle.glb");
-	// positions: AC:3 BW:7 offset:8901920 lenght:2549*sizeof(glm::vec3)
-	// tex_coords: AC:0 BW:4 offset:8810156 lenght:2549*sizeof(glm::vec2)
-	// normals: AC:1 BW:5 offset:8830548 lenght:2549*sizeof(glm::vec3)
-	// tangents: AC:2 BW:6 offset:8861136 lenght:2549*sizeof(glm::vec4)
-	// indices: AC:4 BW:8 offset:8932508 lenght:13530*sizeof(uint16_t)
-
-	// base color: index:0 BW:0 size:2048*2048*4
-	// normal texture: index:2 BW:2 size:2048*2048*4
-	// occlusion texture: index:1 BW:1 size:2048*2048*4
-	// emissive texture: index:3 BW:3 size:2048*2048*4
 	vulkan_helper::copy_gltf_contents(water_bottle,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
 		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
 		nullptr, water_bottle_model_data);
 
 	loader.LoadBinaryFromFile(&box, &err, &warn, "resources//models//Box//Box.glb");
-	// positions: AC:0 BW:0 offset:0 lenght:24*sizeof(glm::vec3)
-	// normals: AC:1 BW:1 offset:288 lenght:24*sizeof(glm::vec3)
-	// tangents: AC:2 BW:2 offset:576 lenght:24*sizeof(glm::vec4)
-	// tex_coords: AC:3 BW:3 offset:960 lenght:24*sizeof(glm::vec2)
-	// indices: AC:4 BW:4 offset:1152 lenght:30*sizeof(uint16_t)
-
-	// normal texture: index:0 BW:5 size:2048*2048*4
-	// base color: index:1 BW:6 size:2048*2048*4
-	// ORM texture: index:2 BW:7 size:2048*2048*4
 	vulkan_helper::copy_gltf_contents(box,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
-		vulkan_helper::t_model_attributes::T_ORM_MAP },
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP ,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP },
 		nullptr, box_model_data);
 	box_model_data.image_layers++;
 
-	loader.LoadBinaryFromFile(&cube, &err, &warn, "resources//models//Sphere//Sphere.glb");
-	vulkan_helper::copy_gltf_contents(cube,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+	loader.LoadBinaryFromFile(&table, &err, &warn, "resources//models//Table//Table.glb");
+	vulkan_helper::copy_gltf_contents(table,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_TEX_COORD,
+		vulkan_helper::v_model_attributes::V_NORMAL,
+		vulkan_helper::v_model_attributes::V_TANGENT },
+		true,
+		true,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
+		nullptr, table_model_data);
+
+	loader.LoadBinaryFromFile(&fish, &err, &warn, "resources//models//Fish//Fish.glb");
+	vulkan_helper::copy_gltf_contents(fish,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_TEX_COORD,
+		vulkan_helper::v_model_attributes::V_NORMAL,
+		vulkan_helper::v_model_attributes::V_TANGENT },
+		true,
+		true,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
+		nullptr, fish_model_data);
+
+	// https://sketchfab.com/3d-models/crow-45a169ef98804f06a9b7a4af1a04d6f9
+	loader.LoadBinaryFromFile(&crow, &err, &warn, "resources//models//Crow//Crow.glb");
+	vulkan_helper::copy_gltf_contents(crow,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_TEX_COORD,
+		vulkan_helper::v_model_attributes::V_NORMAL,
+		vulkan_helper::v_model_attributes::V_TANGENT },
+		true,
+		true,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
+		nullptr, crow_model_data);
+
+	loader.LoadBinaryFromFile(&sphere, &err, &warn, "resources//models//Sphere//Sphere.glb");
+	vulkan_helper::copy_gltf_contents(sphere,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_NORMAL },
 		true,
 		true,
-		std::vector<vulkan_helper::t_model_attributes>(),
-		nullptr, cube_model_data);
+		{},
+		nullptr, sphere_model_data);
 
 	// images for SMAA
 	// AreaTexDx10.R8G8 is 160x560
@@ -495,7 +518,10 @@ void VulkanSSAO::create_host_buffers() {
 		0,
 		vulkan_helper::get_model_data_total_size(water_bottle_model_data) +
 		vulkan_helper::get_model_data_total_size(box_model_data) +
-		vulkan_helper::get_model_data_total_size(cube_model_data) +
+		vulkan_helper::get_model_data_total_size(table_model_data) +
+		vulkan_helper::get_model_data_total_size(fish_model_data) +
+		vulkan_helper::get_model_data_total_size(crow_model_data) +
+		vulkan_helper::get_model_data_total_size(sphere_model_data) +
 		area_tex_size + search_tex_size,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_SHARING_MODE_EXCLUSIVE,
@@ -504,18 +530,23 @@ void VulkanSSAO::create_host_buffers() {
 	};
 	vkCreateBuffer(device, &buffer_create_info, nullptr, &host_vertex_buffer);
 
-	//	bottle descriptor		box descriptor			camera descriptor		light_descriptor
-	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
-	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	208b    ] 48b	[ set:2	160b   	]
-	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4+vec4	]		[ 2*mat4+2*vec4	]
-	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
-	//	smaa_rt_metrics descriptor
-	//	--------[---------------] 
-	//	 96b	[ set:3	16b		]
-	//			[ 1*vec4		]
-	//	--------[---------------]
+	//	bottle descriptor		box descriptor			table descriptor
+	//	[---------------]-------[---------------]-------[---------------]-------
+	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b
+	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 2*mat4		]
+	//	[---------------]-------[---------------]-------[---------------]-------
+	// 	fish descriptor			crow descriptor
+	// 	[---------------]-------[---------------]-------
+	// 	[ set:0	128b   	] 128b	[ set:0	128b   	] 128b
+	// 	[ 2*mat4		]		[ 2*mat4		]	
+	// 	[---------------]-------[---------------]-------
+	//	camera descriptor		light_descriptor		smaa_rt_metrics descriptor
+	//	[---------------]-------[---------------]-------[---------------] 
+	//	[ set:1	208b    ] 48b	[ set:2	160b   	] 	96b	[ set:3	16b		]
+	//	[ 3*mat4+vec4	]		[ 2*mat4+2*vec4	]		[ 1*vec4		]
+	//	[---------------]-------[---------------]-------[---------------]
 
-	buffer_create_info.size = 256*4+16;
+	buffer_create_info.size = 256*7+16;
 	vkCreateBuffer(device, &buffer_create_info, nullptr, &host_uniform_buffer);
 
 	vkGetBufferMemoryRequirements(device, host_vertex_buffer, &host_memory_requirements[0]);
@@ -535,15 +566,13 @@ void VulkanSSAO::create_host_buffers() {
 	vkMapMemory(device, host_memory, 0, VK_WHOLE_SIZE, 0, &host_data_pointer);
 
 	vulkan_helper::copy_gltf_contents(water_bottle,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
 		vulkan_helper::t_model_attributes::T_ORM_MAP,
 		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
 		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
@@ -552,17 +581,15 @@ void VulkanSSAO::create_host_buffers() {
 	int offset = vulkan_helper::get_model_data_total_size(water_bottle_model_data);
 	
 	vulkan_helper::copy_gltf_contents(box,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_TEX_COORD,
 		vulkan_helper::v_model_attributes::V_NORMAL,
 		vulkan_helper::v_model_attributes::V_TANGENT },
 		true,
 		true,
-		std::vector{
-		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
-		vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
-		vulkan_helper::t_model_attributes::T_ORM_MAP },
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP },
 		static_cast<uint8_t*>(host_data_pointer) + offset, box_model_data);
 
 	box_model_data.host_interleaved_vertex_data_offset += offset;
@@ -577,19 +604,67 @@ void VulkanSSAO::create_host_buffers() {
 	box_model_data.image_layers++;
 	offset += 2048*2048*4;
 
-	vulkan_helper::copy_gltf_contents(cube,
-		std::vector{
-		vulkan_helper::v_model_attributes::V_VERTEX,
+	vulkan_helper::copy_gltf_contents(table,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_TEX_COORD,
+		vulkan_helper::v_model_attributes::V_NORMAL,
+		vulkan_helper::v_model_attributes::V_TANGENT },
+		true,
+		true,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
+		static_cast<uint8_t*>(host_data_pointer) + offset, table_model_data);
+	table_model_data.host_interleaved_vertex_data_offset += offset;
+	table_model_data.host_index_data_offset += offset;
+	table_model_data.host_image_data_offset += offset;
+	offset += vulkan_helper::get_model_data_total_size(table_model_data);
+
+	vulkan_helper::copy_gltf_contents(fish,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_TEX_COORD,
+		vulkan_helper::v_model_attributes::V_NORMAL,
+		vulkan_helper::v_model_attributes::V_TANGENT },
+		true,
+		true,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP },
+		static_cast<uint8_t*>(host_data_pointer) + offset, fish_model_data);
+	fish_model_data.host_interleaved_vertex_data_offset += offset;
+	fish_model_data.host_index_data_offset += offset;
+	fish_model_data.host_image_data_offset += offset;
+	offset += vulkan_helper::get_model_data_total_size(fish_model_data);
+
+	vulkan_helper::copy_gltf_contents(crow,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
+		vulkan_helper::v_model_attributes::V_TEX_COORD,
+		vulkan_helper::v_model_attributes::V_NORMAL,
+		vulkan_helper::v_model_attributes::V_TANGENT },
+		true,
+		true,
+		{ vulkan_helper::t_model_attributes::T_ALBEDO_MAP,
+		vulkan_helper::t_model_attributes::T_ORM_MAP,
+		vulkan_helper::t_model_attributes::T_NORMAL_MAP,
+		vulkan_helper::t_model_attributes::T_EMISSIVE_MAP},
+		static_cast<uint8_t*>(host_data_pointer) + offset, crow_model_data);
+	crow_model_data.host_interleaved_vertex_data_offset += offset;
+	crow_model_data.host_index_data_offset += offset;
+	crow_model_data.host_image_data_offset += offset;
+	offset += vulkan_helper::get_model_data_total_size(crow_model_data);
+
+	vulkan_helper::copy_gltf_contents(sphere,
+		{ vulkan_helper::v_model_attributes::V_VERTEX,
 		vulkan_helper::v_model_attributes::V_NORMAL },
 		true,
 		true,
 		std::vector<vulkan_helper::t_model_attributes>(),
-		static_cast<uint8_t*>(host_data_pointer) + offset, cube_model_data);
-	
-	cube_model_data.host_interleaved_vertex_data_offset += offset;
-	cube_model_data.host_index_data_offset += offset;
-
-	offset += vulkan_helper::get_model_data_total_size(cube_model_data);
+		static_cast<uint8_t*>(host_data_pointer) + offset, sphere_model_data);
+	sphere_model_data.host_interleaved_vertex_data_offset += offset;
+	sphere_model_data.host_index_data_offset += offset;
+	offset += vulkan_helper::get_model_data_total_size(sphere_model_data);
 
 	// SMAA images copying
 	area_tex.read(reinterpret_cast<char*>(host_data_pointer) + offset, area_tex_size);
@@ -607,7 +682,10 @@ void VulkanSSAO::create_device_buffers() {
 		0,
 		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
 		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size +
-		cube_model_data.interleaved_vertex_data_size + cube_model_data.index_data_size,
+		table_model_data.interleaved_vertex_data_size + table_model_data.index_data_size +
+		fish_model_data.interleaved_vertex_data_size + fish_model_data.index_data_size +
+		crow_model_data.interleaved_vertex_data_size + crow_model_data.index_data_size +
+		sphere_model_data.interleaved_vertex_data_size + sphere_model_data.index_data_size,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		VK_SHARING_MODE_EXCLUSIVE,
 		0,
@@ -615,7 +693,7 @@ void VulkanSSAO::create_device_buffers() {
 	};
 	vkCreateBuffer(device, &buffer_create_info, nullptr, &device_vertex_buffer);
 	
-	buffer_create_info.size = 256*4+16;
+	buffer_create_info.size = 256*7+16;
 	buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 	vkCreateBuffer(device, &buffer_create_info, nullptr, &device_uniform_buffer);
 
@@ -642,6 +720,18 @@ void VulkanSSAO::create_device_buffers() {
 	image_create_info.arrayLayers = box_model_data.image_layers;
 	vkCreateImage(device, &image_create_info, nullptr, &device_box_image);
 
+	image_create_info.extent = table_model_data.image_size;
+	image_create_info.arrayLayers = table_model_data.image_layers;
+	vkCreateImage(device, &image_create_info, nullptr, &device_table_image);
+
+	image_create_info.extent = fish_model_data.image_size;
+	image_create_info.arrayLayers = fish_model_data.image_layers;
+	vkCreateImage(device, &image_create_info, nullptr, &device_fish_image);
+
+	image_create_info.extent = crow_model_data.image_size;
+	image_create_info.arrayLayers = crow_model_data.image_layers;
+	vkCreateImage(device, &image_create_info, nullptr, &device_crow_image);
+
 	image_create_info.flags = 0;
 	image_create_info.format = VK_FORMAT_R8G8_UNORM;
 	image_create_info.extent = {160,560,1};
@@ -656,8 +746,11 @@ void VulkanSSAO::create_device_buffers() {
 	vkGetBufferMemoryRequirements(device, device_uniform_buffer, &device_memory_requirements[1]);
 	vkGetImageMemoryRequirements(device, device_water_bottle_image, &device_memory_requirements[2]);
 	vkGetImageMemoryRequirements(device, device_box_image, &device_memory_requirements[3]);
-	vkGetImageMemoryRequirements(device, device_smaa_area_image, &device_memory_requirements[4]);
-	vkGetImageMemoryRequirements(device, device_smaa_search_image, &device_memory_requirements[5]);
+	vkGetImageMemoryRequirements(device, device_table_image, &device_memory_requirements[4]);
+	vkGetImageMemoryRequirements(device, device_fish_image, &device_memory_requirements[5]);
+	vkGetImageMemoryRequirements(device, device_crow_image, &device_memory_requirements[6]);
+	vkGetImageMemoryRequirements(device, device_smaa_area_image, &device_memory_requirements[7]);
+	vkGetImageMemoryRequirements(device, device_smaa_search_image, &device_memory_requirements[8]);
 
 	uint32_t alignment = vulkan_helper::get_buffer_image_alignment(device_memory_requirements[0].size + device_memory_requirements[1].size, device_memory_requirements[2].alignment);
 
@@ -674,12 +767,23 @@ void VulkanSSAO::create_device_buffers() {
 	};
 	if (vkAllocateMemory(device, &memory_allocate_info, nullptr, &device_memory) != VK_SUCCESS) { throw MEMORY_ALLOCATION_FAILED; }
 
+	auto sum_offsets = [&](int idx) {
+		int sum = 0;
+		for (int i = 0; i < idx; i++) {
+			sum += device_memory_requirements[i].size;
+		}
+		return sum;
+	};
+
 	vkBindBufferMemory(device, device_vertex_buffer, device_memory, 0);
-	vkBindBufferMemory(device, device_uniform_buffer, device_memory, device_memory_requirements[0].size);
-	vkBindImageMemory(device, device_water_bottle_image, device_memory, device_memory_requirements[0].size + device_memory_requirements[1].size + alignment);
-	vkBindImageMemory(device, device_box_image, device_memory, device_memory_requirements[0].size + device_memory_requirements[1].size + alignment + device_memory_requirements[2].size);
-	vkBindImageMemory(device, device_smaa_area_image, device_memory, device_memory_requirements[0].size + device_memory_requirements[1].size + alignment + device_memory_requirements[2].size + device_memory_requirements[3].size);
-	vkBindImageMemory(device, device_smaa_search_image, device_memory, device_memory_requirements[0].size + device_memory_requirements[1].size + alignment + device_memory_requirements[2].size + device_memory_requirements[3].size + device_memory_requirements[4].size);
+	vkBindBufferMemory(device, device_uniform_buffer, device_memory, sum_offsets(1));
+	vkBindImageMemory(device, device_water_bottle_image, device_memory, sum_offsets(2) + alignment);
+	vkBindImageMemory(device, device_box_image, device_memory, sum_offsets(3) + alignment);
+	vkBindImageMemory(device, device_table_image, device_memory, sum_offsets(4) + alignment);
+	vkBindImageMemory(device, device_fish_image, device_memory, sum_offsets(5) + alignment);
+	vkBindImageMemory(device, device_crow_image, device_memory, sum_offsets(6) + alignment);
+	vkBindImageMemory(device, device_smaa_area_image, device_memory, sum_offsets(7) + alignment);
+	vkBindImageMemory(device, device_smaa_search_image, device_memory, sum_offsets(8) + alignment);
 
 	// Water bottle image view creation
 	VkImageViewCreateInfo image_view_create_info = {
@@ -708,21 +812,75 @@ void VulkanSSAO::create_device_buffers() {
 
 	// Box image view creation
 	image_view_create_info.image = device_box_image;
-	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
-	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_normal_image_view);
-
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1};
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_color_image_view);
 
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1};
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_orm_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_normal_image_view);
 
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 3, 1};
 	vkCreateImageView(device, &image_view_create_info, nullptr, &device_box_emissive_image_view);
+
+	// Table image view creation
+	image_view_create_info.image = device_table_image;
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_table_color_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_table_orm_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_table_normal_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 3, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_table_emissive_image_view);
+
+	// Fish image view creation
+	image_view_create_info.image = device_fish_image;
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_fish_color_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_fish_orm_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_fish_normal_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 3, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_fish_emissive_image_view);
+
+	// Crow image view creation
+	image_view_create_info.image = device_crow_image;
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_crow_color_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_crow_orm_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 2, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_crow_normal_image_view);
+
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 3, 1};
+	vkCreateImageView(device, &image_view_create_info, nullptr, &device_crow_emissive_image_view);
 
 	// SMAA textures image view creation
 	image_view_create_info.image = device_smaa_area_image;
@@ -758,14 +916,26 @@ void VulkanSSAO::create_device_buffers() {
 
 	water_bottle_model_data.device_interleaved_vertex_data_offset = 0;
 	water_bottle_model_data.device_index_data_offset = water_bottle_model_data.interleaved_vertex_data_size;
-	water_bottle_model_data.device_image_data_offset = device_memory_requirements[0].size + device_memory_requirements[1].size + alignment;
+	water_bottle_model_data.device_image_data_offset = sum_offsets(2) + alignment;
 
 	box_model_data.device_interleaved_vertex_data_offset = water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size;
 	box_model_data.device_index_data_offset = box_model_data.device_interleaved_vertex_data_offset + box_model_data.interleaved_vertex_data_size;
-	box_model_data.device_image_data_offset = device_memory_requirements[0].size + device_memory_requirements[1].size + alignment + device_memory_requirements[2].size;
+	box_model_data.device_image_data_offset = sum_offsets(3) + alignment;
 
-	cube_model_data.device_interleaved_vertex_data_offset = box_model_data.device_index_data_offset + box_model_data.index_data_size;
-	cube_model_data.device_index_data_offset = cube_model_data.device_interleaved_vertex_data_offset + cube_model_data.interleaved_vertex_data_size;
+	table_model_data.device_interleaved_vertex_data_offset = box_model_data.device_index_data_offset + box_model_data.index_data_size;
+	table_model_data.device_index_data_offset = table_model_data.device_interleaved_vertex_data_offset + table_model_data.interleaved_vertex_data_size;
+	table_model_data.device_image_data_offset = sum_offsets(4) + alignment;
+
+	fish_model_data.device_interleaved_vertex_data_offset = table_model_data.device_index_data_offset + table_model_data.index_data_size;
+	fish_model_data.device_index_data_offset = fish_model_data.device_interleaved_vertex_data_offset + fish_model_data.interleaved_vertex_data_size;
+	fish_model_data.device_image_data_offset = sum_offsets(5) + alignment;
+
+	crow_model_data.device_interleaved_vertex_data_offset = fish_model_data.device_index_data_offset + fish_model_data.index_data_size;
+	crow_model_data.device_index_data_offset = crow_model_data.device_interleaved_vertex_data_offset + crow_model_data.interleaved_vertex_data_size;
+	crow_model_data.device_image_data_offset = sum_offsets(6) + alignment;
+
+	sphere_model_data.device_interleaved_vertex_data_offset = crow_model_data.device_index_data_offset + crow_model_data.index_data_size;
+	sphere_model_data.device_index_data_offset = sphere_model_data.device_interleaved_vertex_data_offset + sphere_model_data.interleaved_vertex_data_size;
 }
 
 void VulkanSSAO::create_attachments() {
@@ -941,8 +1111,8 @@ void VulkanSSAO::create_attachments() {
 
 void VulkanSSAO::create_descriptor_pool_and_layouts() {
 	std::array<VkDescriptorPoolSize, 3> descriptor_pool_size { {
-	{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5},
-	{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 20 },
+	{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8},
+	{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 35 },
 	{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 }
 	} };
 
@@ -950,7 +1120,7 @@ void VulkanSSAO::create_descriptor_pool_and_layouts() {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		nullptr,
 		VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-		11,
+		14,
 		descriptor_pool_size.size(),
 		descriptor_pool_size.data()
 	};
@@ -1206,7 +1376,8 @@ void VulkanSSAO::allocate_gaussian_blur_descriptor_sets() {
 }
 
 void VulkanSSAO::allocate_pbr_descriptor_sets() {
-	std::array<VkDescriptorSetLayout, 2> layouts_of_sets = {pbr_descriptor_sets_layout[0],pbr_descriptor_sets_layout[0]};
+	std::array<VkDescriptorSetLayout, 5> layouts_of_sets;
+	layouts_of_sets.fill(pbr_descriptor_sets_layout[0]);
 	VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		nullptr,
@@ -1230,6 +1401,30 @@ void VulkanSSAO::allocate_pbr_descriptor_sets() {
 		{ device_max_aniso_linear_sampler, device_box_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
 		{ device_max_aniso_linear_sampler, device_box_normal_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
 		{ device_max_aniso_linear_sampler, device_box_emissive_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+	};
+
+	VkDescriptorBufferInfo table_descriptor_buffer_info = { device_uniform_buffer, 512, 2 * sizeof(glm::mat4) };
+	VkDescriptorImageInfo table_descriptor_images_info[] = {
+		{ device_max_aniso_linear_sampler, device_table_color_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_table_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_table_normal_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_table_emissive_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+	};
+
+	VkDescriptorBufferInfo fish_descriptor_buffer_info = { device_uniform_buffer, 768, 2 * sizeof(glm::mat4) };
+	VkDescriptorImageInfo fish_descriptor_images_info[] = {
+		{ device_max_aniso_linear_sampler, device_fish_color_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_fish_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_fish_normal_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_fish_emissive_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+	};
+
+	VkDescriptorBufferInfo crow_descriptor_buffer_info = { device_uniform_buffer, 1024, 2 * sizeof(glm::mat4) };
+	VkDescriptorImageInfo crow_descriptor_images_info[] = {
+		{ device_max_aniso_linear_sampler, device_crow_color_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_crow_orm_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_crow_normal_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+		{ device_max_aniso_linear_sampler, device_crow_emissive_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
 	};
 
 	VkDescriptorImageInfo shadow_map_image_info = {
@@ -1307,9 +1502,116 @@ void VulkanSSAO::allocate_pbr_descriptor_sets() {
 		&shadow_map_image_info,
 		nullptr,
 		nullptr
-	}
-	};
-	vkUpdateDescriptorSets(device, 6, write_descriptor_set, 0, nullptr);
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[2],
+		0,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		nullptr,
+		&table_descriptor_buffer_info,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[2],
+		1,
+		0,
+		4,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		table_descriptor_images_info,
+		nullptr,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[2],
+		2,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		&shadow_map_image_info,
+		nullptr,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[3],
+		0,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		nullptr,
+		&fish_descriptor_buffer_info,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[3],
+		1,
+		0,
+		4,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		fish_descriptor_images_info,
+		nullptr,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[3],
+		2,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		&shadow_map_image_info,
+		nullptr,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[4],
+		0,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		nullptr,
+		&crow_descriptor_buffer_info,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[4],
+		1,
+		0,
+		4,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		crow_descriptor_images_info,
+		nullptr,
+		nullptr
+	},
+	{
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		pbr_descriptor_sets[4],
+		2,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		&shadow_map_image_info,
+		nullptr,
+		nullptr
+	}	};
+	vkUpdateDescriptorSets(device, 15, write_descriptor_set, 0, nullptr);
 }
 
 void VulkanSSAO::allocate_camera_light_sets() {
@@ -1325,13 +1627,13 @@ void VulkanSSAO::allocate_camera_light_sets() {
 	
 	VkDescriptorBufferInfo camera_descriptor_buffer_info = {
 		device_uniform_buffer,
-		512,
+		1280,
 		3*sizeof(glm::mat4)+sizeof(glm::vec4)
 	};
 
 	VkDescriptorBufferInfo light_descriptor_buffer_info = {
 		device_uniform_buffer,
-		768,
+		1536,
 		2*sizeof(glm::mat4)+2*sizeof(glm::vec4)
 	};
 
@@ -1371,7 +1673,7 @@ void VulkanSSAO::allocate_smaa_descriptor_sets() {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		nullptr,
 		descriptor_pool,
-		smaa_descriptor_sets_layout.size(),
+		static_cast<uint32_t>(smaa_descriptor_sets_layout.size()),
 		smaa_descriptor_sets_layout.data()
 	};
 	vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, smaa_descriptor_sets.data());
@@ -1392,7 +1694,7 @@ void VulkanSSAO::allocate_smaa_descriptor_sets() {
 		{ device_render_target_sampler, device_smaa_weight_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
 	};
 
-	VkDescriptorBufferInfo smaa_rt_metrics = {device_uniform_buffer, 1024, sizeof(glm::vec4)};
+	VkDescriptorBufferInfo smaa_rt_metrics = {device_uniform_buffer, 1792, sizeof(glm::vec4)};
 
 	// First writes are for the smaa edge descriptor 
 	VkWriteDescriptorSet write_descriptor_set[] = { {
@@ -1455,7 +1757,7 @@ void VulkanSSAO::allocate_hdr_descriptor_sets() {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		nullptr,
 		descriptor_pool,
-		hdr_descriptor_sets_layout.size(),
+		static_cast<uint32_t>(hdr_descriptor_sets_layout.size()),
 		hdr_descriptor_sets_layout.data()
 	};
 	vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, hdr_descriptor_sets.data());
@@ -3351,7 +3653,7 @@ void VulkanSSAO::upload_input_data() {
 	VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,nullptr };
 	vkBeginCommandBuffer(command_buffers[0], &command_buffer_begin_info);
 
-	std::array <VkBufferCopy, 3> buffer_copies { {
+	std::array <VkBufferCopy, 6> buffer_copies { {
 	{ 
 		0,0,
 		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size
@@ -3365,12 +3667,39 @@ void VulkanSSAO::upload_input_data() {
 		vulkan_helper::get_model_data_total_size(water_bottle_model_data) + vulkan_helper::get_model_data_total_size(box_model_data),
 		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
 		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size,
-		cube_model_data.interleaved_vertex_data_size + cube_model_data.index_data_size
+		table_model_data.interleaved_vertex_data_size + table_model_data.index_data_size
+	},
+	{
+		vulkan_helper::get_model_data_total_size(water_bottle_model_data) + vulkan_helper::get_model_data_total_size(box_model_data)
+		+ vulkan_helper::get_model_data_total_size(table_model_data),
+		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
+		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size +
+		table_model_data.interleaved_vertex_data_size + table_model_data.index_data_size,
+		fish_model_data.interleaved_vertex_data_size + fish_model_data.index_data_size
+	},
+	{
+		vulkan_helper::get_model_data_total_size(water_bottle_model_data) + vulkan_helper::get_model_data_total_size(box_model_data)
+		+ vulkan_helper::get_model_data_total_size(table_model_data) + vulkan_helper::get_model_data_total_size(fish_model_data),
+		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
+		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size +
+		table_model_data.interleaved_vertex_data_size + table_model_data.index_data_size +
+		fish_model_data.interleaved_vertex_data_size + fish_model_data.index_data_size,
+		crow_model_data.interleaved_vertex_data_size + crow_model_data.index_data_size
+	},
+	{
+		vulkan_helper::get_model_data_total_size(water_bottle_model_data) + vulkan_helper::get_model_data_total_size(box_model_data)
+		+ vulkan_helper::get_model_data_total_size(table_model_data) + vulkan_helper::get_model_data_total_size(fish_model_data)
+		+ vulkan_helper::get_model_data_total_size(crow_model_data),
+		water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size +
+		box_model_data.interleaved_vertex_data_size + box_model_data.index_data_size +
+		table_model_data.interleaved_vertex_data_size + table_model_data.index_data_size +
+		fish_model_data.interleaved_vertex_data_size + fish_model_data.index_data_size +
+		crow_model_data.interleaved_vertex_data_size + crow_model_data.index_data_size,
+		sphere_model_data.interleaved_vertex_data_size + sphere_model_data.index_data_size
 	}}};
-	
 	vkCmdCopyBuffer(command_buffers[0], host_vertex_buffer, device_vertex_buffer, buffer_copies.size(), buffer_copies.data());
 
-	VkImageMemoryBarrier image_memory_barrier[4] = { {
+	VkImageMemoryBarrier image_memory_barrier[7] = { {
 		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 		nullptr,
 		0,
@@ -3403,6 +3732,42 @@ void VulkanSSAO::upload_input_data() {
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_QUEUE_FAMILY_IGNORED,
 		VK_QUEUE_FAMILY_IGNORED,
+		device_table_image,
+		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,4}
+	},
+	{
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		nullptr,
+		0,
+		VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_QUEUE_FAMILY_IGNORED,
+		VK_QUEUE_FAMILY_IGNORED,
+		device_fish_image,
+		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,4}
+	},
+	{
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		nullptr,
+		0,
+		VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_QUEUE_FAMILY_IGNORED,
+		VK_QUEUE_FAMILY_IGNORED,
+		device_crow_image,
+		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,4}
+	},
+	{
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		nullptr,
+		0,
+		VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_QUEUE_FAMILY_IGNORED,
+		VK_QUEUE_FAMILY_IGNORED,
 		device_smaa_area_image,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}
 	},
@@ -3418,7 +3783,7 @@ void VulkanSSAO::upload_input_data() {
 		device_smaa_search_image,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}
 	} };
-	vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 4, image_memory_barrier);
+	vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 7, image_memory_barrier);
 
 	VkBufferImageCopy buffer_image_copy = {
 		water_bottle_model_data.host_image_data_offset,
@@ -3441,7 +3806,37 @@ void VulkanSSAO::upload_input_data() {
 	vkCmdCopyBufferToImage(command_buffers[0], host_vertex_buffer, device_box_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
 	buffer_image_copy = {
-		cube_model_data.host_index_data_offset + cube_model_data.index_data_size,
+		table_model_data.host_image_data_offset,
+		0,
+		0,
+		{VK_IMAGE_ASPECT_COLOR_BIT,0,0,4},
+		{0,0,0},
+		table_model_data.image_size
+	};
+	vkCmdCopyBufferToImage(command_buffers[0], host_vertex_buffer, device_table_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+
+	buffer_image_copy = {
+		fish_model_data.host_image_data_offset,
+		0,
+		0,
+		{VK_IMAGE_ASPECT_COLOR_BIT,0,0,4},
+		{0,0,0},
+		fish_model_data.image_size
+	};
+	vkCmdCopyBufferToImage(command_buffers[0], host_vertex_buffer, device_fish_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+
+	buffer_image_copy = {
+		crow_model_data.host_image_data_offset,
+		0,
+		0,
+		{VK_IMAGE_ASPECT_COLOR_BIT,0,0,4},
+		{0,0,0},
+		crow_model_data.image_size
+	};
+	vkCmdCopyBufferToImage(command_buffers[0], host_vertex_buffer, device_crow_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+
+	buffer_image_copy = {
+		sphere_model_data.host_index_data_offset + sphere_model_data.index_data_size,
 		0,
 		0,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
@@ -3451,7 +3846,7 @@ void VulkanSSAO::upload_input_data() {
 	vkCmdCopyBufferToImage(command_buffers[0], host_vertex_buffer, device_smaa_area_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
 	buffer_image_copy = {
-		cube_model_data.host_index_data_offset + cube_model_data.index_data_size + area_tex_size,
+		sphere_model_data.host_index_data_offset + sphere_model_data.index_data_size + area_tex_size,
 		0,
 		0,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
@@ -3493,10 +3888,46 @@ void VulkanSSAO::upload_input_data() {
 		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		VK_QUEUE_FAMILY_IGNORED,
 		VK_QUEUE_FAMILY_IGNORED,
+		device_table_image,
+		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,4}
+	};
+	image_memory_barrier[3] = {
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		nullptr,
+		VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_ACCESS_SHADER_READ_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_QUEUE_FAMILY_IGNORED,
+		VK_QUEUE_FAMILY_IGNORED,
+		device_fish_image,
+		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,4}
+	};
+	image_memory_barrier[4] = {
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		nullptr,
+		VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_ACCESS_SHADER_READ_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_QUEUE_FAMILY_IGNORED,
+		VK_QUEUE_FAMILY_IGNORED,
+		device_crow_image,
+		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,4}
+	};
+	image_memory_barrier[5] = {
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		nullptr,
+		VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_ACCESS_SHADER_READ_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_QUEUE_FAMILY_IGNORED,
+		VK_QUEUE_FAMILY_IGNORED,
 		device_smaa_area_image,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}
 	};
-	image_memory_barrier[3] = {
+	image_memory_barrier[6] = {
 		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 		nullptr,
 		VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -3508,7 +3939,7 @@ void VulkanSSAO::upload_input_data() {
 		device_smaa_search_image,
 		{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}
 	};
-	vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 4, image_memory_barrier);
+	vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 7, image_memory_barrier);
 
 	vkEndCommandBuffer(command_buffers[0]);
 
@@ -3547,7 +3978,7 @@ void VulkanSSAO::record_command_buffers() {
 		vkBeginCommandBuffer(command_buffers[i], &command_buffer_begin_info);
 
 		// Copying uniform buffer data for the pbr shader
-		VkBufferCopy buffer_copy = { 0,0,256*4+16};
+		VkBufferCopy buffer_copy = { 0,0,256*7+16};
 		vkCmdCopyBuffer(command_buffers[i], host_uniform_buffer, device_uniform_buffer, 1, &buffer_copy);
 		
 		// Transitioning layout from the write to the shader read
@@ -3590,6 +4021,24 @@ void VulkanSSAO::record_command_buffers() {
 		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
 		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, box_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
 		vkCmdDrawIndexed(command_buffers[i], box_model_data.indices, 1, 0, 0, 0);
+
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_layout, 0, 1, &pbr_descriptor_sets[2], 0, nullptr);
+		offset = table_model_data.device_interleaved_vertex_data_offset;
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, table_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], table_model_data.indices, 1, 0, 0, 0);
+
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_layout, 0, 1, &pbr_descriptor_sets[3], 0, nullptr);
+		offset = fish_model_data.device_interleaved_vertex_data_offset;
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, fish_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], fish_model_data.indices, 1, 0, 0, 0);
+
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_layout, 0, 1, &pbr_descriptor_sets[4], 0, nullptr);
+		offset = crow_model_data.device_interleaved_vertex_data_offset;
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, crow_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], crow_model_data.indices, 1, 0, 0, 0);
 
 		// shadow_map Renderpass End
 		vkCmdEndRenderPass(command_buffers[i]);
@@ -3691,13 +4140,31 @@ void VulkanSSAO::record_command_buffers() {
 		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, box_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
 		vkCmdDrawIndexed(command_buffers[i], box_model_data.indices, 1, 0, 0, 0);
 
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, 1, &pbr_descriptor_sets[2], 0, nullptr);
+		offset = table_model_data.device_interleaved_vertex_data_offset;
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, table_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], table_model_data.indices, 1, 0, 0, 0);
+
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, 1, &pbr_descriptor_sets[3], 0, nullptr);
+		offset = fish_model_data.device_interleaved_vertex_data_offset;
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, fish_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], fish_model_data.indices, 1, 0, 0, 0);
+
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, 1, &pbr_descriptor_sets[4], 0, nullptr);
+		offset = crow_model_data.device_interleaved_vertex_data_offset;
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, crow_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], crow_model_data.indices, 1, 0, 0, 0);
+
 		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, light_pipeline);
 		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, light_pipeline_layout, 0, 2,
 			std::array<VkDescriptorSet,2> {camera_light_sets[0], camera_light_sets[1]}.data(), 0, nullptr);
-		offset = cube_model_data.device_interleaved_vertex_data_offset;
+		offset = sphere_model_data.device_interleaved_vertex_data_offset;
 		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &device_vertex_buffer, &offset);
-		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, cube_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
-		vkCmdDrawIndexed(command_buffers[i], cube_model_data.indices, 1, 0, 0, 0);
+		vkCmdBindIndexBuffer(command_buffers[i], device_vertex_buffer, sphere_model_data.device_index_data_offset, VK_INDEX_TYPE_UINT16);
+		vkCmdDrawIndexed(command_buffers[i], sphere_model_data.indices, 1, 0, 0, 0);
 
 		// PBR Renderpass end
 		vkCmdEndRenderPass(command_buffers[i]);
@@ -3814,16 +4281,21 @@ void VulkanSSAO::frame_loop() {
 	light_pos[0] = glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
 	light_color[0] = glm::vec4(10.0f, 10.0f, 10.0f, 10.0f);
 
-	//	bottle descriptor		box descriptor			camera descriptor		light_descriptor
-	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
-	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:1	208b    ] 48b	[ set:2	32b	   	]
-	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 3*mat4+vec4	]		[ 2*mat4+2*vec4	]
-	//	[---------------]-------[---------------]-------[---------------]-------[---------------]
-	//	smaa_rt_metrics descriptor
-	//	--------[---------------] 
-	//	 224b	[ set:3	16b		]
-	//			[ 1*vec4		]
-	//	--------[---------------]
+	//	bottle descriptor		box descriptor			table descriptor
+	//	[---------------]-------[---------------]-------[---------------]-------
+	//	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b	[ set:0	128b    ] 128b
+	//	[ 2*mat4 		]		[ 2*mat4 		]		[ 2*mat4		]
+	//	[---------------]-------[---------------]-------[---------------]-------
+	// 	fish descriptor			crow descriptor
+	// 	[---------------]-------[---------------]-------
+	// 	[ set:0	128b   	] 128b	[ set:0	128b   	] 128b
+	// 	[ 2*mat4		]		[ 2*mat4		]	
+	// 	[---------------]-------[---------------]-------
+	//	camera descriptor		light_descriptor		smaa_rt_metrics descriptor
+	//	[---------------]-------[---------------]-------[---------------] 
+	//	[ set:1	208b    ] 48b	[ set:2	160b   	] 	96b	[ set:3	16b		]
+	//	[ 3*mat4+vec4	]		[ 2*mat4+2*vec4	]		[ 1*vec4		]
+	//	[---------------]-------[---------------]-------[---------------]
 
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
@@ -3831,43 +4303,71 @@ void VulkanSSAO::frame_loop() {
 		v_matrix = glm::lookAt(glm::vec3(camera_pos), glm::vec3(camera_pos + camera_dir), glm::vec3(0.0f, 1.0f, 0.0f));
 		inverse_v_matrix = glm::transpose(glm::inverse(v_matrix));
 
-		water_bottle_m_matrix = glm::translate(glm::vec3(0.0f, 0.15f + glm::sin(glfwGetTime())/7.0f, 0.0f)) 
+		water_bottle_m_matrix = glm::translate(glm::vec3(0.0f, 0.15f + glm::sin(glfwGetTime())/7.0f, 0.2f)) 
 			* glm::rotate(glm::radians(10.0f), glm::vec3(0.0f, 0.0f, 1.0f))
-			* glm::rotate(static_cast<float>(glfwGetTime() * 1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+			* glm::rotate(static_cast<float>(glfwGetTime() * 1.0f), glm::vec3(0.0f, 1.0f, 0.0f))
+			* glm::scale(glm::vec3(0.3f, 0.3f, 0.3f));
 		water_bottle_normal_matrix = glm::transpose(glm::inverse(water_bottle_m_matrix));
 
 		box_m_matrix = glm::translate(glm::vec3(0.0f, -1.0f, 0.0f))*glm::scale(glm::vec3(3.0f,3.0f,3.0f));
 		box_normal_matrix = glm::transpose(glm::inverse(box_m_matrix));
 
+		table_m_matrix = glm::translate(glm::vec3(0.5f, -0.35f, 0.5f))*glm::rotate(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f))
+			*glm::scale(glm::vec3(1.5f,1.5f,1.5f));
+		table_normal_matrix = glm::transpose(glm::inverse(table_m_matrix));
+
+		fish_m_matrix = glm::translate(glm::vec3(-0.3f, -0.3f, 0.3f))*glm::rotate(glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f))
+			*glm::scale(glm::vec3(0.3f,0.3f,0.3f));
+		fish_normal_matrix = glm::transpose(glm::inverse(fish_m_matrix));
+
+		crow_m_matrix = glm::translate(glm::vec3(0.4f, -0.18f, 0.45f))*glm::rotate(glm::radians(-45.0f), glm::vec3(0.0f, 1.0f, 0.0f))
+			*glm::scale(glm::vec3(0.3f,0.3f,0.3f));
+		crow_normal_matrix = glm::transpose(glm::inverse(crow_m_matrix));
+
 		camera_v_matrix = glm::lookAt(glm::vec3(light_pos[0]),glm::vec3(0.0f, 0.0f, 0.0f),glm::vec3(0.0f,1.0f,0.0f));
 
 		glm::vec4 smaa_rt_metrics = glm::vec4(1.0f / window_size.width, 1.0f / window_size.height, static_cast<float>(window_size.width), static_cast<float>(window_size.height));
 
-		// First descriptor copy for water bottle
+		// descriptor copy for water bottle
 		uint8_t *dst_ptr = static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size;
 		memcpy(dst_ptr, glm::value_ptr(water_bottle_m_matrix), sizeof(glm::mat4));
 		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(water_bottle_normal_matrix), sizeof(glm::mat4));
 		
-		// Second descriptor copy for box
+		// descriptor copy for box
 		dst_ptr += 256;
 		memcpy(dst_ptr, glm::value_ptr(box_m_matrix), sizeof(glm::mat4));
 		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(box_normal_matrix), sizeof(glm::mat4));
 
-		// Third descriptor copy for camera
+		// descriptor copy for table
+		dst_ptr += 256;
+		memcpy(dst_ptr, glm::value_ptr(table_m_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(table_normal_matrix), sizeof(glm::mat4));
+
+		// descriptor copy for fish
+		dst_ptr += 256;
+		memcpy(dst_ptr, glm::value_ptr(fish_m_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(fish_normal_matrix), sizeof(glm::mat4));
+
+		// descriptor copy for crow
+		dst_ptr += 256;
+		memcpy(dst_ptr, glm::value_ptr(crow_m_matrix), sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(crow_normal_matrix), sizeof(glm::mat4));
+
+		// descriptor copy for camera
 		dst_ptr += 256;
 		memcpy(dst_ptr, glm::value_ptr(v_matrix), sizeof(glm::mat4));
 		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(inverse_v_matrix), sizeof(glm::mat4));
 		memcpy(dst_ptr + sizeof(glm::mat4) * 2, glm::value_ptr(p_matrix), sizeof(glm::mat4));
 		memcpy(dst_ptr + sizeof(glm::mat4) * 3, glm::value_ptr(camera_pos), sizeof(glm::vec4));
 
-		// Third descriptor copy for light
+		// descriptor copy for light
 		dst_ptr += 256;
 		memcpy(dst_ptr, glm::value_ptr(camera_v_matrix), sizeof(glm::mat4));
 		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(camera_p_matrix), sizeof(glm::mat4));
 		memcpy(dst_ptr + sizeof(glm::mat4)*2, glm::value_ptr(light_pos[0]), sizeof(glm::vec4));
 		memcpy(dst_ptr + sizeof(glm::mat4)*2 + sizeof(glm::vec4), glm::value_ptr(light_color[0]), sizeof(glm::vec4));
 
-		// Fourth descriptor copy for smaa_rt_metrics
+		// descriptor copy for smaa_rt_metrics
 		dst_ptr += 256;
 		memcpy(dst_ptr, glm::value_ptr(smaa_rt_metrics), sizeof(glm::vec4));
 
@@ -4229,6 +4729,25 @@ VulkanSSAO::~VulkanSSAO() {
 	vkDestroyImageView(device, device_box_normal_image_view, nullptr);
 	vkDestroyImageView(device, device_box_emissive_image_view, nullptr);
 	vkDestroyImage(device, device_box_image, nullptr);
+
+	vkDestroyImageView(device, device_table_color_image_view, nullptr);
+	vkDestroyImageView(device, device_table_orm_image_view, nullptr);
+	vkDestroyImageView(device, device_table_normal_image_view, nullptr);
+	vkDestroyImageView(device, device_table_emissive_image_view, nullptr);
+	vkDestroyImage(device, device_table_image, nullptr);
+
+	vkDestroyImageView(device, device_fish_color_image_view, nullptr);
+	vkDestroyImageView(device, device_fish_orm_image_view, nullptr);
+	vkDestroyImageView(device, device_fish_normal_image_view, nullptr);
+	vkDestroyImageView(device, device_fish_emissive_image_view, nullptr);
+	vkDestroyImage(device, device_fish_image, nullptr);
+
+	vkDestroyImageView(device, device_crow_color_image_view, nullptr);
+	vkDestroyImageView(device, device_crow_orm_image_view, nullptr);
+	vkDestroyImageView(device, device_crow_normal_image_view, nullptr);
+	vkDestroyImageView(device, device_crow_emissive_image_view, nullptr);
+	vkDestroyImage(device, device_crow_image, nullptr);
+
 	vkDestroySampler(device, device_max_aniso_linear_sampler, nullptr);
 
 	vkDestroyImageView(device, device_smaa_search_image_view, nullptr);
