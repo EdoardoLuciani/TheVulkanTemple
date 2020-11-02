@@ -11,13 +11,16 @@ release: CXXFLAGS += -O3 -D NDEBUG
 release: $(EXE)
 debug: CXXFLAGS += -DDEBUG -g -O0
 debug: $(EXE)
-$(EXE): $(ODIR)/main.o $(ODIR)/vulkan_helper.o
+$(EXE): $(ODIR)/main.o $(ODIR)/vulkan_helper.o $(ODIR)/base_vulkan_app.o
 	$(CXX) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
 $(ODIR)/main.o: $(SDIR)/main.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 
 $(ODIR)/vulkan_helper.o: $(SDIR)/vulkan_helper.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+
+$(ODIR)/base_vulkan_app.o: $(SDIR)/base_vulkan_app.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 
 # Shaders compilation

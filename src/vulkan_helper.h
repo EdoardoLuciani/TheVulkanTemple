@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <fstream>
 #include <filesystem>
+#include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -62,6 +63,10 @@ namespace vulkan_helper {
 	int get_binary_file_content(std::string &&file_path, std::vector<uint8_t>& file_binary_content);
 
 	uint32_t get_buffer_image_alignment(uint64_t start_of_memory_binding, uint32_t image_alignment);
+
+	uint32_t get_aligned_memory_size(VkMemoryRequirements m_r);
+	uint32_t get_aligned_memory_size(VkMemoryRequirements m_r, uint32_t alignment);
+	uint32_t get_alignment_memory(uint64_t mem_size, uint32_t alignment);
 
 	int copy_gltf_contents(tinygltf::Model &model,
                            const std::vector<vulkan_helper::v_model_attributes> &v_attributes_to_copy,
