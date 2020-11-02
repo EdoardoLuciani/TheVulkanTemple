@@ -231,14 +231,25 @@ namespace vulkan_helper
         return 0;
     }
 
-    uint32_t get_buffer_image_alignment(uint64_t start_of_memory_binding, uint32_t image_alignment)
-    {
+    uint32_t get_buffer_image_alignment(uint64_t start_of_memory_binding, uint32_t image_alignment) {
         uint32_t result = image_alignment - (start_of_memory_binding % image_alignment);
         if (result == 1024)
         {
             result = 0;
         }
         return result;
+    }
+
+    uint32_t get_aligned_memory_size(VkMemoryRequirements m_r) {
+        return m_r.alignment * std::ceil(static_cast<float>(m_r.size) / m_r.alignment);
+    }
+
+    uint32_t get_aligned_memory_size(VkMemoryRequirements m_r, uint32_t alignment) {
+        return alignment * std::ceil(static_cast<float>(m_r.size) / alignment);
+    }
+
+    uint32_t get_alignment_memory(uint64_t mem_size, uint32_t alignment) {
+        return alignment - (mem_size % alignment);
     }
 
     // The model in order to be processed correctly should have:
