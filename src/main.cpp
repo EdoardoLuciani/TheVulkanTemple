@@ -80,7 +80,7 @@ private:
 	VkInstance instance;
 	VkDebugReportCallbackEXT debug_report_callback;
 
-	VkExtent2D window_size = { 1777,1000 };
+	VkExtent2D window_size = { 900,900 };
 	GLFWwindow* window;
 	VkSurfaceKHR surface;
 
@@ -88,6 +88,7 @@ private:
 	VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
 	uint32_t queue_family_index;
 	VkDevice device;
+	VkPhysicalDeviceLimits device_limits;
 	VkQueue queue;
 
 	VkSwapchainKHR old_swapchain = VK_NULL_HANDLE;
@@ -288,6 +289,7 @@ void VulkanSSAO::create_logical_device() {
 
 	// we get the device memory properties because we need them later for allocations
 	physical_device = devices[selected_device_number];
+	device_limits = devices_properties[selected_device_number].limits;
 	vkGetPhysicalDeviceMemoryProperties(physical_device, &physical_device_memory_properties);
 
 	uint32_t families_count;
@@ -555,13 +557,13 @@ void VulkanSSAO::create_host_buffers() {
 	VkMemoryAllocateInfo memory_allocate_info = {
 		VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 		nullptr,
-		host_memory_requirements[0].size + host_memory_requirements[1].size,
+		vulkan_helper::get_aligned_memory_size(host_memory_requirements[0]) + vulkan_helper::get_aligned_memory_size(host_memory_requirements[1]),
 		vulkan_helper::select_memory_index(physical_device_memory_properties,host_memory_requirements[0],VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 	};
 	if (vkAllocateMemory(device, &memory_allocate_info, nullptr, &host_memory) != VK_SUCCESS) { throw MEMORY_ALLOCATION_FAILED; }
 
 	vkBindBufferMemory(device, host_vertex_buffer, host_memory, 0);
-	vkBindBufferMemory(device, host_uniform_buffer, host_memory, host_memory_requirements[0].size);
+	vkBindBufferMemory(device, host_uniform_buffer, host_memory, vulkan_helper::get_aligned_memory_size(host_memory_requirements[0]));
 
 	vkMapMemory(device, host_memory, 0, VK_WHOLE_SIZE, 0, &host_data_pointer);
 
@@ -670,7 +672,8 @@ void VulkanSSAO::create_host_buffers() {
 	area_tex.read(reinterpret_cast<char*>(host_data_pointer) + offset, area_tex_size);
 	search_tex.read(static_cast<char*>(host_data_pointer) + offset + area_tex_size, search_tex_size);
 
-	VkMappedMemoryRange mapped_memory_range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, host_memory,0,host_memory_requirements[0].size };
+	VkMappedMemoryRange mapped_memory_range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, host_memory, 0,
+		vulkan_helper::get_aligned_memory_size(host_memory_requirements[0], device_limits.nonCoherentAtomSize) };
 	vkFlushMappedMemoryRanges(device, 1, &mapped_memory_range);
 }
 
@@ -752,11 +755,24 @@ void VulkanSSAO::create_device_buffers() {
 	vkGetImageMemoryRequirements(device, device_smaa_area_image, &device_memory_requirements[7]);
 	vkGetImageMemoryRequirements(device, device_smaa_search_image, &device_memory_requirements[8]);
 
-	uint32_t alignment = vulkan_helper::get_buffer_image_alignment(device_memory_requirements[0].size + device_memory_requirements[1].size, device_memory_requirements[2].alignment);
+	/*
+	uint32_t alignment = vulkan_helper::get_buffer_image_alignment(
+		vulkan_helper::get_aligned_memory_size(device_memory_requirements[0], device_memory_requirements[1].alignment) +
+		device_memory_requirements[1].size,
+		device_memory_requirements[2].alignment);
 
 	uint64_t allocation_size = alignment;
 	for (const auto& device_memory_requirement : device_memory_requirements) {
-		allocation_size += device_memory_requirement.size;
+		allocation_size += vulkan_helper::get_aligned_memory_size(device_memory_requirement);
+	}
+	*/
+	int allocation_size = 0;
+	for (int i = 0; i < device_memory_requirements.size(); i++) {
+		allocation_size += device_memory_requirements[i].size;
+		if ((i+1) < device_memory_requirements.size()) {
+			uint32_t align = device_memory_requirements.at(i+1).alignment;
+			allocation_size += vulkan_helper::get_alignment_memory(allocation_size, align);
+		}
 	}
 
 	VkMemoryAllocateInfo memory_allocate_info = {
@@ -771,19 +787,23 @@ void VulkanSSAO::create_device_buffers() {
 		int sum = 0;
 		for (int i = 0; i < idx; i++) {
 			sum += device_memory_requirements[i].size;
+			if ((i+1) < device_memory_requirements.size()) {
+				uint32_t align = device_memory_requirements.at(i+1).alignment;
+				sum += vulkan_helper::get_alignment_memory(sum, align);
+			}
 		}
 		return sum;
 	};
 
 	vkBindBufferMemory(device, device_vertex_buffer, device_memory, 0);
 	vkBindBufferMemory(device, device_uniform_buffer, device_memory, sum_offsets(1));
-	vkBindImageMemory(device, device_water_bottle_image, device_memory, sum_offsets(2) + alignment);
-	vkBindImageMemory(device, device_box_image, device_memory, sum_offsets(3) + alignment);
-	vkBindImageMemory(device, device_table_image, device_memory, sum_offsets(4) + alignment);
-	vkBindImageMemory(device, device_fish_image, device_memory, sum_offsets(5) + alignment);
-	vkBindImageMemory(device, device_crow_image, device_memory, sum_offsets(6) + alignment);
-	vkBindImageMemory(device, device_smaa_area_image, device_memory, sum_offsets(7) + alignment);
-	vkBindImageMemory(device, device_smaa_search_image, device_memory, sum_offsets(8) + alignment);
+	vkBindImageMemory(device, device_water_bottle_image, device_memory, sum_offsets(2));
+	vkBindImageMemory(device, device_box_image, device_memory, sum_offsets(3));
+	vkBindImageMemory(device, device_table_image, device_memory, sum_offsets(4));
+	vkBindImageMemory(device, device_fish_image, device_memory, sum_offsets(5));
+	vkBindImageMemory(device, device_crow_image, device_memory, sum_offsets(6));
+	vkBindImageMemory(device, device_smaa_area_image, device_memory, sum_offsets(7));
+	vkBindImageMemory(device, device_smaa_search_image, device_memory, sum_offsets(8));
 
 	// Water bottle image view creation
 	VkImageViewCreateInfo image_view_create_info = {
@@ -916,23 +936,23 @@ void VulkanSSAO::create_device_buffers() {
 
 	water_bottle_model_data.device_interleaved_vertex_data_offset = 0;
 	water_bottle_model_data.device_index_data_offset = water_bottle_model_data.interleaved_vertex_data_size;
-	water_bottle_model_data.device_image_data_offset = sum_offsets(2) + alignment;
+	water_bottle_model_data.device_image_data_offset = sum_offsets(2);
 
 	box_model_data.device_interleaved_vertex_data_offset = water_bottle_model_data.interleaved_vertex_data_size + water_bottle_model_data.index_data_size;
 	box_model_data.device_index_data_offset = box_model_data.device_interleaved_vertex_data_offset + box_model_data.interleaved_vertex_data_size;
-	box_model_data.device_image_data_offset = sum_offsets(3) + alignment;
+	box_model_data.device_image_data_offset = sum_offsets(3);
 
 	table_model_data.device_interleaved_vertex_data_offset = box_model_data.device_index_data_offset + box_model_data.index_data_size;
 	table_model_data.device_index_data_offset = table_model_data.device_interleaved_vertex_data_offset + table_model_data.interleaved_vertex_data_size;
-	table_model_data.device_image_data_offset = sum_offsets(4) + alignment;
+	table_model_data.device_image_data_offset = sum_offsets(4);
 
 	fish_model_data.device_interleaved_vertex_data_offset = table_model_data.device_index_data_offset + table_model_data.index_data_size;
 	fish_model_data.device_index_data_offset = fish_model_data.device_interleaved_vertex_data_offset + fish_model_data.interleaved_vertex_data_size;
-	fish_model_data.device_image_data_offset = sum_offsets(5) + alignment;
+	fish_model_data.device_image_data_offset = sum_offsets(5);
 
 	crow_model_data.device_interleaved_vertex_data_offset = fish_model_data.device_index_data_offset + fish_model_data.index_data_size;
 	crow_model_data.device_index_data_offset = crow_model_data.device_interleaved_vertex_data_offset + crow_model_data.interleaved_vertex_data_size;
-	crow_model_data.device_image_data_offset = sum_offsets(6) + alignment;
+	crow_model_data.device_image_data_offset = sum_offsets(6);
 
 	sphere_model_data.device_interleaved_vertex_data_offset = crow_model_data.device_index_data_offset + crow_model_data.index_data_size;
 	sphere_model_data.device_index_data_offset = sphere_model_data.device_interleaved_vertex_data_offset + sphere_model_data.interleaved_vertex_data_size;
@@ -989,8 +1009,12 @@ void VulkanSSAO::create_attachments() {
 	vkGetImageMemoryRequirements(device, device_smaa_image, &device_memory_attachments_requirements[4]);
 
 	uint64_t allocation_size = 0;
-	for (const auto& device_memory_attachments_requirement : device_memory_attachments_requirements) {
-		allocation_size += device_memory_attachments_requirement.size;
+	for (int i = 0; i < device_memory_attachments_requirements.size(); i++) {
+		allocation_size += device_memory_attachments_requirements[i].size;
+		if ((i+1) < device_memory_attachments_requirements.size()) {
+			uint32_t align = device_memory_attachments_requirements.at(i+1).alignment;
+			allocation_size += vulkan_helper::get_alignment_memory(allocation_size, align);
+		}
 	}
 
 	VkMemoryAllocateInfo memory_allocate_info = {
@@ -1007,6 +1031,10 @@ void VulkanSSAO::create_attachments() {
 		int sum = 0;
 		for (int i = 0; i < idx; i++) {
 			sum += device_memory_attachments_requirements[i].size;
+			if ((i+1) < device_memory_attachments_requirements.size()) {
+				uint32_t align = device_memory_attachments_requirements.at(i+1).alignment;
+				sum += vulkan_helper::get_alignment_memory(sum, align);
+			}
 		}
 		return sum;
 	};
@@ -4329,7 +4357,7 @@ void VulkanSSAO::frame_loop() {
 		glm::vec4 smaa_rt_metrics = glm::vec4(1.0f / window_size.width, 1.0f / window_size.height, static_cast<float>(window_size.width), static_cast<float>(window_size.height));
 
 		// descriptor copy for water bottle
-		uint8_t *dst_ptr = static_cast<uint8_t*>(host_data_pointer) + host_memory_requirements[0].size;
+		uint8_t *dst_ptr = static_cast<uint8_t*>(host_data_pointer) + vulkan_helper::get_aligned_memory_size(host_memory_requirements[0]);
 		memcpy(dst_ptr, glm::value_ptr(water_bottle_m_matrix), sizeof(glm::mat4));
 		memcpy(dst_ptr + sizeof(glm::mat4), glm::value_ptr(water_bottle_normal_matrix), sizeof(glm::mat4));
 		
@@ -4371,7 +4399,7 @@ void VulkanSSAO::frame_loop() {
 		dst_ptr += 256;
 		memcpy(dst_ptr, glm::value_ptr(smaa_rt_metrics), sizeof(glm::vec4));
 
-		VkMappedMemoryRange mapped_memory_range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, host_memory,host_memory_requirements[0].size,host_memory_requirements[1].size };
+		VkMappedMemoryRange mapped_memory_range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, host_memory, 0, VK_WHOLE_SIZE };
 		vkFlushMappedMemoryRanges(device, 1, &mapped_memory_range);
 
 		uint32_t image_index = 0;
