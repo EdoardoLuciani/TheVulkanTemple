@@ -1,6 +1,7 @@
 #ifdef _WIN64
 	#define VK_USE_PLATFORM_WIN32_KHR
 	#define GLFW_EXPOSE_NATIVE_WIN32
+    #define _CRT_SECURE_NO_WARNINGS
 #elif __linux__
 	#define VK_USE_PLATFORM_XLIB_KHR
 	#define GLFW_EXPOSE_NATIVE_X11
@@ -10,7 +11,6 @@
 
 #define VOLK_IMPLEMENTATION
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define _CRT_SECURE_NO_WARNINGS
 
 #include <iostream>
 #include <cassert>

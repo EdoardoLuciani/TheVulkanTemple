@@ -43,7 +43,11 @@ enum class Error {
 	PHYSICAL_DEVICES_ENUMERATION_FAILED,
 	NO_AVAILABLE_DEVICE_FOUND,
 	DEVICE_CREATION_FAILED,
+	PRESENT_MODES_RETRIEVAL_FAILED,
+	SURFACE_CAPABILITIES_RETRIEVAL_FAILED,
+	SURFACE_FORMATS_RETRIEVAL_FAILED,
 	SWAPCHAIN_CREATION_FAILED,
+	SWAPCHAIN_IMAGES_RETRIEVAL_FAILED,
 	COMMAND_POOL_CREATION_FAILED,
 	COMMAND_BUFFER_CREATION_FAILED,
 	MEMORY_ALLOCATION_FAILED,
@@ -78,19 +82,30 @@ class BaseVulkanApp {
 
 
 	private:
-		
 		// Vulkan attributes
-		VkInstance instance;
+		VkInstance instance = VK_NULL_HANDLE;
 		#ifndef NDEBUG
 			VkDebugReportCallbackEXT debug_report_callback;
 		#endif
 		VkExtent2D window_size;
 		GLFWwindow* window;
 		VkSurfaceKHR surface;
-		VkDevice device;
+		VkPhysicalDevice selected_physical_device = VK_NULL_HANDLE;
+		VkDevice device = VK_NULL_HANDLE;
 		VkQueue queue;
 
-		bool compare_physical_device_features_structs(VkPhysicalDeviceFeatures base, VkPhysicalDeviceFeatures to_compare);
+		VkSwapchainCreateInfoKHR swapchain_create_info;
+		VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+		std::vector<VkImage> swapchain_images;
+
+		VkCommandPool command_pool;
+		std::vector<VkCommandBuffer> command_buffers;
+
+		// Vulkan related private methods
+		void create_swapchain();
+		void create_cmd_pool_and_buffers(uint32_t queue_family_index);
+
+		// Non-related Vulkan methods
 		void check_error(int32_t last_return_value, Error error_location);
 };
 

@@ -100,7 +100,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		VkPhysicalDeviceFeatures devices_features;
 		vkGetPhysicalDeviceFeatures(devices[i], &devices_features);
 
-		if (compare_physical_device_features_structs(devices_features, required_physical_device_features)) {
+		if (vulkan_helper::compare_physical_device_features_structs(devices_features, required_physical_device_features)) {
 			uint32_t families_count;
 			vkGetPhysicalDeviceQueueFamilyProperties(devices[i], &families_count, nullptr);
 
@@ -115,7 +115,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		}	
 	}
 
-	VkPhysicalDevice selected_physical_device = VK_NULL_HANDLE;
+	selected_physical_device = VK_NULL_HANDLE;
 	uint32_t selected_queue_family_index = -1;
 	if (plausible_devices_d_index_qf_index.size() == 1) {
 		selected_physical_device = devices[plausible_devices_d_index_qf_index[0].first];
@@ -166,31 +166,100 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 	vkGetDeviceQueue(device, selected_queue_family_index, 0, &queue);
 	volkLoadDevice(device);
 
-	// Swapchain creation
-
+	create_swapchain();
+    create_cmd_pool_and_buffers(selected_queue_family_index);
 }
-
 
 BaseVulkanApp::~BaseVulkanApp() {
+    vkDeviceWaitIdle(device);
 
+    vkFreeCommandBuffers(device, command_pool, command_buffers.size(), command_buffers.data());
+    vkDestroyCommandPool(device, command_pool, nullptr);
+
+    vkDestroySwapchainKHR(device, swapchain, nullptr);
+
+    vkDestroyDevice(device, nullptr);
+    vkDestroySurfaceKHR(instance, surface, nullptr);
+    glfwDestroyWindow(window);
+#ifndef NDEBUG
+    vkDestroyDebugReportCallbackEXT(instance, debug_report_callback, nullptr);
+#endif
+    vkDestroyInstance(instance, nullptr);
 }
 
+void BaseVulkanApp::create_swapchain() {
+	// Listing all available presentation
+	uint32_t presentation_modes_number;
+	vkGetPhysicalDeviceSurfacePresentModesKHR(selected_physical_device, surface, &presentation_modes_number, nullptr);
+	std::vector<VkPresentModeKHR> presentation_modes(presentation_modes_number);
+	check_error(vkGetPhysicalDeviceSurfacePresentModesKHR(selected_physical_device, surface, &presentation_modes_number, presentation_modes.data()),
+				Error::PRESENT_MODES_RETRIEVAL_FAILED);
 
-bool BaseVulkanApp::compare_physical_device_features_structs(VkPhysicalDeviceFeatures base, VkPhysicalDeviceFeatures requested) {
-	constexpr uint32_t feature_count = static_cast<uint32_t>(sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32));
+	VkPresentModeKHR selected_present_mode = vulkan_helper::select_presentation_mode(presentation_modes, VK_PRESENT_MODE_MAILBOX_KHR);
 
-	std::array<VkBool32, feature_count> base_bools_arr;
-	std::memcpy(base_bools_arr.data(), &base, base_bools_arr.size()*sizeof(VkBool32));
+	VkSurfaceCapabilitiesKHR surface_capabilities;
+	check_error(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(selected_physical_device, surface, &surface_capabilities),
+				Error::SURFACE_CAPABILITIES_RETRIEVAL_FAILED);
 
-	std::array<VkBool32, feature_count> requested_bools_arr;
-	std::memcpy(requested_bools_arr.data(), &requested, requested_bools_arr.size()*sizeof(VkBool32));
+	uint32_t number_of_images = vulkan_helper::select_number_of_images(surface_capabilities);
+	VkExtent2D size_of_images = vulkan_helper::select_size_of_images(surface_capabilities, window_size);
+	VkImageUsageFlags image_usage = vulkan_helper::select_image_usage(surface_capabilities, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+	VkSurfaceTransformFlagBitsKHR surface_transform = vulkan_helper::select_surface_transform(surface_capabilities, VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR);
 
-	for(size_t i = 0; i < base_bools_arr.size(); i++) {
-		if (base_bools_arr[i] == VK_FALSE && requested_bools_arr[i] == VK_TRUE) {
-			return VK_FALSE;
-		}
-	}
-	return VK_TRUE;
+	uint32_t formats_count = 0;
+	vkGetPhysicalDeviceSurfaceFormatsKHR(selected_physical_device, surface, &formats_count, nullptr);
+	std::vector<VkSurfaceFormatKHR> surface_formats(formats_count);
+	check_error(vkGetPhysicalDeviceSurfaceFormatsKHR(selected_physical_device, surface, &formats_count, surface_formats.data()),
+				Error::SURFACE_FORMATS_RETRIEVAL_FAILED);
+	VkSurfaceFormatKHR surface_format = vulkan_helper::select_surface_format(surface_formats, { VK_FORMAT_B8G8R8A8_UNORM ,VK_COLOR_SPACE_SRGB_NONLINEAR_KHR });
+
+	VkSwapchainKHR old_swapchain = swapchain;
+	swapchain_create_info = {
+		VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+		nullptr,
+		0,
+		surface,
+		number_of_images,
+		surface_format.format,
+		surface_format.colorSpace,
+		size_of_images,
+		1,
+		image_usage,
+		VK_SHARING_MODE_EXCLUSIVE,
+		0,
+		nullptr,
+		surface_transform,
+		VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+		selected_present_mode,
+		VK_TRUE,
+		old_swapchain
+	};
+	check_error(vkCreateSwapchainKHR(device, &swapchain_create_info, nullptr, &swapchain), Error::SWAPCHAIN_CREATION_FAILED);
+
+    uint32_t swapchain_images_count;
+	vkGetSwapchainImagesKHR(device, swapchain, &swapchain_images_count, nullptr);
+	swapchain_images.resize(swapchain_images_count);
+	check_error(vkGetSwapchainImagesKHR(device, swapchain, &swapchain_images_count, swapchain_images.data()), Error::SWAPCHAIN_IMAGES_RETRIEVAL_FAILED);
+}
+
+void BaseVulkanApp::create_cmd_pool_and_buffers(uint32_t queue_family_index) {
+    VkCommandPoolCreateInfo command_pool_create_info = {
+        VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        nullptr,
+        0,
+        queue_family_index
+    };
+    check_error(vkCreateCommandPool(device, &command_pool_create_info, nullptr, &command_pool), Error::COMMAND_POOL_CREATION_FAILED);
+
+    VkCommandBufferAllocateInfo command_buffer_allocate_info = {
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        nullptr,
+        command_pool,
+        VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        static_cast<uint32_t>(swapchain_images.size())
+    };
+    command_buffers.resize(swapchain_images.size());
+    check_error(vkAllocateCommandBuffers(device, &command_buffer_allocate_info, command_buffers.data()), Error::COMMAND_BUFFER_CREATION_FAILED);
 }
 
 void BaseVulkanApp::check_error(int32_t last_return_value, Error error_location) {
@@ -198,4 +267,6 @@ void BaseVulkanApp::check_error(int32_t last_return_value, Error error_location)
 		throw std::make_pair(last_return_value, error_location);
 	}
 }
+
+
 
