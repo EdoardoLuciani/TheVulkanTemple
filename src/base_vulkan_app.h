@@ -11,27 +11,12 @@
 	#error "Unknown compiler or not supported OS"
 #endif
 
-#include <iostream>
-#include <cassert>
-#include <fstream>
-#include <filesystem>
-#include <chrono>
-#include <random>
-#include <utility>
-#include <array>
+#include <string>
+#include <vector>
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
-#include <glm/glm.hpp>
-#include <glm/vec3.hpp>
-#include <glm/gtc/integer.hpp>
-#include <glm/gtx/transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/quaternion.hpp>
-#include <glm/gtx/vector_angle.hpp>
-#include <glm/gtx/euler_angles.hpp>
 
 #include "volk.h"
-#include "vulkan_helper.h"
 
 enum class Error {
 	VOLK_INITIALIZATION_FAILED,
@@ -50,7 +35,13 @@ enum class Error {
 	SWAPCHAIN_IMAGES_RETRIEVAL_FAILED,
 	COMMAND_POOL_CREATION_FAILED,
 	COMMAND_BUFFER_CREATION_FAILED,
+	MODEL_LOADING_FAILED,
+    BUFFER_CREATION_FAILED,
 	MEMORY_ALLOCATION_FAILED,
+    BIND_BUFFER_MEMORY_FAILED,
+    POINTER_REQUEST_FOR_HOST_MEMORY_FAILED,
+    MAPPED_MEMORY_FLUSH_FAILED,
+    IMAGE_CREATION_FAILED,
 	SHADER_MODULE_CREATION_FAILED,
 	ACQUIRE_NEXT_IMAGE_FAILED,
 	QUEUE_PRESENT_FAILED
@@ -77,11 +68,9 @@ class BaseVulkanApp {
 					  const std::vector<const char*> &desired_device_level_extensions,
 					  const VkPhysicalDeviceFeatures &required_physical_device_features,
 					  VkBool32 surface_support);
-		//setEngineFeatures();
-		~BaseVulkanApp();
+		virtual ~BaseVulkanApp();
 
-
-	private:
+	protected:
 		// Vulkan attributes
 		VkInstance instance = VK_NULL_HANDLE;
 		#ifndef NDEBUG
@@ -91,6 +80,7 @@ class BaseVulkanApp {
 		GLFWwindow* window;
 		VkSurfaceKHR surface;
 		VkPhysicalDevice selected_physical_device = VK_NULL_HANDLE;
+		VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
 		VkDevice device = VK_NULL_HANDLE;
 		VkQueue queue;
 

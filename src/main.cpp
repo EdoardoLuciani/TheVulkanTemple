@@ -34,7 +34,7 @@
 #define MAGIC_ENUM_RANGE_MIN 0
 #define MAGIC_ENUM_RANGE_MAX 256
 #include "magic_enum.hpp"
-#include "base_vulkan_app.h"
+#include "graphics_module_vulkan_app.h"
 
 int main() {
 	#ifdef NDEBUG
@@ -57,7 +57,8 @@ int main() {
 	VkPhysicalDeviceFeatures selected_device_features = { 0 };
 
 	try {
-		BaseVulkanApp app("TheVulkanTemple", desired_validation_layers, desired_instance_level_extensions, {800,800}, desired_device_level_extensions, selected_device_features, VK_TRUE);
+		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_validation_layers, desired_instance_level_extensions, {800,800}, desired_device_level_extensions, selected_device_features, VK_TRUE);
+		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb"},0);
 	}
 	catch (std::pair<int32_t,Error>& err) {
 		std::cout << "The application encounted the error: " << magic_enum::enum_name(err.second) << " with return value: " << err.first << std::endl;

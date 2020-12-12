@@ -4,7 +4,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tiny_gltf.h>
-
+#include <bitset>
 
 namespace vulkan_helper
 {
@@ -87,7 +87,7 @@ namespace vulkan_helper
         }
 
         for (auto &surface_format : surface_formats) {
-            if ((desired_surface_format.format == surface_format.format)) {
+            if (desired_surface_format.format == surface_format.format) {
                 selected_surface_format.format = desired_surface_format.format;
                 selected_surface_format.colorSpace = surface_format.colorSpace;
                 return selected_surface_format;
@@ -235,11 +235,11 @@ namespace vulkan_helper
     // -3 index data not present in the model
     // -4 not all textures have the same size
 
-	int copy_gltf_contents(tinygltf::Model &model,
-                           const std::vector<vulkan_helper::v_model_attributes> &v_attributes_to_copy,
+    int copy_gltf_contents(tinygltf::Model &model,
+                           uint8_t v_attributes_to_copy,
                            bool vertex_normalize,
-						   bool index_resolve,
-						   const std::vector<vulkan_helper::t_model_attributes> &t_attributes_to_copy,
+                           bool index_resolve,
+                           uint8_t t_attributes_to_copy,
                            void *dst_ptr, vulkan_helper::model_data_info &out_data) {
 
         std::array<uint32_t, 4> v_attr_n_elem;
@@ -254,89 +254,93 @@ namespace vulkan_helper
         memset(&out_data, 0, sizeof(model_data_info));
 
         std::array<const char*,4> v_model_attributes_string {
-		    "POSITION",
-		    "NORMAL",
-		    "TEXCOORD_0",
-		    "TANGENT"
-	    };
+                "POSITION",
+                "NORMAL",
+                "TEXCOORD_0",
+                "TANGENT"
+        };
 
         std::array<int,4> v_model_attributes_sizes {
-		    12,
-		    12,
-		    8,
-		    16
-	    };
+                12,
+                12,
+                8,
+                16
+        };
 
-        for (const auto& v_attribute : v_attributes_to_copy) {
-            auto it = model.meshes[0].primitives[0].attributes.find(v_model_attributes_string[v_attribute]);
-            if (it != model.meshes[0].primitives[0].attributes.end()) {
-                v_attr_off[v_attribute] = model.accessors[it->second].byteOffset;
-                v_attr_off[v_attribute] += model.bufferViews[model.accessors[it->second].bufferView].byteOffset;
-                v_attr_len[v_attribute] = model.bufferViews[model.accessors[it->second].bufferView].byteLength;
-                v_attr_n_elem[v_attribute] = v_attr_len[v_attribute] / v_model_attributes_sizes[v_attribute];
-                out_data.interleaved_vertex_data_size += v_attr_len[v_attribute];
 
-                // only the first time in the cycle
-                if (out_data.vertices == 0) {
-                    out_data.vertices = v_attr_n_elem[v_attribute];
+        for (uint8_t i=0; i<v_model_attributes_max_set_bits; i++) {
+            if (v_attributes_to_copy & (1 << i)) {
+                auto it = model.meshes[0].primitives[0].attributes.find(v_model_attributes_string[i]);
+                if (it != model.meshes[0].primitives[0].attributes.end()) {
+                    v_attr_off[i] = model.accessors[it->second].byteOffset;
+                    v_attr_off[i] += model.bufferViews[model.accessors[it->second].bufferView].byteOffset;
+                    v_attr_len[i] = model.bufferViews[model.accessors[it->second].bufferView].byteLength;
+                    v_attr_n_elem[i] = v_attr_len[i] / v_model_attributes_sizes[i];
+                    out_data.interleaved_mesh_data_size += v_attr_len[i];
+
+                    // only the first time in the cycle
+                    if (out_data.vertices == 0) {
+                        out_data.vertices = v_attr_n_elem[i];
+                    }
+                    else if (out_data.vertices != v_attr_n_elem[i]) {
+                        return -1;
+                    }
+
                 }
-                else if (out_data.vertices != v_attr_n_elem[v_attribute]) {
-                    return -1;
+                else {
+                    return -2;
                 }
-                
-            }
-            else {
-                return -2;
             }
         }
 
-        if (index_resolve == true) {
+        if (index_resolve) {
             int acc_indices = model.meshes[0].primitives[0].indices;
             if (acc_indices != -1) {
                 off_index = model.accessors[acc_indices].byteOffset;
                 off_index += model.bufferViews[model.accessors[acc_indices].bufferView].byteOffset;
                 out_data.index_data_size = model.bufferViews[model.accessors[acc_indices].bufferView].byteLength;
                 if (model.accessors[acc_indices].componentType == 5123) {
-                    out_data.single_index_size = VK_INDEX_TYPE_UINT16;
+                    out_data.index_data_type = VK_INDEX_TYPE_UINT16;
                 }
                 else if (model.accessors[acc_indices].componentType == 5125) {
-                    out_data.single_index_size = VK_INDEX_TYPE_UINT32;
+                    out_data.index_data_type = VK_INDEX_TYPE_UINT32;
                 }
-                out_data.indices = out_data.index_data_size / (2 + out_data.single_index_size*2);
+                out_data.indices = out_data.index_data_size / (2 + out_data.index_data_type * 2);
             }
             else {
                 return -3;
             }
         }
 
-        for (const auto &t_attribute : t_attributes_to_copy) {
-            switch (t_attribute) {
-                case t_model_attributes::T_ALBEDO_MAP:
-                    map_index[t_attribute] = model.materials[0].pbrMetallicRoughness.baseColorTexture.index;
-                break;
-                case t_model_attributes::T_NORMAL_MAP:
-                    map_index[t_attribute] = model.materials[0].normalTexture.index;
-                break;
-                case t_model_attributes::T_ORM_MAP:
-                    map_index[t_attribute] = model.materials[0].pbrMetallicRoughness.metallicRoughnessTexture.index;
-                break;
-                case t_model_attributes::T_EMISSIVE_MAP:
-                    map_index[t_attribute] = model.materials[0].emissiveTexture.index;
-                break;
+        for (uint8_t i=0; i<t_model_attributes_max_set_bits; i++) {
+            switch (static_cast<t_model_attributes>(t_attributes_to_copy & (1 << i))) {
+                case T_ALBEDO_MAP:
+                    map_index[0] = model.materials[0].pbrMetallicRoughness.baseColorTexture.index;
+                    break;
+                case T_NORMAL_MAP:
+                	map_index[1] = model.materials[0].normalTexture.index;
+                    break;
+                case T_ORM_MAP:
+                    map_index[2] = model.materials[0].pbrMetallicRoughness.metallicRoughnessTexture.index;
+                    break;
+                case T_EMISSIVE_MAP:
+                	map_index[3] = model.materials[0].emissiveTexture.index;
+                    break;
+                default:
+                    continue;
             }
-            if (map_index[t_attribute] != -1) {
-                map_size[t_attribute].first = model.images[map_index[t_attribute]].width;
-                map_size[t_attribute].second = model.images[map_index[t_attribute]].height;
+            if (map_index[i] != -1) {
+                map_size[i].first = model.images[map_index[i]].width;
+                map_size[i].second = model.images[map_index[i]].height;
                 out_data.image_layers++;
-                
+
                 if (out_data.image_size.width == 0 && out_data.image_size.height == 0) {
-                    out_data.image_size.width = map_size[t_attribute].first;
-                    out_data.image_size.height = map_size[t_attribute].second;
+                    out_data.image_size.width = map_size[i].first;
+                    out_data.image_size.height = map_size[i].second;
                 }
-                else if (out_data.image_size.width != map_size[t_attribute].first || out_data.image_size.height != map_size[t_attribute].second) {
+                else if (out_data.image_size.width != map_size[i].first || out_data.image_size.height != map_size[i].second) {
                     return -4;
                 }
-
             }
         }
         out_data.image_size.depth = 1;
@@ -347,49 +351,51 @@ namespace vulkan_helper
         }
 
         // Normalize vectors on request
-        if ( vertex_normalize == true && v_attr_len[0] ) {
+        if (vertex_normalize && v_attr_len[0] ) {
             normalize_vectors(reinterpret_cast<glm::vec3*>(model.buffers[0].data.data() + v_attr_off[0]), v_attr_n_elem[0]);
         }
 
         // Calculate the block size for each vertex
         int group_size = 0;
-        for (const auto& v_attribute : v_attributes_to_copy) {
-            group_size += v_model_attributes_sizes[v_attribute];
+        for (uint8_t i=0; i<v_model_attributes_max_set_bits; i++) {
+        	if (t_attributes_to_copy & (1 << i)) {
+		        group_size += v_model_attributes_sizes[i];
+        	}
         }
 
         // Vertex data copy
-        out_data.host_interleaved_vertex_data_offset = 0;
         for (uint32_t i = 0; i < out_data.vertices; i++) {
             int written_data_size = 0;
-            for (const auto& v_attribute : v_attributes_to_copy) {
-                memcpy(static_cast<uint8_t *>(dst_ptr) + (i * group_size) + written_data_size,
-                model.buffers[0].data.data() + v_attr_off[v_attribute] + i*v_model_attributes_sizes[v_attribute],
-                v_model_attributes_sizes[v_attribute]);
-                written_data_size += v_model_attributes_sizes[v_attribute];
-            }
+	        for (uint8_t j=0; i<v_model_attributes_max_set_bits; i++) {
+		        if (t_attributes_to_copy & (1 << j)) {
+			        memcpy(static_cast<uint8_t *>(dst_ptr) + (i * group_size) + written_data_size,
+			               model.buffers[0].data.data() + v_attr_off[j] + i * v_model_attributes_sizes[j],
+			               v_model_attributes_sizes[j]);
+			        written_data_size += v_model_attributes_sizes[j];
+		        }
+	        }
         }
 
-        out_data.host_index_data_offset = out_data.interleaved_vertex_data_size;
         for (uint32_t i = 0; i < out_data.indices; i++) {
-            memcpy(static_cast<uint8_t *>(dst_ptr) + out_data.host_index_data_offset,
-            model.buffers[0].data.data() + off_index,
-            out_data.index_data_size);
+            memcpy(static_cast<uint8_t *>(dst_ptr) + out_data.interleaved_mesh_data_size,
+                   model.buffers[0].data.data() + off_index,
+                   out_data.index_data_size);
         }
 
-        out_data.host_image_data_offset = out_data.host_index_data_offset + out_data.index_data_size;
         int progressive_data = 0;
-        for (const auto &t_attribute : t_attributes_to_copy) {
-            memcpy(static_cast<uint8_t *>(dst_ptr) + out_data.host_image_data_offset + progressive_data,
-            model.images[map_index[t_attribute]].image.data(),
-            model.images[map_index[t_attribute]].image.size());
-            progressive_data += model.images[map_index[t_attribute]].image.size();
+        for (uint8_t i=0; i<t_model_attributes_max_set_bits; i++) {
+	        if (t_attributes_to_copy & (1 << i)) {
+		        memcpy(static_cast<uint8_t *>(dst_ptr) + out_data.interleaved_mesh_data_size + out_data.index_data_size + progressive_data,
+		               model.images[map_index[i]].image.data(),
+		               model.images[map_index[i]].image.size());
+		        progressive_data += model.images[map_index[i]].image.size();
+	        }
         }
         return 0;
-        
     }
 
     uint64_t get_model_data_total_size(const model_data_info &model) {
-        return model.interleaved_vertex_data_size + model.index_data_size +
+        return model.interleaved_mesh_data_size + model.index_data_size +
         model.image_size.width * model.image_size.height * 4 * model.image_layers;
     }
 

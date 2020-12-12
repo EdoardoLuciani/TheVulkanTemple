@@ -1,5 +1,10 @@
 #include "base_vulkan_app.h"
 
+#include <vector>
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
+#include "vulkan_helper.h"
+
 BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 					  		 const std::vector<const char*> &desired_validation_layers,
 					  		 const std::vector<const char*> &desired_instance_level_extensions,
@@ -63,7 +68,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		this->window_size.height = window_size.height;
 		window = glfwCreateWindow(this->window_size.width, this->window_size.height, application_name.c_str(), nullptr, nullptr);
 	}
-	if (window == NULL) { check_error(VK_ERROR_UNKNOWN, Error::GLFW_WINDOW_CREATION_FAILED); }
+	if (window == nullptr) { check_error(VK_ERROR_UNKNOWN, Error::GLFW_WINDOW_CREATION_FAILED); }
 
 	// Surface Creation
 	#ifdef _WIN64
@@ -137,6 +142,9 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		check_error(VK_ERROR_UNKNOWN, Error::NO_AVAILABLE_DEVICE_FOUND);
 	}
 
+	// Getting the properties of the selected physical device
+    vkGetPhysicalDeviceMemoryProperties(selected_physical_device, &physical_device_memory_properties);
+
 	// Creating the device with only one queue and the requested device level extensions and features
 	std::vector<float> queue_priorities = { 1.0f };
 	std::vector<VkDeviceQueueCreateInfo> queue_create_info;
@@ -172,12 +180,9 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 
 BaseVulkanApp::~BaseVulkanApp() {
     vkDeviceWaitIdle(device);
-
     vkFreeCommandBuffers(device, command_pool, command_buffers.size(), command_buffers.data());
     vkDestroyCommandPool(device, command_pool, nullptr);
-
     vkDestroySwapchainKHR(device, swapchain, nullptr);
-
     vkDestroyDevice(device, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);
     glfwDestroyWindow(window);
