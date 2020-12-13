@@ -144,6 +144,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 
 	// Getting the properties of the selected physical device
     vkGetPhysicalDeviceMemoryProperties(selected_physical_device, &physical_device_memory_properties);
+    vkGetPhysicalDeviceProperties(selected_physical_device, &physical_device_properties);
 
 	// Creating the device with only one queue and the requested device level extensions and features
 	std::vector<float> queue_priorities = { 1.0f };

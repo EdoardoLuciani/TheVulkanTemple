@@ -21,31 +21,11 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
         models_total_size += vulkan_helper::get_model_data_total_size(model_data);
     }
 
-    VkBufferCreateInfo buffer_create_info = {
-        VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        nullptr,
-        0,
-        models_total_size,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_SHARING_MODE_EXCLUSIVE,
-        0,
-        nullptr
-    };
-    VkBuffer model_data_buffer;
-    check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &model_data_buffer), Error::BUFFER_CREATION_FAILED);
-    VkMemoryRequirements model_data_buffer_memory_requirements;
-    vkGetBufferMemoryRequirements(device, model_data_buffer, &model_data_buffer_memory_requirements);
+    VkBuffer host_model_data_buffer = VK_NULL_HANDLE;
+    create_buffer(host_model_data_buffer, models_total_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
-    VkMemoryAllocateInfo memory_allocate_info = {
-        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        nullptr,
-        model_data_buffer_memory_requirements.size,
-        vulkan_helper::select_memory_index(physical_device_memory_properties, model_data_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-    };
-    VkDeviceMemory host_model_data_memory;
-    check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &host_model_data_memory), Error::MEMORY_ALLOCATION_FAILED);
-
-    check_error(vkBindBufferMemory(device, model_data_buffer, host_model_data_memory, 0), Error::BIND_BUFFER_MEMORY_FAILED);
+    VkDeviceMemory host_model_data_memory = VK_NULL_HANDLE;
+    allocate_and_bind_to_memory(host_model_data_memory, {host_model_data_buffer}, {}, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     void *model_host_data_pointer;
     check_error(vkMapMemory(device, host_model_data_memory, 0, VK_WHOLE_SIZE, 0, &model_host_data_pointer), Error::POINTER_REQUEST_FOR_HOST_MEMORY_FAILED);
@@ -62,94 +42,29 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
                                           vulkan_helper::t_model_attributes::T_ALL,
                                           static_cast<uint8_t*>(model_host_data_pointer) + offset, model_data[i]);
         offset += vulkan_helper::get_model_data_total_size(model_data[i]);
-        mesh_and_index_data_size += model_data[i].interleaved_mesh_data_size + model_data[i].index_data_size;
+        mesh_and_index_data_size += vulkan_helper::get_model_mesh_and_index_data_size(model_data[i]);
     }
+    vkUnmapMemory(device, host_model_data_memory);
 
-    VkMappedMemoryRange mapped_memory_range = {VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, host_model_data_memory, 0, VK_WHOLE_SIZE};
-    check_error(vkFlushMappedMemoryRanges(device, 1, &mapped_memory_range), Error::MAPPED_MEMORY_FLUSH_FAILED);
+    // After creating memory and buffer for the model data, we need to create a uniform buffer and their memory
+    uint64_t uniform_size = vulkan_helper::get_aligned_memory_size(object_matrix_size, physical_device_properties.limits.minUniformBufferOffsetAlignment)*models.size();
+    create_buffer(host_model_uniform_buffer, uniform_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    allocate_and_bind_to_memory(host_model_uniform_memory, {host_model_uniform_buffer}, {}, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    vkMapMemory(device, host_model_uniform_memory, 0, VK_WHOLE_SIZE, 0, &host_model_uniform_buffer_ptr);
 
     // After copying the data to host memory, we create a device buffer to hold the mesh and index data
-    buffer_create_info = {
-        VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        nullptr,
-        0,
-        mesh_and_index_data_size,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_SHARING_MODE_EXCLUSIVE,
-        0,
-        nullptr
-    };
-    vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
-    check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &device_mesh_data_buffer), Error::BUFFER_CREATION_FAILED);
+    create_buffer(device_mesh_data_buffer, mesh_and_index_data_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
-    // We must also create images for the textures of every object
-    for(auto& device_model_image : device_model_images) {
+    // We must also create images for the textures of every object, after destroying the precedent images
+    for(auto &device_model_image : device_model_images) {
         vkDestroyImage(device, device_model_image, nullptr);
     }
     device_model_images.resize(models.size());
     for (int i=0; i<device_model_images.size(); i++) {
-        VkImageCreateInfo image_create_info = {
-            VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-            nullptr,
-            VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT,
-            VK_IMAGE_TYPE_2D,
-            VK_FORMAT_R8G8B8A8_UNORM,
-            model_data[i].image_size,
-            1,
-            model_data[i].image_layers,
-            VK_SAMPLE_COUNT_1_BIT,
-            VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-            VK_SHARING_MODE_EXCLUSIVE,
-            0,
-            nullptr,
-            VK_IMAGE_LAYOUT_UNDEFINED
-        };
-        check_error(vkCreateImage(device, &image_create_info, nullptr, &device_model_images[i]), Error::IMAGE_CREATION_FAILED);
+        create_image(device_model_images[i], model_data[i].image_size, model_data[i].image_layers, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT);
     }
 
-    // Then we need the memory requirements for both the mesh_data_buffer and the images in order to allocate memory
-    std::vector<VkMemoryRequirements> device_memory_requirements(1+device_model_images.size());
-    vkGetBufferMemoryRequirements(device, device_mesh_data_buffer, &device_memory_requirements[0]);
-    for(int i=0; i<device_model_images.size(); i++) {
-        vkGetImageMemoryRequirements(device, device_model_images[i], &device_memory_requirements[1+i]);
-    }
-
-    // Do I even need this???
-    uint64_t allocation_size = 0;
-    for (int i = 0; i < device_memory_requirements.size(); i++) {
-        allocation_size += device_memory_requirements[i].size;
-        if ((i+1) < device_memory_requirements.size()) {
-            uint32_t align = device_memory_requirements.at(i+1).alignment;
-            allocation_size += vulkan_helper::get_alignment_memory(allocation_size, align);
-        }
-    }
-
-    memory_allocate_info = {
-        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        nullptr,
-        allocation_size,
-        vulkan_helper::select_memory_index(physical_device_memory_properties,device_memory_requirements[1],VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-    };
-    vkFreeMemory(device, device_model_data_memory, nullptr);
-    check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &device_model_data_memory), Error::MEMORY_ALLOCATION_FAILED);
-
-    auto sum_offsets = [&](int idx) {
-        int sum = 0;
-        for (int i = 0; i < idx; i++) {
-            sum += device_memory_requirements[i].size;
-            if ((i+1) < device_memory_requirements.size()) {
-                uint32_t align = device_memory_requirements.at(i+1).alignment;
-                sum += vulkan_helper::get_alignment_memory(sum, align);
-            }
-        }
-        return sum;
-    };
-
-    vkBindBufferMemory(device, device_mesh_data_buffer, device_model_data_memory, 0);
-    for (int i=0; i<device_model_images.size(); i++) {
-        vkBindImageMemory(device, device_model_images[i], device_model_data_memory, sum_offsets(1+i));
-    }
+    allocate_and_bind_to_memory(device_model_data_memory, {device_mesh_data_buffer}, device_model_images, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // After the buffer and the images have been allocated and binded, we process to create the image views
     for (auto& device_model_image_views : device_model_images_views) {
@@ -157,37 +72,122 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
             vkDestroyImageView(device, device_model_image_view, nullptr);
         }
     }
-
     // Here when creating the images views we say that the first image view of an image is of type srgb and the other ones are unorm
     device_model_images_views.resize(device_model_images.size());
     for (uint32_t i=0; i<device_model_images.size(); i++) {
         device_model_images_views[i].resize(model_data[i].image_layers);
         for (uint32_t j=0; j<device_model_images_views.size(); j++) {
-            VkFormat image_format;
-            if (j == 0) {
-                image_format = VK_FORMAT_R8G8B8A8_SRGB;
-            }
-            else {
-                image_format = VK_FORMAT_R8G8B8A8_UNORM;
-            }
-            VkImageViewCreateInfo image_view_create_info = {
-                VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                nullptr,
-                0,
-                device_model_images[i],
-                VK_IMAGE_VIEW_TYPE_2D,
-                image_format,
-                {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
-                {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, j, 1}
-            };
-            vkCreateImageView(device, &image_view_create_info, nullptr, &device_model_images_views[i][j]);
+            VkFormat image_format = (j == 0) ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+            create_image_view(device_model_images_views[i][j], device_model_images[i], image_format, VK_IMAGE_ASPECT_COLOR_BIT, j, 1);
         }
     }
 
-    // TODO: create buffer for the uniform of every object
+    // After setting the required memory we register the command buffer to upload the data
+    VkCommandBufferBeginInfo command_buffer_begin_info = {
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        nullptr,
+        VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        nullptr
+    };
+    vkBeginCommandBuffer(command_buffers[0], &command_buffer_begin_info);
+
+    // We calculate the offset for the mesh data both in the host and device buffers and register the copy
+    uint64_t src_offset = 0;
+    uint64_t dst_offset = 0;
+    std::vector<VkBufferCopy> buffer_copies(models.size());
+    for (int i=0; i<buffer_copies.size(); i++) {
+        buffer_copies[i].srcOffset = src_offset;
+        src_offset += vulkan_helper::get_model_data_total_size(model_data[i]);
+        buffer_copies[i].dstOffset = dst_offset;
+        dst_offset += vulkan_helper::get_model_mesh_and_index_data_size(model_data[i]);
+        buffer_copies[i].size = vulkan_helper::get_model_mesh_and_index_data_size(model_data[i]);
+    }
+    vkCmdCopyBuffer(command_buffers[0], host_model_data_buffer, device_mesh_data_buffer, buffer_copies.size(), buffer_copies.data());
+
+    // We need to transition the device images to DST_OPTIMAL
+    std::vector<VkImageMemoryBarrier> image_memory_barriers(device_model_images.size());
+    for (int i=0; i<image_memory_barriers.size(); i++) {
+        image_memory_barriers[i] = {
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            nullptr,
+            0,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_model_images[i],
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+        };
+    }
+    vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
+
+    // We perform the copy from the host buffer to the device images
+    uint64_t image_data_offset = 0;
+    for (int i=0; i<device_model_images.size(); i++) {
+        image_data_offset += vulkan_helper::get_model_mesh_and_index_data_size(model_data[i]);
+        VkBufferImageCopy buffer_image_copy = {
+            image_data_offset,
+            0,
+            0,
+            {VK_IMAGE_ASPECT_COLOR_BIT,0,0,4},
+            {0,0,0},
+            model_data[i].image_size
+        };
+        image_data_offset += vulkan_helper::get_model_texture_size(model_data[i]);
+        vkCmdCopyBufferToImage(command_buffers[0], host_model_data_buffer, device_model_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+    }
+
+    // After the copy we need to transition the images to be shader ready
+    for (int i=0; i<image_memory_barriers.size(); i++) {
+        image_memory_barriers[i] = {
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            nullptr,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_model_images[i],
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+        };
+    }
+    vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
+    vkEndCommandBuffer(command_buffers[0]);
+
+    // After registering the command we create a fence and submit the command_buffer
+    VkFenceCreateInfo fence_create_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,nullptr,0 };
+    VkFence fence;
+    vkCreateFence(device, &fence_create_info, nullptr, &fence);
+
+    VkPipelineStageFlags pipeline_stage_flags = { VK_PIPELINE_STAGE_TRANSFER_BIT };
+    VkSubmitInfo submit_info = {
+            VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            nullptr,
+            0,
+            nullptr,
+            &pipeline_stage_flags,
+            1,
+            &command_buffers[0],
+            0,
+            nullptr
+    };
+    vkQueueSubmit(queue, 1, &submit_info, fence);
+    vkWaitForFences(device, 1, &fence, VK_TRUE, 20000000);
+
+    // After the copy has finished we do cleanup
+    vkResetCommandPool(device, command_pool, 0);
+    vkDestroyFence(device, fence, nullptr);
+    vkDestroyBuffer(device, host_model_data_buffer, nullptr);
+    vkFreeMemory(device, host_model_data_memory, nullptr);
 }
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
+    vkUnmapMemory(device, host_model_uniform_memory);
+    vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
+    vkFreeMemory(device, host_model_uniform_memory, nullptr);
+
     for (auto& device_model_image_views : device_model_images_views) {
         for (auto & device_model_image_view : device_model_image_views) {
             vkDestroyImageView(device, device_model_image_view, nullptr);
@@ -198,4 +198,101 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     }
     vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
     vkFreeMemory(device, device_model_data_memory, nullptr);
+}
+
+void GraphicsModuleVulkanApp::create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage) {
+    VkBufferCreateInfo buffer_create_info = {
+        VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        nullptr,
+        0,
+        size,
+        usage,
+        VK_SHARING_MODE_EXCLUSIVE,
+        0,
+        nullptr
+    };
+    vkDestroyBuffer(device, buffer, nullptr);
+    check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &buffer), Error::BUFFER_CREATION_FAILED);
+}
+
+void GraphicsModuleVulkanApp::create_image(VkImage &image, VkExtent3D image_size, uint32_t layers, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags) {
+    VkImageCreateInfo image_create_info = {
+            VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            nullptr,
+            create_flags,
+            VK_IMAGE_TYPE_2D,
+            VK_FORMAT_R8G8B8A8_UNORM,
+            image_size,
+            1,
+            layers,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_IMAGE_TILING_OPTIMAL,
+            usage_flags,
+            VK_SHARING_MODE_EXCLUSIVE,
+            0,
+            nullptr,
+            VK_IMAGE_LAYOUT_UNDEFINED
+    };
+    vkDestroyImage(device, image, nullptr);
+    check_error(vkCreateImage(device, &image_create_info, nullptr, &image), Error::IMAGE_CREATION_FAILED);
+}
+
+void GraphicsModuleVulkanApp::create_image_view(VkImageView &image_view, VkImage image, VkFormat image_format, VkImageAspectFlags aspect_mask, uint32_t start_layer, uint32_t layer_count) {
+    VkImageViewCreateInfo image_view_create_info = {
+            VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            nullptr,
+            0,
+            image,
+            VK_IMAGE_VIEW_TYPE_2D,
+            image_format,
+            {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
+            {aspect_mask, 0, VK_REMAINING_MIP_LEVELS, start_layer, layer_count}
+    };
+    vkDestroyImageView(device, image_view, nullptr);
+    check_error(vkCreateImageView(device, &image_view_create_info, nullptr, &image_view), Error::IMAGE_VIEW_CREATION_FAILED);
+}
+
+void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(VkDeviceMemory &memory, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VkMemoryPropertyFlags flags) {
+    std::vector<VkMemoryRequirements> memory_requirements(buffers.size() + images.size());
+    for (int i=0; i<buffers.size(); i++) {
+        vkGetBufferMemoryRequirements(device, buffers[i], &memory_requirements[i]);
+    }
+    for (int i=0; i<images.size(); i++) {
+        vkGetImageMemoryRequirements(device, images[i], &memory_requirements[i+buffers.size()]);
+    }
+
+    uint64_t allocation_size = 0;
+    for (int i = 0; i < memory_requirements.size(); i++) {
+        allocation_size += memory_requirements[i].size;
+        if ((i+1) < memory_requirements.size()) {
+            allocation_size = vulkan_helper::get_aligned_memory_size(allocation_size, memory_requirements.at(i+1).alignment);
+        }
+    }
+
+    VkMemoryAllocateInfo memory_allocate_info = {
+        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        nullptr,
+        allocation_size,
+        vulkan_helper::select_memory_index(physical_device_memory_properties, memory_requirements.back(), flags)
+    };
+    vkFreeMemory(device, memory, nullptr);
+    check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &memory), Error::MEMORY_ALLOCATION_FAILED);
+
+    auto sum_offsets = [&](int idx) {
+        int sum = 0;
+        for (int i = 0; i < idx; i++) {
+            sum += memory_requirements[i].size;
+            if ((i+1) < memory_requirements.size()) {
+                sum = vulkan_helper::get_aligned_memory_size(sum, memory_requirements.at(i+1).alignment);
+            }
+        }
+        return sum;
+    };
+
+    for (int i=0; i<buffers.size(); i++) {
+        check_error(vkBindBufferMemory(device, buffers[i], memory, sum_offsets(i)), Error::BIND_BUFFER_MEMORY_FAILED);
+    }
+    for (int i=0; i<images.size(); i++) {
+        check_error(vkBindImageMemory(device, images[i], memory, sum_offsets(i+buffers.size())), Error::BIND_IMAGE_MEMORY_FAILED);
+    }
 }

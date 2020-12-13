@@ -39,9 +39,11 @@ enum class Error {
     BUFFER_CREATION_FAILED,
 	MEMORY_ALLOCATION_FAILED,
     BIND_BUFFER_MEMORY_FAILED,
+    BIND_IMAGE_MEMORY_FAILED,
     POINTER_REQUEST_FOR_HOST_MEMORY_FAILED,
     MAPPED_MEMORY_FLUSH_FAILED,
     IMAGE_CREATION_FAILED,
+    IMAGE_VIEW_CREATION_FAILED,
 	SHADER_MODULE_CREATION_FAILED,
 	ACQUIRE_NEXT_IMAGE_FAILED,
 	QUEUE_PRESENT_FAILED
@@ -81,6 +83,7 @@ class BaseVulkanApp {
 		VkSurfaceKHR surface;
 		VkPhysicalDevice selected_physical_device = VK_NULL_HANDLE;
 		VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
+        VkPhysicalDeviceProperties physical_device_properties;
 		VkDevice device = VK_NULL_HANDLE;
 		VkQueue queue;
 

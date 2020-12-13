@@ -58,7 +58,7 @@ int main() {
 
 	try {
 		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_validation_layers, desired_instance_level_extensions, {800,800}, desired_device_level_extensions, selected_device_features, VK_TRUE);
-		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb"},0);
+		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb", "resources//models//Table//Table.glb"},64);
 	}
 	catch (std::pair<int32_t,Error>& err) {
 		std::cout << "The application encounted the error: " << magic_enum::enum_name(err.second) << " with return value: " << err.first << std::endl;

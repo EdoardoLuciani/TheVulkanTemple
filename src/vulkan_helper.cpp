@@ -98,7 +98,7 @@ namespace vulkan_helper
         return selected_surface_format;
     }
 
-    uint32_t select_memory_index(const VkPhysicalDeviceMemoryProperties &physical_device_memory_properties, const VkMemoryRequirements &memory_requirements, VkMemoryPropertyFlagBits memory_properties) {
+    uint32_t select_memory_index(const VkPhysicalDeviceMemoryProperties &physical_device_memory_properties, const VkMemoryRequirements &memory_requirements, VkMemoryPropertyFlags memory_properties) {
         for (uint32_t type = 0; type < physical_device_memory_properties.memoryTypeCount; ++type) {
             if ((memory_requirements.memoryTypeBits & (1 << type)) &&
                 ((physical_device_memory_properties.memoryTypes[type].propertyFlags & memory_properties) == memory_properties)) {
@@ -208,16 +208,12 @@ namespace vulkan_helper
         return result;
     }
 
-    uint32_t get_aligned_memory_size(VkMemoryRequirements m_r) {
-        return m_r.alignment * std::ceil(static_cast<float>(m_r.size) / m_r.alignment);
-    }
-
-    uint32_t get_aligned_memory_size(VkMemoryRequirements m_r, uint32_t alignment) {
-        return alignment * std::ceil(static_cast<float>(m_r.size) / alignment);
-    }
-
     uint32_t get_alignment_memory(uint64_t mem_size, uint32_t alignment) {
-        return alignment - (mem_size % alignment);
+        return alignment * std::ceil(mem_size/static_cast<float>(alignment)) - mem_size;
+    }
+
+    uint32_t get_aligned_memory_size(uint64_t mem_size, uint32_t alignment) {
+        return alignment * std::ceil(mem_size/static_cast<float>(alignment));
     }
 
     // The model in order to be processed correctly should have:
@@ -266,7 +262,6 @@ namespace vulkan_helper
                 8,
                 16
         };
-
 
         for (uint8_t i=0; i<v_model_attributes_max_set_bits; i++) {
             if (v_attributes_to_copy & (1 << i)) {
@@ -397,6 +392,15 @@ namespace vulkan_helper
     uint64_t get_model_data_total_size(const model_data_info &model) {
         return model.interleaved_mesh_data_size + model.index_data_size +
         model.image_size.width * model.image_size.height * 4 * model.image_layers;
+    }
+
+    uint64_t get_model_mesh_and_index_data_size(const model_data_info &model) {
+        return model.interleaved_mesh_data_size + model.index_data_size;
+    }
+
+    uint64_t get_model_texture_size(const model_data_info &model) {
+        int size_per_pixel = 4;
+        return model.image_size.width * model.image_size.height * model.image_size.depth * size_per_pixel * model.image_layers;
     }
 
 } // namespace vulkan_helper

@@ -51,7 +51,7 @@ namespace vulkan_helper {
 	VkImageUsageFlags select_image_usage(const VkSurfaceCapabilitiesKHR& surface_capabilities,VkImageUsageFlags desired_usages);
 	VkSurfaceTransformFlagBitsKHR select_surface_transform(const VkSurfaceCapabilitiesKHR& surface_capabilities, VkSurfaceTransformFlagBitsKHR desired_transform);
 	VkSurfaceFormatKHR select_surface_format(const std::vector<VkSurfaceFormatKHR>& surface_formats, VkSurfaceFormatKHR desired_surface_format);
-	uint32_t select_memory_index(const VkPhysicalDeviceMemoryProperties& physical_device_memory_properties, const VkMemoryRequirements& memory_requirements, VkMemoryPropertyFlagBits memory_properties);
+	uint32_t select_memory_index(const VkPhysicalDeviceMemoryProperties& physical_device_memory_properties, const VkMemoryRequirements& memory_requirements, VkMemoryPropertyFlags memory_properties);
 	VkBool32 debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject, size_t location, int32_t msgCode, const char* pLayerPrefix, const char* pMsg, void* pUserData);
 	VkBool32 compare_physical_device_features_structs(VkPhysicalDeviceFeatures base, VkPhysicalDeviceFeatures requested);
 
@@ -63,9 +63,8 @@ namespace vulkan_helper {
 
 	uint32_t get_buffer_image_alignment(uint64_t start_of_memory_binding, uint32_t image_alignment);
 
-	uint32_t get_aligned_memory_size(VkMemoryRequirements m_r);
-	uint32_t get_aligned_memory_size(VkMemoryRequirements m_r, uint32_t alignment);
 	uint32_t get_alignment_memory(uint64_t mem_size, uint32_t alignment);
+    uint32_t get_aligned_memory_size(uint64_t mem_size, uint32_t alignment);
 
     int copy_gltf_contents(tinygltf::Model &model,
                            uint8_t v_attributes_to_copy,
@@ -75,5 +74,7 @@ namespace vulkan_helper {
                            void *dst_ptr, vulkan_helper::model_data_info &out_data);
 
 	uint64_t get_model_data_total_size(const model_data_info &model);
-    
+    uint64_t get_model_mesh_and_index_data_size(const model_data_info &model);
+    uint64_t get_model_texture_size(const model_data_info &model);
+
 }
