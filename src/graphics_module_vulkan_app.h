@@ -1,40 +1,82 @@
 #ifndef BASE_VULKAN_APP_GRAPHICS_MODULE_VULKAN_APP_H
 #define BASE_VULKAN_APP_GRAPHICS_MODULE_VULKAN_APP_H
 
+#include <array>
 #include "base_vulkan_app.h"
 
-struct model_info {
+struct ModelInfo {
     uint32_t vertices;
     uint32_t indices;
     VkIndexType index_data_type;
     uint32_t mesh_data_memory_offset;
 };
 
+struct EngineOptions {
+    int anti_aliasing;
+    int shadows;
+    int HDR;
+};
+
 class GraphicsModuleVulkanApp: public BaseVulkanApp {
     public:
         // Inheriting BaseVulkanApp constructor
-        using BaseVulkanApp::BaseVulkanApp;
+        GraphicsModuleVulkanApp(const std::string &application_name,
+                      std::vector<const char*> &desired_instance_level_extensions,
+                      VkExtent2D window_size,
+                      const std::vector<const char*> &desired_device_level_extensions,
+                      const VkPhysicalDeviceFeatures &required_physical_device_features,
+                      VkBool32 surface_support,
+                      EngineOptions options);
         ~GraphicsModuleVulkanApp();
 
 		// Directly copy data from disk to VRAM
 		void load_3d_objects(std::vector<std::string> model_path, uint32_t object_matrix_size);
     private:
-        std::vector<model_info> object_info;
+        EngineOptions engine_options;
 
+        // Image for depth comparison
+        VkImage device_depth_image = VK_NULL_HANDLE;
+        VkImageView device_depth_image_view = VK_NULL_HANDLE;
+
+        // HDR ping pong image
+        VkImage device_hdr_render_target = VK_NULL_HANDLE;
+        std::array<VkImageView, 2> device_hdr_render_target_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+
+        // VSM depth image
+        VkImage device_vsm_depth_image = VK_NULL_HANDLE;
+        std::array<VkImageView, 2> device_vsm_depth_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+
+        // SMAA data
+        VkImage device_smaa_stencil_image = VK_NULL_HANDLE;
+        VkImageView device_smaa_stencil_image_view = VK_NULL_HANDLE;
+        VkImage device_smaa_data_image = VK_NULL_HANDLE;
+        VkImageView device_smaa_data_image_view = VK_NULL_HANDLE;
+        VkImage device_smaa_area_image = VK_NULL_HANDLE;
+        VkImageView device_smaa_area_image_view = VK_NULL_HANDLE;
+        VkImage device_smaa_search_image = VK_NULL_HANDLE;
+        VkImageView device_smaa_search_image_view = VK_NULL_HANDLE;
+
+        // Memory in which all attachment reside
+        VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
+
+        // Uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
         VkDeviceMemory host_model_uniform_memory = VK_NULL_HANDLE;
         void *host_model_uniform_buffer_ptr;
 
+        // Models data
         VkBuffer device_mesh_data_buffer = VK_NULL_HANDLE;
         std::vector<VkImage> device_model_images;
         std::vector<std::vector<VkImageView>> device_model_images_views;
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
+        std::vector<ModelInfo> object_info;
 
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);
-        void create_image(VkImage &image,VkExtent3D image_size, uint32_t layers, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags = 0);
+        void create_image(VkImage &image, VkFormat format, VkExtent3D image_size, uint32_t layers, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags = 0);
         void create_image_view(VkImageView &image_view, VkImage image, VkFormat image_format, VkImageAspectFlags aspect_mask, uint32_t start_layer, uint32_t layer_count);
         void allocate_and_bind_to_memory(VkDeviceMemory &memory, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VkMemoryPropertyFlags flags);
-
+        void submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags stage_flags,
+                                    std::vector<VkSemaphore> wait_semaphores, std::vector<VkSemaphore> signal_semaphores, VkFence fence = VK_NULL_HANDLE);
 };
 
 

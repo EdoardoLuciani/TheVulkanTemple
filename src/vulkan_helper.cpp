@@ -200,6 +200,20 @@ namespace vulkan_helper
         return 0;
     }
 
+    int get_binary_file_content(std::string &&file_path, uint64_t &size, void *dst_ptr) {
+        size = std::filesystem::file_size(file_path);
+        if (dst_ptr == nullptr) {
+            return 0;
+        }
+        std::ifstream binary_file(file_path, std::ios::in | std::ios::binary);
+        if (!binary_file.is_open()) {
+            return 1;
+        }
+        binary_file.read(static_cast<char*>(dst_ptr), size);
+        binary_file.close();
+        return 0;
+    }
+
     uint32_t get_buffer_image_alignment(uint64_t start_of_memory_binding, uint32_t image_alignment) {
         uint32_t result = image_alignment - (start_of_memory_binding % image_alignment);
         if (result == 1024) {
@@ -390,8 +404,9 @@ namespace vulkan_helper
     }
 
     uint64_t get_model_data_total_size(const model_data_info &model) {
+        int size_per_texel = 4;
         return model.interleaved_mesh_data_size + model.index_data_size +
-        model.image_size.width * model.image_size.height * 4 * model.image_layers;
+        model.image_size.width * model.image_size.height * model.image_size.depth * size_per_texel * model.image_layers;
     }
 
     uint64_t get_model_mesh_and_index_data_size(const model_data_info &model) {
@@ -399,8 +414,8 @@ namespace vulkan_helper
     }
 
     uint64_t get_model_texture_size(const model_data_info &model) {
-        int size_per_pixel = 4;
-        return model.image_size.width * model.image_size.height * model.image_size.depth * size_per_pixel * model.image_layers;
+        int size_per_texel = 4;
+        return model.image_size.width * model.image_size.height * model.image_size.depth * size_per_texel * model.image_layers;
     }
 
 } // namespace vulkan_helper

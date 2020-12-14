@@ -60,6 +60,7 @@ namespace vulkan_helper {
 	void interleave(void* dst, glm::vec3* vertices, glm::vec2* tx_coord, glm::vec3* normals, glm::vec4* tangents, int elements);
 
 	int get_binary_file_content(std::string &&file_path, std::vector<uint8_t>& file_binary_content);
+    int get_binary_file_content(std::string &&file_path, uint64_t &size, void *dst_ptr);
 
 	uint32_t get_buffer_image_alignment(uint64_t start_of_memory_binding, uint32_t image_alignment);
 

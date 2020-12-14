@@ -2,6 +2,96 @@
 #include <vector>
 #include "vulkan_helper.h"
 
+GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name, std::vector<const char *> &desired_instance_level_extensions,
+                                                 VkExtent2D window_size, const std::vector<const char *> &desired_device_level_extensions,
+                                                 const VkPhysicalDeviceFeatures &required_physical_device_features, VkBool32 surface_support, EngineOptions options) :
+                         BaseVulkanApp(application_name, desired_instance_level_extensions, window_size, desired_device_level_extensions,
+                                       required_physical_device_features, surface_support) {
+    VkExtent3D attachments_size = {window_size.width, window_size.height, 1};
+
+    create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, attachments_size, 1, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    std::vector<VkImage> device_images_to_allocate = {device_depth_image};
+
+    // For HDR tonemapping
+    create_image(device_hdr_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, attachments_size, 2, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    device_images_to_allocate.push_back(device_hdr_render_target);
+
+    // Ping Pong image for shadows variance
+    create_image(device_vsm_depth_image, VK_FORMAT_R32G32_SFLOAT, attachments_size, 2, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
+    device_images_to_allocate.push_back(device_vsm_depth_image);
+
+    // Stencil image for smaa pass
+    create_image(device_smaa_stencil_image, VK_FORMAT_S8_UINT, attachments_size, 1, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    device_images_to_allocate.push_back(device_smaa_stencil_image);
+    // Smaa data image will hold both the blend_tex and edge_tex
+    create_image(device_smaa_data_image, VK_FORMAT_R8G8B8A8_UNORM, attachments_size, 2, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    device_images_to_allocate.push_back(device_smaa_data_image);
+
+    // We need to get the smaa resource images from disk and upload them to VRAM
+    uint64_t area_tex_size, search_tex_size;
+    vulkan_helper::get_binary_file_content("resources//textures//AreaTexDX10.R8G8",area_tex_size, nullptr);
+    vulkan_helper::get_binary_file_content("resources//textures//SearchTex.R8",search_tex_size, nullptr);
+    // Here we create the buffer allocate it and copy to RAM
+    VkBuffer host_transition_buffer = VK_NULL_HANDLE;
+    create_buffer(host_transition_buffer, area_tex_size+search_tex_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    VkDeviceMemory host_transition_memory = VK_NULL_HANDLE;
+    allocate_and_bind_to_memory(host_transition_memory, {host_transition_buffer}, {}, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    void *dst_ptr;
+    vkMapMemory(device, host_transition_memory, 0, VK_WHOLE_SIZE, 0, &dst_ptr);
+    vulkan_helper::get_binary_file_content("resources//textures//AreaTexDX10.R8G8",area_tex_size, dst_ptr);
+    vulkan_helper::get_binary_file_content("resources//textures//SearchTex.R8",search_tex_size, static_cast<uint8_t*>(dst_ptr) + area_tex_size);
+    // Then we create the device images for the resources
+    create_image(device_smaa_area_image, VK_FORMAT_R8G8_UNORM, {160,560,1}, 1, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+    device_images_to_allocate.push_back(device_smaa_area_image);
+    create_image(device_smaa_search_image, VK_FORMAT_R8_UNORM, { 64,16,1 }, 1, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+    device_images_to_allocate.push_back(device_smaa_search_image);
+
+    // We allocate and bind all device images to memory
+    allocate_and_bind_to_memory(device_attachments_memory, {}, device_images_to_allocate, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT,0,1);
+
+    create_image_view(device_hdr_render_target_views[0], device_hdr_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+    create_image_view(device_hdr_render_target_views[1], device_hdr_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
+
+    create_image_view(device_vsm_depth_image_views[0], device_vsm_depth_image, VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+    create_image_view(device_vsm_depth_image_views[1], device_vsm_depth_image, VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
+
+    // TODO: continue to write image_views
+
+
+    vkDestroyBuffer(device, host_transition_buffer, nullptr);
+    vkFreeMemory(device, host_transition_memory, nullptr);
+}
+
+GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
+    vkDestroyImage(device, device_depth_image, nullptr);
+    vkDestroyImage(device, device_hdr_render_target, nullptr);
+    vkDestroyImage(device, device_smaa_stencil_image, nullptr);
+    vkDestroyImage(device, device_smaa_data_image, nullptr);
+    vkDestroyImage(device, device_smaa_area_image, nullptr);
+    vkDestroyImage(device, device_smaa_search_image, nullptr);
+    vkDestroyImage(device, device_vsm_depth_image, nullptr);
+    vkFreeMemory(device, device_attachments_memory, nullptr);
+
+    // Uniform related things freed
+    vkUnmapMemory(device, host_model_uniform_memory);
+    vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
+    vkFreeMemory(device, host_model_uniform_memory, nullptr);
+
+    // Model related things freed
+    for (auto& device_model_image_views : device_model_images_views) {
+        for (auto & device_model_image_view : device_model_image_views) {
+            vkDestroyImageView(device, device_model_image_view, nullptr);
+        }
+    }
+    for (auto& device_model_image : device_model_images) {
+        vkDestroyImage(device, device_model_image, nullptr);
+    }
+    vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
+    vkFreeMemory(device, device_model_data_memory, nullptr);
+}
+
 void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_path, uint32_t object_matrix_size) {
     tinygltf::TinyGLTF loader;
     std::string err, warn;
@@ -23,10 +113,8 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
 
     VkBuffer host_model_data_buffer = VK_NULL_HANDLE;
     create_buffer(host_model_data_buffer, models_total_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-
     VkDeviceMemory host_model_data_memory = VK_NULL_HANDLE;
     allocate_and_bind_to_memory(host_model_data_memory, {host_model_data_buffer}, {}, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
     void *model_host_data_pointer;
     check_error(vkMapMemory(device, host_model_data_memory, 0, VK_WHOLE_SIZE, 0, &model_host_data_pointer), Error::POINTER_REQUEST_FOR_HOST_MEMORY_FAILED);
 
@@ -59,11 +147,14 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
     for(auto &device_model_image : device_model_images) {
         vkDestroyImage(device, device_model_image, nullptr);
     }
-    device_model_images.resize(models.size());
-    for (int i=0; i<device_model_images.size(); i++) {
-        create_image(device_model_images[i], model_data[i].image_size, model_data[i].image_layers, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT);
+    device_model_images.clear();
+    for (int i=0; i<model_data.size(); i++) {
+        if (vulkan_helper::get_model_texture_size(model_data[i])) {
+            device_model_images.push_back(VK_NULL_HANDLE);
+            create_image(device_model_images.back(), VK_FORMAT_R8G8B8A8_UNORM, model_data[i].image_size, model_data[i].image_layers,
+                         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT);
+        }
     }
-
     allocate_and_bind_to_memory(device_model_data_memory, {device_mesh_data_buffer}, device_model_images, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // After the buffer and the images have been allocated and binded, we process to create the image views
@@ -71,7 +162,10 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
         for (auto & device_model_image_view : device_model_image_views) {
             vkDestroyImageView(device, device_model_image_view, nullptr);
         }
+        device_model_image_views.clear();
     }
+    device_model_images_views.clear();
+
     // Here when creating the images views we say that the first image view of an image is of type srgb and the other ones are unorm
     device_model_images_views.resize(device_model_images.size());
     for (uint32_t i=0; i<device_model_images.size(); i++) {
@@ -161,19 +255,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
     VkFence fence;
     vkCreateFence(device, &fence_create_info, nullptr, &fence);
 
-    VkPipelineStageFlags pipeline_stage_flags = { VK_PIPELINE_STAGE_TRANSFER_BIT };
-    VkSubmitInfo submit_info = {
-            VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            nullptr,
-            0,
-            nullptr,
-            &pipeline_stage_flags,
-            1,
-            &command_buffers[0],
-            0,
-            nullptr
-    };
-    vkQueueSubmit(queue, 1, &submit_info, fence);
+    submit_command_buffers({command_buffers[0]}, VK_PIPELINE_STAGE_TRANSFER_BIT, {}, {}, fence);
     vkWaitForFences(device, 1, &fence, VK_TRUE, 20000000);
 
     // After the copy has finished we do cleanup
@@ -181,23 +263,6 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
     vkDestroyFence(device, fence, nullptr);
     vkDestroyBuffer(device, host_model_data_buffer, nullptr);
     vkFreeMemory(device, host_model_data_memory, nullptr);
-}
-
-GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
-    vkUnmapMemory(device, host_model_uniform_memory);
-    vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
-    vkFreeMemory(device, host_model_uniform_memory, nullptr);
-
-    for (auto& device_model_image_views : device_model_images_views) {
-        for (auto & device_model_image_view : device_model_image_views) {
-            vkDestroyImageView(device, device_model_image_view, nullptr);
-        }
-    }
-    for (auto& device_model_image : device_model_images) {
-        vkDestroyImage(device, device_model_image, nullptr);
-    }
-    vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
-    vkFreeMemory(device, device_model_data_memory, nullptr);
 }
 
 void GraphicsModuleVulkanApp::create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage) {
@@ -215,13 +280,13 @@ void GraphicsModuleVulkanApp::create_buffer(VkBuffer &buffer, uint64_t size, VkB
     check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &buffer), Error::BUFFER_CREATION_FAILED);
 }
 
-void GraphicsModuleVulkanApp::create_image(VkImage &image, VkExtent3D image_size, uint32_t layers, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags) {
+void GraphicsModuleVulkanApp::create_image(VkImage &image, VkFormat format, VkExtent3D image_size, uint32_t layers, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags) {
     VkImageCreateInfo image_create_info = {
             VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             nullptr,
             create_flags,
             VK_IMAGE_TYPE_2D,
-            VK_FORMAT_R8G8B8A8_UNORM,
+            format,
             image_size,
             1,
             layers,
@@ -295,4 +360,20 @@ void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(VkDeviceMemory &memory
     for (int i=0; i<images.size(); i++) {
         check_error(vkBindImageMemory(device, images[i], memory, sum_offsets(i+buffers.size())), Error::BIND_IMAGE_MEMORY_FAILED);
     }
+}
+
+void GraphicsModuleVulkanApp::submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags pipeline_stage_flags,
+                                                     std::vector<VkSemaphore> wait_semaphores, std::vector<VkSemaphore> signal_semaphores, VkFence fence) {
+    VkSubmitInfo submit_info = {
+            VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            nullptr,
+            static_cast<uint32_t>(wait_semaphores.size()),
+            wait_semaphores.data(),
+            &pipeline_stage_flags,
+            static_cast<uint32_t>(command_buffers.size()),
+            command_buffers.data(),
+            static_cast<uint32_t>(signal_semaphores.size()),
+            signal_semaphores.data(),
+    };
+    check_error(vkQueueSubmit(queue, 1, &submit_info, fence), Error::QUEUE_SUBMIT_FAILED);
 }

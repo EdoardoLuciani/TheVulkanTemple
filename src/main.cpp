@@ -37,14 +37,7 @@
 #include "graphics_module_vulkan_app.h"
 
 int main() {
-	#ifdef NDEBUG
-		std::vector<const char*> desired_validation_layers = {};
-		std::vector<const char*> desired_instance_level_extensions = { "VK_KHR_surface"};
-	#else
-		std::vector<const char*> desired_validation_layers = { "VK_LAYER_KHRONOS_validation" };
-		std::vector<const char*> desired_instance_level_extensions = { "VK_KHR_surface","VK_EXT_debug_report" };
-	#endif
-
+    std::vector<const char*> desired_instance_level_extensions = {"VK_KHR_surface"};
 	#ifdef _WIN64
 		desired_instance_level_extensions.push_back("VK_KHR_win32_surface");
 	#elif __linux__
@@ -53,11 +46,16 @@ int main() {
 		#error "Unknown compiler or not supported OS"
 	#endif
 
-	std::vector<const char*> desired_device_level_extensions = { "VK_KHR_swapchain"};
+	std::vector<const char*> desired_device_level_extensions = {"VK_KHR_swapchain"};
 	VkPhysicalDeviceFeatures selected_device_features = { 0 };
 
+	EngineOptions options;
+	options.anti_aliasing = 0;
+	options.shadows = 0;
+	options.HDR = 0;
+
 	try {
-		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_validation_layers, desired_instance_level_extensions, {800,800}, desired_device_level_extensions, selected_device_features, VK_TRUE);
+		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, {800,800}, desired_device_level_extensions, selected_device_features, VK_TRUE, options);
 		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb", "resources//models//Table//Table.glb"},64);
 	}
 	catch (std::pair<int32_t,Error>& err) {

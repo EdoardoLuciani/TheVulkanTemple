@@ -6,8 +6,7 @@
 #include "vulkan_helper.h"
 
 BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
-					  		 const std::vector<const char*> &desired_validation_layers,
-					  		 const std::vector<const char*> &desired_instance_level_extensions,
+					  		 std::vector<const char*> &desired_instance_level_extensions,
 					  		 VkExtent2D window_size,
 					  		 const std::vector<const char*> &desired_device_level_extensions,
 					  		 const VkPhysicalDeviceFeatures &required_physical_device_features,
@@ -26,6 +25,13 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		VK_MAKE_VERSION(1,0,0),
 		VK_MAKE_VERSION(1,0,0)
 	};
+
+    #ifdef NDEBUG
+        std::vector<const char*> desired_validation_layers = {};
+    #else
+        std::vector<const char*> desired_validation_layers = { "VK_LAYER_KHRONOS_validation" };
+        desired_instance_level_extensions.push_back("VK_EXT_debug_report");
+    #endif
 
 	VkInstanceCreateInfo instance_create_info = {
 		VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,

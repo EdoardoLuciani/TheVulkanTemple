@@ -44,6 +44,7 @@ enum class Error {
     MAPPED_MEMORY_FLUSH_FAILED,
     IMAGE_CREATION_FAILED,
     IMAGE_VIEW_CREATION_FAILED,
+    QUEUE_SUBMIT_FAILED,
 	SHADER_MODULE_CREATION_FAILED,
 	ACQUIRE_NEXT_IMAGE_FAILED,
 	QUEUE_PRESENT_FAILED
@@ -64,9 +65,8 @@ struct EngineFeatures {
 class BaseVulkanApp {
 	public:
 		BaseVulkanApp(const std::string &application_name,
-					  const std::vector<const char*> &desired_validation_layers,
-					  const std::vector<const char*> &desired_instance_level_extensions,
-					  VkExtent2D windows_size, 
+					  std::vector<const char*> &desired_instance_level_extensions,
+					  VkExtent2D window_size,
 					  const std::vector<const char*> &desired_device_level_extensions,
 					  const VkPhysicalDeviceFeatures &required_physical_device_features,
 					  VkBool32 surface_support);
