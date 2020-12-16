@@ -1,18 +1,12 @@
-#define VK_NO_PROTOTYPES
-#include <vulkan/vulkan.h>
-
-#include <iostream>
 #include <vector>
 #include <string>
-#include <algorithm>
-#include <fstream>
-#include <filesystem>
-#include <cmath>
+#include <stdint.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 // Only for definitions
 #include <tiny_gltf.h>
+#include "volk.h"
 
 namespace vulkan_helper {
 	typedef struct model_data_info {
@@ -45,6 +39,38 @@ namespace vulkan_helper {
 		T_ALL = 15
 	};
 
+    enum class Error {
+        VOLK_INITIALIZATION_FAILED,
+        INSTANCE_CREATION_FAILED,
+        DEBUG_REPORT_CALLBACK_CREATION_FAILED,
+        GLFW_INITIALIZATION_FAILED,
+        GLFW_WINDOW_CREATION_FAILED,
+        SURFACE_CREATION_FAILED,
+        PHYSICAL_DEVICES_ENUMERATION_FAILED,
+        NO_AVAILABLE_DEVICE_FOUND,
+        DEVICE_CREATION_FAILED,
+        PRESENT_MODES_RETRIEVAL_FAILED,
+        SURFACE_CAPABILITIES_RETRIEVAL_FAILED,
+        SURFACE_FORMATS_RETRIEVAL_FAILED,
+        SWAPCHAIN_CREATION_FAILED,
+        SWAPCHAIN_IMAGES_RETRIEVAL_FAILED,
+        COMMAND_POOL_CREATION_FAILED,
+        COMMAND_BUFFER_CREATION_FAILED,
+        MODEL_LOADING_FAILED,
+        BUFFER_CREATION_FAILED,
+        MEMORY_ALLOCATION_FAILED,
+        BIND_BUFFER_MEMORY_FAILED,
+        BIND_IMAGE_MEMORY_FAILED,
+        POINTER_REQUEST_FOR_HOST_MEMORY_FAILED,
+        MAPPED_MEMORY_FLUSH_FAILED,
+        IMAGE_CREATION_FAILED,
+        IMAGE_VIEW_CREATION_FAILED,
+        QUEUE_SUBMIT_FAILED,
+        SHADER_MODULE_CREATION_FAILED,
+        ACQUIRE_NEXT_IMAGE_FAILED,
+        QUEUE_PRESENT_FAILED
+    };
+
 	VkPresentModeKHR select_presentation_mode(const std::vector<VkPresentModeKHR>& presentation_modes, VkPresentModeKHR desired_presentation_mode);
 	uint32_t select_number_of_images(const VkSurfaceCapabilitiesKHR& surface_capabilities);
 	VkExtent2D select_size_of_images(const VkSurfaceCapabilitiesKHR& surface_capabilities, VkExtent2D desired_size_of_images);
@@ -59,10 +85,8 @@ namespace vulkan_helper {
 
 	void interleave(void* dst, glm::vec3* vertices, glm::vec2* tx_coord, glm::vec3* normals, glm::vec4* tangents, int elements);
 
-	int get_binary_file_content(std::string &&file_path, std::vector<uint8_t>& file_binary_content);
-    int get_binary_file_content(std::string &&file_path, uint64_t &size, void *dst_ptr);
-
-	uint32_t get_buffer_image_alignment(uint64_t start_of_memory_binding, uint32_t image_alignment);
+    int get_binary_file_content(const std::string &file_path, std::vector<uint8_t> &file_binary_content);
+    int get_binary_file_content(const std::string &file_path, uint64_t &size, void *dst_ptr);
 
 	uint32_t get_alignment_memory(uint64_t mem_size, uint32_t alignment);
     uint32_t get_aligned_memory_size(uint64_t mem_size, uint32_t alignment);
@@ -78,4 +102,5 @@ namespace vulkan_helper {
     uint64_t get_model_mesh_and_index_data_size(const model_data_info &model);
     uint64_t get_model_texture_size(const model_data_info &model);
 
+    void check_error(int32_t last_return_value, Error error_location);
 }

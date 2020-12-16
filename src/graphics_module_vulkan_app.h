@@ -46,16 +46,6 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         VkImage device_vsm_depth_image = VK_NULL_HANDLE;
         std::array<VkImageView, 2> device_vsm_depth_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
-        // SMAA data
-        VkImage device_smaa_stencil_image = VK_NULL_HANDLE;
-        VkImageView device_smaa_stencil_image_view = VK_NULL_HANDLE;
-        VkImage device_smaa_data_image = VK_NULL_HANDLE;
-        VkImageView device_smaa_data_image_view = VK_NULL_HANDLE;
-        VkImage device_smaa_area_image = VK_NULL_HANDLE;
-        VkImageView device_smaa_area_image_view = VK_NULL_HANDLE;
-        VkImage device_smaa_search_image = VK_NULL_HANDLE;
-        VkImageView device_smaa_search_image_view = VK_NULL_HANDLE;
-
         // Memory in which all attachment reside
         VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
 
@@ -78,6 +68,5 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags stage_flags,
                                     std::vector<VkSemaphore> wait_semaphores, std::vector<VkSemaphore> signal_semaphores, VkFence fence = VK_NULL_HANDLE);
 };
-
 
 #endif //BASE_VULKAN_APP_GRAPHICS_MODULE_VULKAN_APP_H

@@ -1,4 +1,6 @@
 #include "vulkan_helper.h"
+#include <iostream>
+#include <filesystem>
 #define TINYGLTF_IMPLEMENTATION
 #define TINYGLTF_USE_CPP14
 #define STB_IMAGE_IMPLEMENTATION
@@ -188,7 +190,7 @@ namespace vulkan_helper
         }
     }
 
-    int get_binary_file_content(std::string &&file_path, std::vector<uint8_t> &file_binary_content) {
+    int get_binary_file_content(const std::string &file_path, std::vector<uint8_t> &file_binary_content) {
         uint64_t file_size = std::filesystem::file_size(file_path);
         file_binary_content.resize(file_size);
         std::ifstream binary_file(file_path, std::ios::in | std::ios::binary);
@@ -200,7 +202,7 @@ namespace vulkan_helper
         return 0;
     }
 
-    int get_binary_file_content(std::string &&file_path, uint64_t &size, void *dst_ptr) {
+    int get_binary_file_content(const std::string &file_path, uint64_t &size, void *dst_ptr) {
         size = std::filesystem::file_size(file_path);
         if (dst_ptr == nullptr) {
             return 0;
@@ -212,14 +214,6 @@ namespace vulkan_helper
         binary_file.read(static_cast<char*>(dst_ptr), size);
         binary_file.close();
         return 0;
-    }
-
-    uint32_t get_buffer_image_alignment(uint64_t start_of_memory_binding, uint32_t image_alignment) {
-        uint32_t result = image_alignment - (start_of_memory_binding % image_alignment);
-        if (result == 1024) {
-            result = 0;
-        }
-        return result;
     }
 
     uint32_t get_alignment_memory(uint64_t mem_size, uint32_t alignment) {
@@ -416,6 +410,12 @@ namespace vulkan_helper
     uint64_t get_model_texture_size(const model_data_info &model) {
         int size_per_texel = 4;
         return model.image_size.width * model.image_size.height * model.image_size.depth * size_per_texel * model.image_layers;
+    }
+
+    void check_error(int32_t last_return_value, Error error_location) {
+        if (last_return_value) {
+            throw std::make_pair(last_return_value, error_location);
+        }
     }
 
 } // namespace vulkan_helper

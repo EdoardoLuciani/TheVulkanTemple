@@ -1,5 +1,6 @@
 #include "base_vulkan_app.h"
 
+#include <iostream>
 #include <vector>
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
@@ -13,7 +14,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 							 VkBool32 surface_support) {
 	
 	// Dynamic library loading inizialization
-	check_error(volkInitialize(), Error::VOLK_INITIALIZATION_FAILED);
+	check_error(volkInitialize(), vulkan_helper::Error::VOLK_INITIALIZATION_FAILED);
 
 	// Instance creation
 	VkApplicationInfo application_info = {
@@ -44,7 +45,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		desired_instance_level_extensions.data()
 	};
 
-	check_error(vkCreateInstance(&instance_create_info, nullptr, &instance), Error::INSTANCE_CREATION_FAILED);
+	check_error(vkCreateInstance(&instance_create_info, nullptr, &instance), vulkan_helper::Error::INSTANCE_CREATION_FAILED);
 	volkLoadInstance(instance);
 
 	// Debug Report (only in debug mode!)
@@ -56,11 +57,11 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 			vulkan_helper::debug_callback,
 			nullptr
 		};
-		check_error(vkCreateDebugReportCallbackEXT(instance, &debug_report_callback_create_info_EXT, nullptr, &debug_report_callback), Error::DEBUG_REPORT_CALLBACK_CREATION_FAILED);
+		check_error(vkCreateDebugReportCallbackEXT(instance, &debug_report_callback_create_info_EXT, nullptr, &debug_report_callback), vulkan_helper::Error::DEBUG_REPORT_CALLBACK_CREATION_FAILED);
 	#endif
 
 	// Window Creation
-	if (glfwInit() != GLFW_TRUE) { check_error(VK_ERROR_UNKNOWN, Error::GLFW_INITIALIZATION_FAILED); }
+	if (glfwInit() != GLFW_TRUE) { check_error(VK_ERROR_UNKNOWN, vulkan_helper::Error::GLFW_INITIALIZATION_FAILED); }
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	if ((window_size.width == 0) && (window_size.height == 0)) {
@@ -74,7 +75,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		this->window_size.height = window_size.height;
 		window = glfwCreateWindow(this->window_size.width, this->window_size.height, application_name.c_str(), nullptr, nullptr);
 	}
-	if (window == nullptr) { check_error(VK_ERROR_UNKNOWN, Error::GLFW_WINDOW_CREATION_FAILED); }
+	if (window == nullptr) { check_error(VK_ERROR_UNKNOWN, vulkan_helper::Error::GLFW_WINDOW_CREATION_FAILED); }
 
 	// Surface Creation
 	#ifdef _WIN64
@@ -85,7 +86,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 			GetModuleHandle(NULL),
 			glfwGetWin32Window(window)
 		};
-		check_error(vkCreateWin32SurfaceKHR(instance, &surface_create_info, nullptr, &surface) != VK_SUCCESS), Error::SURFACE_CREATION_FAILED);
+		check_error(vkCreateWin32SurfaceKHR(instance, &surface_create_info, nullptr, &surface) != VK_SUCCESS), Evulkan_helper::rror::SURFACE_CREATION_FAILED);
 	#elif __linux__
 		VkXlibSurfaceCreateInfoKHR surface_create_info = {
     	    VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
@@ -94,7 +95,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
         	glfwGetX11Display(),
     		glfwGetX11Window(window)
     	};
-		check_error(vkCreateXlibSurfaceKHR(instance, &surface_create_info, nullptr, &surface), Error::SURFACE_CREATION_FAILED);
+		check_error(vkCreateXlibSurfaceKHR(instance, &surface_create_info, nullptr, &surface), vulkan_helper::Error::SURFACE_CREATION_FAILED);
 	#else
 		#error "Unknown compiler or not supported OS"
 	#endif
@@ -104,7 +105,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 	uint32_t devices_number;
 	vkEnumeratePhysicalDevices(instance, &devices_number, nullptr);
 	std::vector<VkPhysicalDevice> devices(devices_number);
-	check_error(vkEnumeratePhysicalDevices(instance, &devices_number, devices.data()), Error::PHYSICAL_DEVICES_ENUMERATION_FAILED);
+	check_error(vkEnumeratePhysicalDevices(instance, &devices_number, devices.data()), vulkan_helper::Error::PHYSICAL_DEVICES_ENUMERATION_FAILED);
 
 	std::vector<std::pair<size_t, size_t>> plausible_devices_d_index_qf_index;
 	for (uint32_t i = 0; i < devices.size(); i++) {
@@ -145,7 +146,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		selected_queue_family_index = plausible_devices_d_index_qf_index[index].second;
 	}
 	else {
-		check_error(VK_ERROR_UNKNOWN, Error::NO_AVAILABLE_DEVICE_FOUND);
+		check_error(VK_ERROR_UNKNOWN, vulkan_helper::Error::NO_AVAILABLE_DEVICE_FOUND);
 	}
 
 	// Getting the properties of the selected physical device
@@ -177,7 +178,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		&required_physical_device_features
 	};
 
-	check_error(vkCreateDevice(selected_physical_device, &device_create_info, nullptr, &device), Error::DEVICE_CREATION_FAILED);
+	check_error(vkCreateDevice(selected_physical_device, &device_create_info, nullptr, &device), vulkan_helper::Error::DEVICE_CREATION_FAILED);
 	vkGetDeviceQueue(device, selected_queue_family_index, 0, &queue);
 	volkLoadDevice(device);
 
@@ -205,13 +206,13 @@ void BaseVulkanApp::create_swapchain() {
 	vkGetPhysicalDeviceSurfacePresentModesKHR(selected_physical_device, surface, &presentation_modes_number, nullptr);
 	std::vector<VkPresentModeKHR> presentation_modes(presentation_modes_number);
 	check_error(vkGetPhysicalDeviceSurfacePresentModesKHR(selected_physical_device, surface, &presentation_modes_number, presentation_modes.data()),
-				Error::PRESENT_MODES_RETRIEVAL_FAILED);
+				vulkan_helper::Error::PRESENT_MODES_RETRIEVAL_FAILED);
 
 	VkPresentModeKHR selected_present_mode = vulkan_helper::select_presentation_mode(presentation_modes, VK_PRESENT_MODE_MAILBOX_KHR);
 
 	VkSurfaceCapabilitiesKHR surface_capabilities;
 	check_error(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(selected_physical_device, surface, &surface_capabilities),
-				Error::SURFACE_CAPABILITIES_RETRIEVAL_FAILED);
+				vulkan_helper::Error::SURFACE_CAPABILITIES_RETRIEVAL_FAILED);
 
 	uint32_t number_of_images = vulkan_helper::select_number_of_images(surface_capabilities);
 	VkExtent2D size_of_images = vulkan_helper::select_size_of_images(surface_capabilities, window_size);
@@ -222,7 +223,7 @@ void BaseVulkanApp::create_swapchain() {
 	vkGetPhysicalDeviceSurfaceFormatsKHR(selected_physical_device, surface, &formats_count, nullptr);
 	std::vector<VkSurfaceFormatKHR> surface_formats(formats_count);
 	check_error(vkGetPhysicalDeviceSurfaceFormatsKHR(selected_physical_device, surface, &formats_count, surface_formats.data()),
-				Error::SURFACE_FORMATS_RETRIEVAL_FAILED);
+				vulkan_helper::Error::SURFACE_FORMATS_RETRIEVAL_FAILED);
 	VkSurfaceFormatKHR surface_format = vulkan_helper::select_surface_format(surface_formats, { VK_FORMAT_B8G8R8A8_UNORM ,VK_COLOR_SPACE_SRGB_NONLINEAR_KHR });
 
 	VkSwapchainKHR old_swapchain = swapchain;
@@ -246,12 +247,12 @@ void BaseVulkanApp::create_swapchain() {
 		VK_TRUE,
 		old_swapchain
 	};
-	check_error(vkCreateSwapchainKHR(device, &swapchain_create_info, nullptr, &swapchain), Error::SWAPCHAIN_CREATION_FAILED);
+	check_error(vkCreateSwapchainKHR(device, &swapchain_create_info, nullptr, &swapchain), vulkan_helper::Error::SWAPCHAIN_CREATION_FAILED);
 
     uint32_t swapchain_images_count;
 	vkGetSwapchainImagesKHR(device, swapchain, &swapchain_images_count, nullptr);
 	swapchain_images.resize(swapchain_images_count);
-	check_error(vkGetSwapchainImagesKHR(device, swapchain, &swapchain_images_count, swapchain_images.data()), Error::SWAPCHAIN_IMAGES_RETRIEVAL_FAILED);
+	check_error(vkGetSwapchainImagesKHR(device, swapchain, &swapchain_images_count, swapchain_images.data()), vulkan_helper::Error::SWAPCHAIN_IMAGES_RETRIEVAL_FAILED);
 }
 
 void BaseVulkanApp::create_cmd_pool_and_buffers(uint32_t queue_family_index) {
@@ -261,7 +262,7 @@ void BaseVulkanApp::create_cmd_pool_and_buffers(uint32_t queue_family_index) {
         0,
         queue_family_index
     };
-    check_error(vkCreateCommandPool(device, &command_pool_create_info, nullptr, &command_pool), Error::COMMAND_POOL_CREATION_FAILED);
+    check_error(vkCreateCommandPool(device, &command_pool_create_info, nullptr, &command_pool), vulkan_helper::Error::COMMAND_POOL_CREATION_FAILED);
 
     VkCommandBufferAllocateInfo command_buffer_allocate_info = {
         VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -271,13 +272,7 @@ void BaseVulkanApp::create_cmd_pool_and_buffers(uint32_t queue_family_index) {
         static_cast<uint32_t>(swapchain_images.size())
     };
     command_buffers.resize(swapchain_images.size());
-    check_error(vkAllocateCommandBuffers(device, &command_buffer_allocate_info, command_buffers.data()), Error::COMMAND_BUFFER_CREATION_FAILED);
-}
-
-void BaseVulkanApp::check_error(int32_t last_return_value, Error error_location) {
-	if (last_return_value) {
-		throw std::make_pair(last_return_value, error_location);
-	}
+    check_error(vkAllocateCommandBuffers(device, &command_buffer_allocate_info, command_buffers.data()), vulkan_helper::Error::COMMAND_BUFFER_CREATION_FAILED);
 }
 
 
