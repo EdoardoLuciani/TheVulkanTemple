@@ -3,6 +3,8 @@
 
 #include <array>
 #include "base_vulkan_app.h"
+#include "smaa/smaa_context.h"
+#include "vsm/vsm_context.h"
 
 struct ModelInfo {
     uint32_t vertices;
@@ -39,12 +41,11 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         VkImageView device_depth_image_view = VK_NULL_HANDLE;
 
         // HDR ping pong image
-        VkImage device_hdr_render_target = VK_NULL_HANDLE;
-        std::array<VkImageView, 2> device_hdr_render_target_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        VkImage device_render_target = VK_NULL_HANDLE;
+        std::array<VkImageView, 2> device_render_target_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
-        // VSM depth image
-        VkImage device_vsm_depth_image = VK_NULL_HANDLE;
-        std::array<VkImageView, 2> device_vsm_depth_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        SmaaContext smaa_context;
+        VSMContext vsm_context;
 
         // Memory in which all attachment reside
         VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;

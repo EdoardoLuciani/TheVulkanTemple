@@ -5,6 +5,7 @@
 
 SmaaContext::SmaaContext(VkDevice device, VkExtent2D screen_res) {
     this->device = device;
+    screen_extent = {screen_res.width, screen_res.height, 1};
 
     // Then we create the device images for the resources
     VkImageCreateInfo image_create_info = {
@@ -12,8 +13,8 @@ SmaaContext::SmaaContext(VkDevice device, VkExtent2D screen_res) {
             nullptr,
             0,
             VK_IMAGE_TYPE_2D,
-            VK_FORMAT_R8G8_UNORM,
-             area_image_size,
+            smaa_area_image_format,
+            smaa_area_image_extent,
             1,
             1,
             VK_SAMPLE_COUNT_1_BIT,
@@ -27,16 +28,16 @@ SmaaContext::SmaaContext(VkDevice device, VkExtent2D screen_res) {
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_area_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 
     image_create_info.format = VK_FORMAT_R8_UNORM;
-    image_create_info.extent = search_image_size;
+    image_create_info.extent = smaa_search_image_extent;
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_search_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 
     // We create the images required for the smaa, first the stencil image
     image_create_info.format = VK_FORMAT_S8_UINT;
-    image_create_info.extent = { screen_res.width, screen_res.height, 1 };
+    image_create_info.extent = screen_extent;
     image_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_stencil_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 
-    // Then the data_image which is gonna hold the edge and bled tex during rendering
+    // Then the data_image which is gonna hold the edge and weight tex during rendering
     image_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
     image_create_info.arrayLayers = 2;
     image_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -44,6 +45,12 @@ SmaaContext::SmaaContext(VkDevice device, VkExtent2D screen_res) {
 }
 
 SmaaContext::~SmaaContext() {
+    vkDestroyImageView(device, device_smaa_area_image_view, nullptr);
+    vkDestroyImageView(device, device_smaa_search_image_view, nullptr);
+    vkDestroyImageView(device, device_smaa_stencil_image_view, nullptr);
+    vkDestroyImageView(device, device_smaa_data_edge_image_view, nullptr);
+    vkDestroyImageView(device, device_smaa_data_weight_image_view, nullptr);
+
     vkDestroyImage(device, device_smaa_area_image, nullptr);
     vkDestroyImage(device, device_smaa_search_image, nullptr);
     vkDestroyImage(device, device_smaa_stencil_image, nullptr);
@@ -56,6 +63,9 @@ std::array<VkImage, 4> SmaaContext::get_device_images() {
 
 void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_path, std::string search_tex_path, const VkPhysicalDeviceMemoryProperties &memory_properties,
                                                           VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue) {
+    // We know that the images have already been allocated so we create the views and the sampler
+    create_image_views_and_samplers();
+
     // We need to get the smaa resource images from disk and upload them to VRAM
     uint64_t area_tex_size, search_tex_size;
 
@@ -86,6 +96,7 @@ void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_p
             vulkan_helper::select_memory_index(memory_properties, host_transition_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
     };
     check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &host_transition_memory), vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
+    check_error(vkBindBufferMemory(device, host_transition_buffer, host_transition_memory, 0), vulkan_helper::Error::BIND_BUFFER_MEMORY_FAILED);
 
     // We map the memory and copy the data
     void *dst_ptr;
@@ -111,7 +122,7 @@ void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_p
         VK_QUEUE_FAMILY_IGNORED,
         VK_QUEUE_FAMILY_IGNORED,
         device_smaa_area_image,
-        {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+        {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
     };
     image_memory_barriers[1] = image_memory_barriers[0];
     image_memory_barriers[1].image = device_smaa_search_image;
@@ -124,7 +135,7 @@ void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_p
             0,
             {VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
             {0,0,0},
-            area_image_size
+            smaa_area_image_extent
     };
     vkCmdCopyBufferToImage(command_buffer, host_transition_buffer, device_smaa_area_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
     buffer_image_copy = {
@@ -133,7 +144,7 @@ void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_p
             0,
             {VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
             {0,0,0},
-            search_image_size
+            smaa_search_image_extent
     };
     vkCmdCopyBufferToImage(command_buffer, host_transition_buffer, device_smaa_search_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
@@ -148,7 +159,7 @@ void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_p
             VK_QUEUE_FAMILY_IGNORED,
             VK_QUEUE_FAMILY_IGNORED,
             device_smaa_area_image,
-            {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
     };
     image_memory_barriers[1] = image_memory_barriers[0];
     image_memory_barriers[1].image = device_smaa_search_image;
@@ -178,4 +189,35 @@ void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_p
     vkResetCommandPool(device, command_pool, 0);
     vkDestroyBuffer(device, host_transition_buffer, nullptr);
     vkFreeMemory(device, host_transition_memory, nullptr);
+}
+
+void SmaaContext::create_image_views_and_samplers() {
+    VkImageViewCreateInfo image_view_create_info = {
+        VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        nullptr,
+        0,
+        device_smaa_area_image,
+        VK_IMAGE_VIEW_TYPE_2D,
+        smaa_area_image_format,
+        {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
+        { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0 , 1 }
+    };
+    vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_area_image_view);
+
+    image_view_create_info.image = device_smaa_search_image;
+    image_view_create_info.format = smaa_search_image_format;
+    vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_search_image_view);
+
+    image_view_create_info.image = device_smaa_stencil_image;
+    image_view_create_info.format = VK_FORMAT_S8_UINT;
+    image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0 , 1 };
+    vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_stencil_image_view);
+
+    image_view_create_info.image = device_smaa_data_image;
+    image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_data_edge_image_view);
+
+    image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, 1 };
+    vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_data_weight_image_view);
 }

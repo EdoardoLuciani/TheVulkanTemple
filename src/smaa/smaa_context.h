@@ -13,12 +13,15 @@ class SmaaContext {
                                                      VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue);
     private:
         VkDevice device = VK_NULL_HANDLE;
+        VkExtent3D screen_extent;
 
-        static constexpr VkExtent3D area_image_size = {160,560,1};
+        static constexpr VkExtent3D smaa_area_image_extent = {160, 560, 1};
+        static constexpr VkFormat smaa_area_image_format = VK_FORMAT_R8G8_UNORM;
         VkImage device_smaa_area_image = VK_NULL_HANDLE;
         VkImageView device_smaa_area_image_view = VK_NULL_HANDLE;
 
-        static constexpr VkExtent3D search_image_size = {160,560,1};
+        static constexpr VkExtent3D smaa_search_image_extent = {64, 16, 1 };
+        static constexpr VkFormat smaa_search_image_format = VK_FORMAT_R8_UNORM;
         VkImage device_smaa_search_image = VK_NULL_HANDLE;
         VkImageView device_smaa_search_image_view = VK_NULL_HANDLE;
 
@@ -26,8 +29,10 @@ class SmaaContext {
         VkImageView device_smaa_stencil_image_view = VK_NULL_HANDLE;
 
         VkImage device_smaa_data_image = VK_NULL_HANDLE;
-        VkImageView device_smaa_data_blend_image_view = VK_NULL_HANDLE;
         VkImageView device_smaa_data_edge_image_view = VK_NULL_HANDLE;
+        VkImageView device_smaa_data_weight_image_view = VK_NULL_HANDLE;
+
+        void create_image_views_and_samplers();
 };
 
 #endif //BASE_VULKAN_APP_SMAA_CONTEXT_H

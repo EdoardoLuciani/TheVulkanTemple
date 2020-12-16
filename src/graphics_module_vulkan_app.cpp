@@ -2,30 +2,56 @@
 #include <vector>
 #include <string>
 #include "smaa/smaa_context.h"
+#include "vsm/vsm_context.h"
 #include "vulkan_helper.h"
 
 GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name, std::vector<const char *> &desired_instance_level_extensions,
                                                  VkExtent2D window_size, const std::vector<const char *> &desired_device_level_extensions,
                                                  const VkPhysicalDeviceFeatures &required_physical_device_features, VkBool32 surface_support, EngineOptions options) :
-                         BaseVulkanApp(application_name, desired_instance_level_extensions, window_size, desired_device_level_extensions,
-                                       required_physical_device_features, surface_support) {
-    VkExtent3D attachments_size = {window_size.width, window_size.height, 1};
-    create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, attachments_size, 1, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+                         BaseVulkanApp(application_name,
+                                       desired_instance_level_extensions,
+                                       window_size,
+                                       desired_device_level_extensions,
+                                       required_physical_device_features,
+                                       surface_support),
+                         smaa_context(device, window_size),
+                         vsm_context(device, window_size) {
+    VkExtent3D screen_extent = {window_size.width, window_size.height, 1};
+
+    create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, screen_extent, 1, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     std::vector<VkImage> device_images_to_allocate = {device_depth_image};
 
-    SmaaContext smaa_context(device, window_size);
-    // TODO: insert method duplicates elements
-    device_images_to_allocate.insert(device_images_to_allocate.end(), smaa_context.get_device_images().begin(), smaa_context.get_device_images().end());
+    create_image(device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, screen_extent, 2, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    device_images_to_allocate.push_back(device_render_target);
 
+    // We create some contexts and put the images handle in a vector for future allocation
+    auto smaa_array_images = smaa_context.get_device_images();
+    device_images_to_allocate.insert(device_images_to_allocate.end(), smaa_array_images.begin(), smaa_array_images.end());
+
+    device_images_to_allocate.push_back(vsm_context.get_device_image());
+
+    // We then allocate all needed images in a single allocation
     allocate_and_bind_to_memory(device_attachments_memory, {}, device_images_to_allocate, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
+    // We then finish to inizialize all contexts
     smaa_context.upload_resource_images_to_device_memory("resources//textures//AreaTexDX10.R8G8", "resources//textures//SearchTex.R8",
                                                          physical_device_memory_properties, command_pool, command_buffers[0], queue);
 
+    vsm_context.create_image_views();
+
+    create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1);
+
+    create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+    create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
 }
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
+    vkDestroyImageView(device, device_depth_image_view, nullptr);
     vkDestroyImage(device, device_depth_image, nullptr);
+    for (auto &device_render_target_image_view : device_render_target_image_views) {
+        vkDestroyImageView(device, device_render_target_image_view, nullptr);
+    }
+    vkDestroyImage(device, device_render_target, nullptr);
     vkFreeMemory(device, device_attachments_memory, nullptr);
 
     // Uniform related things freed

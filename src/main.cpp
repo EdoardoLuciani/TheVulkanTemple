@@ -2,12 +2,11 @@
 #include <utility>
 #include <vector>
 #include "vulkan_helper.h"
+#include "graphics_module_vulkan_app.h"
 
 #define MAGIC_ENUM_RANGE_MIN 0
 #define MAGIC_ENUM_RANGE_MAX 256
 #include "magic_enum.hpp"
-
-#include "graphics_module_vulkan_app.h"
 
 int main() {
     std::vector<const char*> desired_instance_level_extensions = {"VK_KHR_surface"};
@@ -21,6 +20,7 @@ int main() {
 
 	std::vector<const char*> desired_device_level_extensions = {"VK_KHR_swapchain"};
 	VkPhysicalDeviceFeatures selected_device_features = { 0 };
+	selected_device_features.samplerAnisotropy = VK_TRUE;
 
 	EngineOptions options;
 	options.anti_aliasing = 0;
