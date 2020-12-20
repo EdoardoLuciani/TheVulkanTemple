@@ -1,6 +1,7 @@
 #include "vulkan_helper.h"
 #include <iostream>
 #include <filesystem>
+#include <unordered_map>
 #define TINYGLTF_IMPLEMENTATION
 #define TINYGLTF_USE_CPP14
 #define STB_IMAGE_IMPLEMENTATION
@@ -416,6 +417,15 @@ namespace vulkan_helper
         if (last_return_value) {
             throw std::make_pair(last_return_value, error_location);
         }
+    }
+
+    void insert_or_sum(std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &target, const std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &to_sum) {
+        for (auto& elem : to_sum.first) {
+            if (!target.first.insert(elem).second) {
+                target.first[elem.first] += elem.second;
+            }
+        }
+        target.second += to_sum.second;
     }
 
 } // namespace vulkan_helper

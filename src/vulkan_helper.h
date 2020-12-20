@@ -3,8 +3,7 @@
 #include <stdint.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-
-// Only for definitions
+#include <unordered_map>
 #include <tiny_gltf.h>
 #include "volk.h"
 
@@ -67,6 +66,8 @@ namespace vulkan_helper {
         IMAGE_VIEW_CREATION_FAILED,
         SAMPLER_CREATION_FAILED,
         QUEUE_SUBMIT_FAILED,
+        DESCRIPTOR_SET_LAYOUT_CREATION_FAILED,
+        DESCRIPTOR_SET_ALLOCATION_FAILED,
         SHADER_MODULE_CREATION_FAILED,
         ACQUIRE_NEXT_IMAGE_FAILED,
         QUEUE_PRESENT_FAILED
@@ -104,4 +105,6 @@ namespace vulkan_helper {
     uint64_t get_model_texture_size(const model_data_info &model);
 
     void check_error(int32_t last_return_value, Error error_location);
+
+    void insert_or_sum(std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &target, const std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &to_sum);
 }

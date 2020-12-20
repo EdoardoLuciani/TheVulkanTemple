@@ -42,9 +42,100 @@ SmaaContext::SmaaContext(VkDevice device, VkExtent2D screen_res) {
     image_create_info.arrayLayers = 2;
     image_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_data_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
+
+    // We need to create a device buffer that is gonna hold SMAA_RT_METRICS of size 16b
+    VkBufferCreateInfo buffer_create_info = {
+            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            nullptr,
+            0,
+            16,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_SHARING_MODE_EXCLUSIVE,
+            0,
+            nullptr
+    };
+    check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &device_smaa_rt_metrics_buffer), vulkan_helper::Error::BUFFER_CREATION_FAILED);
+
+    // Sampler we will use with the smaa images
+    VkSamplerCreateInfo sampler_create_info = {
+            VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FILTER_LINEAR,
+            VK_FILTER_LINEAR,
+            VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            1,
+            VK_FALSE,
+            0.0f,
+            VK_FALSE,
+            VK_COMPARE_OP_ALWAYS,
+            0.0f,
+            1.0f,
+            VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+            VK_FALSE,
+    };
+    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_render_target_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
+
+    // We also need to create the layouts for the descriptors
+    VkDescriptorSetLayoutBinding descriptor_set_layout_binding = {
+            0,
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            2,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &descriptor_set_layout_binding
+    };
+    check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &smaa_descriptor_sets_layout[0]), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
+
+    // Layout for the second descriptor for the second smaa pipeline
+    descriptor_set_layout_binding = {
+            0,
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            3,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_create_info.pBindings = &descriptor_set_layout_binding;
+    check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &smaa_descriptor_sets_layout[1]), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
+
+    // Layout for the third descriptor for the third smaa pipeline, same as the first
+    descriptor_set_layout_binding = {
+            0,
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            2,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_create_info.pBindings = &descriptor_set_layout_binding;
+    check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &smaa_descriptor_sets_layout[2]), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
+
+    // Last layout is for the SMAA_RT_METRICS which contain the resolution
+    descriptor_set_layout_binding = {
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            1,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_create_info.pBindings = &descriptor_set_layout_binding;
+    check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &smaa_descriptor_sets_layout[3]), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
 }
 
 SmaaContext::~SmaaContext() {
+    for (auto& smaa_descriptor_set_layout : smaa_descriptor_sets_layout) {
+        vkDestroyDescriptorSetLayout(device, smaa_descriptor_set_layout, nullptr);
+    }
+    vkDestroySampler(device, device_render_target_sampler, nullptr);
+    vkDestroyBuffer(device, device_smaa_rt_metrics_buffer, nullptr);
     vkDestroyImageView(device, device_smaa_area_image_view, nullptr);
     vkDestroyImageView(device, device_smaa_search_image_view, nullptr);
     vkDestroyImageView(device, device_smaa_stencil_image_view, nullptr);
@@ -61,10 +152,14 @@ std::array<VkImage, 4> SmaaContext::get_device_images() {
     return {device_smaa_area_image, device_smaa_search_image, device_smaa_stencil_image, device_smaa_data_image};
 }
 
+VkBuffer SmaaContext::get_device_buffer() {
+    return device_smaa_rt_metrics_buffer;
+}
+
 void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_path, std::string search_tex_path, const VkPhysicalDeviceMemoryProperties &memory_properties,
                                                           VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue) {
     // We know that the images have already been allocated so we create the views and the sampler
-    create_image_views_and_samplers();
+    create_image_views();
 
     // We need to get the smaa resource images from disk and upload them to VRAM
     uint64_t area_tex_size, search_tex_size;
@@ -148,6 +243,12 @@ void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_p
     };
     vkCmdCopyBufferToImage(command_buffer, host_transition_buffer, device_smaa_search_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
+    vkCmdUpdateBuffer(command_buffer, device_smaa_rt_metrics_buffer, 0, sizeof(glm::vec4),
+                      glm::value_ptr(glm::vec4(1.0f / screen_extent.width,
+                                               1.0f / screen_extent.height,
+                                               static_cast<float>(screen_extent.width),
+                                               static_cast<float>(screen_extent.height))));
+
     // After the copy we need to transition the images to be shader ready
     image_memory_barriers[0] = {
             VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -163,7 +264,15 @@ void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_p
     };
     image_memory_barriers[1] = image_memory_barriers[0];
     image_memory_barriers[1].image = device_smaa_search_image;
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
+
+    // Also for the smaa_rt_metrics buffer
+    VkMemoryBarrier memory_barrier = {
+            VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+            nullptr,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_UNIFORM_READ_BIT
+    };
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
     vkEndCommandBuffer(command_buffer);
 
     VkFenceCreateInfo fence_create_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,nullptr,0 };
@@ -191,7 +300,7 @@ void SmaaContext::upload_resource_images_to_device_memory(std::string area_tex_p
     vkFreeMemory(device, host_transition_memory, nullptr);
 }
 
-void SmaaContext::create_image_views_and_samplers() {
+void SmaaContext::create_image_views() {
     VkImageViewCreateInfo image_view_create_info = {
         VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         nullptr,
@@ -220,4 +329,97 @@ void SmaaContext::create_image_views_and_samplers() {
 
     image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, 1 };
     vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_data_weight_image_view);
+}
+
+std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> SmaaContext::get_required_descriptor_pool_size_and_sets() {
+    return {
+        {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}},
+        4
+    };
+}
+
+void SmaaContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView depth_image_view) {
+    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            nullptr,
+            descriptor_pool,
+            static_cast<uint32_t>(smaa_descriptor_sets_layout.size()),
+            smaa_descriptor_sets_layout.data()
+    };
+    check_error(vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, smaa_descriptor_sets.data()), vulkan_helper::Error::DESCRIPTOR_SET_ALLOCATION_FAILED);
+
+    std::array<VkDescriptorImageInfo, 2> smaa_edge_descriptor_images_info {{
+            { device_render_target_sampler, input_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+            { device_render_target_sampler, depth_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+    }};
+
+    std::array<VkDescriptorImageInfo, 3> smaa_weight_descriptor_images_info {{
+            { device_render_target_sampler, device_smaa_data_edge_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+            { device_render_target_sampler, device_smaa_area_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+            { device_render_target_sampler, device_smaa_search_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+    }};
+
+    std::array<VkDescriptorImageInfo, 2> smaa_blend_descriptor_images_info {{
+            { device_render_target_sampler, input_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+            { device_render_target_sampler, device_smaa_data_weight_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+    }};
+
+    VkDescriptorBufferInfo smaa_rt_metrics = {device_smaa_rt_metrics_buffer, 0, sizeof(glm::vec4)};
+
+    std::array<VkWriteDescriptorSet,4> write_descriptor_set {{{
+        // First write is for the smaa edge descriptor
+        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        nullptr,
+        smaa_descriptor_sets[0],
+        0,
+        0,
+        smaa_edge_descriptor_images_info.size(),
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        smaa_edge_descriptor_images_info.data(),
+        nullptr,
+        nullptr
+        },
+            // Second writes are for the smaa weight descriptor
+        {
+        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        nullptr,
+        smaa_descriptor_sets[1],
+        0,
+        0,
+        smaa_weight_descriptor_images_info.size(),
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        smaa_weight_descriptor_images_info.data(),
+        nullptr,
+        nullptr
+        },
+            // Third write is for the smaa blend descriptor
+        {
+        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        nullptr,
+        smaa_descriptor_sets[2],
+        0,
+        0,
+        smaa_blend_descriptor_images_info.size(),
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        smaa_blend_descriptor_images_info.data(),
+        nullptr,
+        nullptr
+        },
+            // Fourth write is for smaa_rt_metrics
+        {
+        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        nullptr,
+        smaa_descriptor_sets[3],
+        0,
+        0,
+        1,
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        nullptr,
+        &smaa_rt_metrics,
+        nullptr
+        }
+    }};
+    vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
+
 }
