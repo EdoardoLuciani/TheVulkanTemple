@@ -50,6 +50,13 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Memory in which all attachment reside
         VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
 
+        // Descriptor things
+        VkDescriptorSetLayout pbr_model_data_set_layout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout light_data_set_layout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout camera_data_set_layout = VK_NULL_HANDLE;
+
+        VkDescriptorPool attachments_descriptor_pool = VK_NULL_HANDLE;
+
         // Uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
         VkDeviceMemory host_model_uniform_memory = VK_NULL_HANDLE;
@@ -62,6 +69,10 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
         std::vector<ModelInfo> object_info;
 
+        // Vulkan methods
+        void create_descriptor_sets();
+
+        // Helper methods
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);
         void create_image(VkImage &image, VkFormat format, VkExtent3D image_size, uint32_t layers, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags = 0);
         void create_image_view(VkImageView &image_view, VkImage image, VkFormat image_format, VkImageAspectFlags aspect_mask, uint32_t start_layer, uint32_t layer_count);

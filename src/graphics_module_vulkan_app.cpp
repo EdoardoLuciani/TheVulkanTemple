@@ -24,46 +24,111 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     std::vector<VkImage> device_images_to_allocate;
 
     // We create some attachments useful during rendering
-    create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, screen_extent, 1, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, screen_extent, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_depth_image);
 
-    create_image(device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, screen_extent, 2, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    create_image(device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, screen_extent, 2,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_render_target);
 
     // We request information about the images and buffer we need from smaa_context and store them in a vector
-    auto smaa_array_images = smaa_context.get_device_images();
+    device_buffers_to_allocate.push_back(smaa_context.get_device_buffers_and_images().first);
+    auto smaa_array_images = smaa_context.get_device_buffers_and_images().second;
     device_images_to_allocate.insert(device_images_to_allocate.end(), smaa_array_images.begin(), smaa_array_images.end());
-    device_buffers_to_allocate.push_back(smaa_context.get_device_buffer());
 
     // We request information about the images we need from vsm_context and store them in a vector
-    device_images_to_allocate.push_back(vsm_context.get_device_image());
+    device_buffers_to_allocate.push_back(vsm_context.get_device_buffer_and_image().first);
+    device_images_to_allocate.push_back(vsm_context.get_device_buffer_and_image().second);
 
     // We then allocate all needed images and buffers in a single allocation
-    allocate_and_bind_to_memory(device_attachments_memory, device_buffers_to_allocate, device_images_to_allocate, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    allocate_and_bind_to_memory(device_attachments_memory, device_buffers_to_allocate, device_images_to_allocate,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // We then upload the images to memory
-    smaa_context.upload_resource_images_to_device_memory("resources//textures//AreaTexDX10.R8G8", "resources//textures//SearchTex.R8",
-                                                         physical_device_memory_properties, command_pool, command_buffers[0], queue);
+    smaa_context.init_resources("resources//textures//AreaTexDX10.R8G8", "resources//textures//SearchTex.R8",
+                                physical_device_memory_properties, command_pool, command_buffers[0], queue);
 
     // For vsm we need to create the image_views
-    vsm_context.create_image_views();
+    vsm_context.init_resources(command_pool, command_buffers[0], queue);
 
-    create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1);
-    create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
-    create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
+    create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0,1);
+    create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+    create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
 
-    // Todo: move descriptor things in another method
-    // Then we need to allocate a descriptor pool that can accomodate all sets
+    // After creating all resources we proceed to create the descriptor sets
+    create_descriptor_sets();
+}
+
+void GraphicsModuleVulkanApp::create_descriptor_sets() {
+
+    std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
+    descriptor_set_layout_binding[0] = {
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            1,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_binding[1] = {
+            1,
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            4,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            2,
+            descriptor_set_layout_binding.data()
+    };
+    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &pbr_model_data_set_layout);
+
+    descriptor_set_layout_binding[0] = {
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            1,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_create_info.bindingCount = 1;
+    descriptor_set_layout_create_info.pBindings = descriptor_set_layout_binding.data();
+    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &light_data_set_layout);
+
+    descriptor_set_layout_binding[0] = {
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            1,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_create_info.bindingCount = 1;
+    descriptor_set_layout_create_info.pBindings = descriptor_set_layout_binding.data();
+    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &camera_data_set_layout);
+
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> sets_elements_required;
+    // TODO: delete layouts in destructor and allocate the required layouts, remembering the needed sets per model and light
+
     vulkan_helper::insert_or_sum(sets_elements_required, smaa_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, vsm_context.get_required_descriptor_pool_size_and_sets());
 
-    for (auto& set_element_required : sets_elements_required.first) {
-        std::cout << "Key:" << set_element_required.first << " Value:" << set_element_required.second << std::endl;
-    }
+    std::vector<VkDescriptorPoolSize> descriptor_pool_size = vulkan_helper::convert_map_to_vector(sets_elements_required.first);
+
+    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            nullptr,
+            VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+            sets_elements_required.second,
+            static_cast<uint32_t>(descriptor_pool_size.size()),
+            descriptor_pool_size.data()
+    };
+    vkCreateDescriptorPool(device, &descriptor_pool_create_info, nullptr, &attachments_descriptor_pool);
+
+    smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0], device_depth_image_view);
+    vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
 }
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
+    vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
     vkDestroyImageView(device, device_depth_image_view, nullptr);
     vkDestroyImage(device, device_depth_image, nullptr);
     for (auto &device_render_target_image_view : device_render_target_image_views) {

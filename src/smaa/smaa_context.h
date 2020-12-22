@@ -9,10 +9,11 @@ class SmaaContext {
     public:
         SmaaContext(VkDevice device, VkExtent2D screen_res);
         ~SmaaContext();
-        std::array<VkImage, 4> get_device_images();
-        VkBuffer get_device_buffer();
-        void upload_resource_images_to_device_memory(std::string area_tex_path, std::string search_tex_path, const VkPhysicalDeviceMemoryProperties &memory_properties,
-                                                     VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue);
+
+        std::pair<VkBuffer, std::array<VkImage, 4>> get_device_buffers_and_images();
+
+        void init_resources(std::string area_tex_path, std::string search_tex_path, const VkPhysicalDeviceMemoryProperties &memory_properties,
+                            VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue);
 
 
         std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();

@@ -428,4 +428,13 @@ namespace vulkan_helper
         target.second += to_sum.second;
     }
 
+    std::vector<VkDescriptorPoolSize> convert_map_to_vector(const std::unordered_map<VkDescriptorType, uint32_t> &target) {
+        std::vector<VkDescriptorPoolSize> out_vec;
+        out_vec.reserve(target.size());
+        for (auto& elem : target) {
+            out_vec.push_back({elem.first, elem.second});
+        }
+        return out_vec;
+    }
+
 } // namespace vulkan_helper

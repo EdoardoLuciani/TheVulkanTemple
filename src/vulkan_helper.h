@@ -107,4 +107,5 @@ namespace vulkan_helper {
     void check_error(int32_t last_return_value, Error error_location);
 
     void insert_or_sum(std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &target, const std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &to_sum);
+    std::vector<VkDescriptorPoolSize> convert_map_to_vector(const std::unordered_map<VkDescriptorType, uint32_t> &target);
 }
