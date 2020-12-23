@@ -5,12 +5,32 @@
 #include "base_vulkan_app.h"
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
+#include <glm/glm.hpp>
+#include <numeric_limits>
 
 struct ModelInfo {
     uint32_t vertices;
     uint32_t indices;
     VkIndexType index_data_type;
     uint32_t mesh_data_memory_offset;
+};
+
+struct Light {
+    glm::vec3 pos;
+    glm::vec3 dir;
+    glm::vec3 color;
+    float fow;
+    float aspect = 1.0f;
+    float znear = 0.001f;
+    float zfar = std::numeric_limits<float>::max();
+};
+
+struct Camera {
+    glm::vec3 pos;
+    glm::vec3 dir;
+    float fow;
+    float znear = 0.001f;
+    float zfar = std::numeric_limits<float>::max();
 };
 
 struct EngineOptions {
@@ -32,9 +52,15 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         ~GraphicsModuleVulkanApp();
 
 		// Directly copy data from disk to VRAM
-		void load_3d_objects(std::vector<std::string> model_path, uint32_t object_matrix_size);
+		void load_3d_objects(std::vector<std::string> model_path, uint32_t per_object_uniform_data_size);
+
+        void load_lights(const std::vector<Light> &lights);
+        void set_camera(Camera camera);
+        void init_renderer();
     private:
         EngineOptions engine_options;
+
+        VkExtent3D screen_extent;
 
         // Image for depth comparison
         VkImage device_depth_image = VK_NULL_HANDLE;
@@ -44,7 +70,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         VkImage device_render_target = VK_NULL_HANDLE;
         std::array<VkImageView, 2> device_render_target_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
-        SmaaContext smaa_context;
+        // Todo: add SmaaContext
+        //SmaaContext smaa_context;
         VSMContext vsm_context;
 
         // Memory in which all attachment reside
@@ -57,7 +84,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
 
         VkDescriptorPool attachments_descriptor_pool = VK_NULL_HANDLE;
 
-        // Uniform data
+        // Model uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
         VkDeviceMemory host_model_uniform_memory = VK_NULL_HANDLE;
         void *host_model_uniform_buffer_ptr;
@@ -69,8 +96,11 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
         std::vector<ModelInfo> object_info;
 
+        std::vector<Light> lights;
+        Camera camera;
+
         // Vulkan methods
-        void create_descriptor_sets();
+        void create_sets_layout();
 
         // Helper methods
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);
