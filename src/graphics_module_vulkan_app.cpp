@@ -21,22 +21,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
 }
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
-
-    vkDestroyDescriptorSetLayout(device, pbr_model_data_set_layout, nullptr);
-    vkDestroyDescriptorSetLayout(device, light_data_set_layout, nullptr);
-    vkDestroyDescriptorSetLayout(device, camera_data_set_layout, nullptr);
-
-    vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
-
-    vkDestroyImageView(device, device_depth_image_view, nullptr);
-    vkDestroyImage(device, device_depth_image, nullptr);
-    for (auto &device_render_target_image_view : device_render_target_image_views) {
-        vkDestroyImageView(device, device_render_target_image_view, nullptr);
-    }
-    vkDestroyImage(device, device_render_target, nullptr);
-    vkFreeMemory(device, device_attachments_memory, nullptr);
-
-    // Uniform related things freed
+    // Model uniform related things freed
     vkUnmapMemory(device, host_model_uniform_memory);
     vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
     vkFreeMemory(device, host_model_uniform_memory, nullptr);
@@ -52,6 +37,25 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     }
     vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
     vkFreeMemory(device, device_model_data_memory, nullptr);
+
+    // Camera and light uniform related things freed
+    vkUnmapMemory(device, host_camera_lights_memory);
+    vkDestroyBuffer(device, host_camera_lights_uniform_buffer, nullptr);
+    vkFreeMemory(device, host_camera_lights_memory, nullptr);
+
+    vkDestroyImageView(device, device_depth_image_view, nullptr);
+    vkDestroyImage(device, device_depth_image, nullptr);
+    for (auto &device_render_target_image_view : device_render_target_image_views) {
+        vkDestroyImageView(device, device_render_target_image_view, nullptr);
+    }
+    vkDestroyImage(device, device_render_target, nullptr);
+    vkDestroyBuffer(device, device_camera_lights_uniform_buffer, nullptr);
+    vkFreeMemory(device, device_attachments_memory, nullptr);
+
+    vkDestroyDescriptorSetLayout(device, pbr_model_data_set_layout, nullptr);
+    vkDestroyDescriptorSetLayout(device, light_data_set_layout, nullptr);
+    vkDestroyDescriptorSetLayout(device, camera_data_set_layout, nullptr);
+    vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
 }
 
 void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_path, uint32_t per_object_uniform_data_size) {
@@ -236,10 +240,27 @@ void GraphicsModuleVulkanApp::set_camera(Camera camera) {
 }
 
 void GraphicsModuleVulkanApp::init_renderer() {
-    vsm_context.create_resources({{500, 500}, {500, 500}});
+    // We calculate the size needed for the buffer
+    uint64_t camera_lights_data_size = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) +
+            vulkan_helper::get_aligned_memory_size(lights.front().copy_data_to_ptr(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) * lights.size();
+
+    // We create and allocate a host buffer for holding the camera and lights
+    create_buffer(host_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    allocate_and_bind_to_memory(host_camera_lights_memory, {host_camera_lights_uniform_buffer}, {}, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+    vkMapMemory(device, host_camera_lights_memory, 0, VK_WHOLE_SIZE, 0, &host_camera_lights_data);
 
     std::vector<VkBuffer> device_buffers_to_allocate;
     std::vector<VkImage> device_images_to_allocate;
+
+    // We create the device buffer that is gonna hold camera and lights information
+    create_buffer(device_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    device_buffers_to_allocate.push_back(device_camera_lights_uniform_buffer);
+
+    std::vector<VkExtent2D> depth_images_resolution(lights.size());
+    for (int i=0; i<depth_images_resolution.size(); i++) {
+        depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(500).x, lights[i].get_resolution_from_ratio(500).y};
+    }
+    vsm_context.create_resources(depth_images_resolution);
 
     // We create some attachments useful during rendering
     create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, screen_extent, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -279,7 +300,6 @@ void GraphicsModuleVulkanApp::init_renderer() {
 }
 
 void GraphicsModuleVulkanApp::create_sets_layout() {
-
     std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
     descriptor_set_layout_binding[0] = {
             0,

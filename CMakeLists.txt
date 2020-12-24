@@ -16,6 +16,6 @@ add_executable(base_vulkan_app
         src/vulkan_helper.cpp
         src/graphics_module_vulkan_app.cpp
         src/smaa/smaa_context.cpp
-        src/volk.c src/vsm/vsm_context.cpp src/vsm/vsm_context.h)
+        src/volk.c src/vsm/vsm_context.cpp src/vsm/vsm_context.h src/camera.cpp src/camera.h src/light.cpp src/light.h)
 
 target_link_libraries(base_vulkan_app glfw3 dl pthread stdc++fs X11)

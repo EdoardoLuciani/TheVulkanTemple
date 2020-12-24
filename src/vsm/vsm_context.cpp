@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <utility>
 #include <cstring>
+#include <iostream>
 
 VSMContext::VSMContext(VkDevice device) {
     this->device = device;

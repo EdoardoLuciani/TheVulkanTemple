@@ -6,31 +6,14 @@
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
 #include <glm/glm.hpp>
-#include <numeric_limits>
+#include "camera.h"
+#include "light.h"
 
 struct ModelInfo {
     uint32_t vertices;
     uint32_t indices;
     VkIndexType index_data_type;
     uint32_t mesh_data_memory_offset;
-};
-
-struct Light {
-    glm::vec3 pos;
-    glm::vec3 dir;
-    glm::vec3 color;
-    float fow;
-    float aspect = 1.0f;
-    float znear = 0.001f;
-    float zfar = std::numeric_limits<float>::max();
-};
-
-struct Camera {
-    glm::vec3 pos;
-    glm::vec3 dir;
-    float fow;
-    float znear = 0.001f;
-    float zfar = std::numeric_limits<float>::max();
 };
 
 struct EngineOptions {
@@ -59,30 +42,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void init_renderer();
     private:
         EngineOptions engine_options;
-
         VkExtent3D screen_extent;
-
-        // Image for depth comparison
-        VkImage device_depth_image = VK_NULL_HANDLE;
-        VkImageView device_depth_image_view = VK_NULL_HANDLE;
-
-        // HDR ping pong image
-        VkImage device_render_target = VK_NULL_HANDLE;
-        std::array<VkImageView, 2> device_render_target_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-
-        // Todo: add SmaaContext
-        //SmaaContext smaa_context;
-        VSMContext vsm_context;
-
-        // Memory in which all attachment reside
-        VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
-
-        // Descriptor things
-        VkDescriptorSetLayout pbr_model_data_set_layout = VK_NULL_HANDLE;
-        VkDescriptorSetLayout light_data_set_layout = VK_NULL_HANDLE;
-        VkDescriptorSetLayout camera_data_set_layout = VK_NULL_HANDLE;
-
-        VkDescriptorPool attachments_descriptor_pool = VK_NULL_HANDLE;
 
         // Model uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
@@ -94,10 +54,36 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         std::vector<VkImage> device_model_images;
         std::vector<std::vector<VkImageView>> device_model_images_views;
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
-        std::vector<ModelInfo> object_info;
+        //std::vector<ModelInfo> object_info;
 
         std::vector<Light> lights;
         Camera camera;
+
+        // Host buffer and memory for the camera and lights data
+        VkBuffer host_camera_lights_uniform_buffer = VK_NULL_HANDLE;
+        VkDeviceMemory host_camera_lights_memory = VK_NULL_HANDLE;
+        void *host_camera_lights_data;
+
+        // Image for depth comparison
+        VkImage device_depth_image = VK_NULL_HANDLE;
+        VkImageView device_depth_image_view = VK_NULL_HANDLE;
+        // HDR ping pong image
+        VkImage device_render_target = VK_NULL_HANDLE;
+        std::array<VkImageView, 2> device_render_target_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        // Buffer that hold camera and lights information
+        VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
+        // Todo: add SmaaContext
+        //SmaaContext smaa_context;
+        VSMContext vsm_context;
+        // Memory in which all attachment reside
+        VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
+
+        // Descriptor things
+        VkDescriptorSetLayout pbr_model_data_set_layout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout light_data_set_layout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout camera_data_set_layout = VK_NULL_HANDLE;
+
+        VkDescriptorPool attachments_descriptor_pool = VK_NULL_HANDLE;
 
         // Vulkan methods
         void create_sets_layout();

@@ -30,6 +30,12 @@ int main() {
 	try {
 		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, {800,800}, desired_device_level_extensions, selected_device_features, VK_TRUE, options);
 		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb", "resources//models//Table//Table.glb"},64);
+		app.load_lights({
+		    {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 90.0f, 1.0f},
+            {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 90.0f, 1.0f}
+		});
+		app.set_camera({{1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 1.0f});
+        app.init_renderer();
 	}
 	catch (std::pair<int32_t,vulkan_helper::Error>& err) {
 		std::cout << "The application encounted the error: " << magic_enum::enum_name(err.second) << " with return value: " << err.first << std::endl;
