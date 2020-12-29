@@ -18,9 +18,33 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        surface_support),
                          vsm_context(device) {
     screen_extent = {window_size.width, window_size.height, 1};
+
+    VkSamplerCreateInfo sampler_create_info = {
+            VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FILTER_LINEAR,
+            VK_FILTER_LINEAR,
+            VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            1,
+            VK_TRUE,
+            16.0f,
+            VK_FALSE,
+            VK_COMPARE_OP_ALWAYS,
+            0.0f,
+            1.0f,
+            VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+            VK_FALSE,
+    };
+    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_max_aniso_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
 }
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
+    vkDestroySampler(device, device_max_aniso_linear_sampler, nullptr);
+
     // Model uniform related things freed
     vkUnmapMemory(device, host_model_uniform_memory);
     vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
@@ -36,6 +60,7 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
         vkDestroyImage(device, device_model_image, nullptr);
     }
     vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
+    vkDestroyBuffer(device, device_model_uniform_buffer, nullptr);
     vkFreeMemory(device, device_model_data_memory, nullptr);
 
     // Camera and light uniform related things freed
@@ -62,6 +87,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
     tinygltf::TinyGLTF loader;
     std::string err, warn;
     std::vector<tinygltf::Model> models(model_path.size());
+    objects_info.resize(model_path.size());
 
     // Get the total size of the models to allocate a buffer for it and copy them to host memory
     uint64_t models_total_size = 0;
@@ -75,6 +101,10 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
                                           vulkan_helper::t_model_attributes::T_ALL,
                                           nullptr, model_data);
         models_total_size += vulkan_helper::get_model_data_total_size(model_data);
+        objects_info[i].uniform_size = per_object_uniform_data_size;
+        if (model_data.image_layers != 4) {
+            throw(std::make_pair(-1, vulkan_helper::Error::LOADED_MODEL_IS_NOT_PBR));
+        }
     }
 
     VkBuffer host_model_data_buffer = VK_NULL_HANDLE;
@@ -109,6 +139,9 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
     // After copying the data to host memory, we create a device buffer to hold the mesh and index data
     create_buffer(device_mesh_data_buffer, mesh_and_index_data_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
+    // We also need to create a device buffer for the model's uniform
+    create_buffer(device_model_uniform_buffer, uniform_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
     // We must also create images for the textures of every object, after destroying the precedent images
     for(auto &device_model_image : device_model_images) {
         vkDestroyImage(device, device_model_image, nullptr);
@@ -121,11 +154,11 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
                          VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT);
         }
     }
-    allocate_and_bind_to_memory(device_model_data_memory, {device_mesh_data_buffer}, device_model_images, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    allocate_and_bind_to_memory(device_model_data_memory, {device_mesh_data_buffer, device_model_uniform_buffer}, device_model_images, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // After the buffer and the images have been allocated and binded, we process to create the image views
     for (auto& device_model_image_views : device_model_images_views) {
-        for (auto & device_model_image_view : device_model_image_views) {
+        for (auto& device_model_image_view : device_model_image_views) {
             vkDestroyImageView(device, device_model_image_view, nullptr);
         }
         device_model_image_views.clear();
@@ -136,7 +169,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
     device_model_images_views.resize(device_model_images.size());
     for (uint32_t i=0; i<device_model_images.size(); i++) {
         device_model_images_views[i].resize(model_data[i].image_layers);
-        for (uint32_t j=0; j<device_model_images_views.size(); j++) {
+        for (uint32_t j=0; j<device_model_images_views[i].size(); j++) {
             VkFormat image_format = (j == 0) ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
             create_image_view(device_model_images_views[i][j], device_model_images[i], image_format, VK_IMAGE_ASPECT_COLOR_BIT, j, 1);
         }
@@ -260,7 +293,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     for (int i=0; i<depth_images_resolution.size(); i++) {
         depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(500).x, lights[i].get_resolution_from_ratio(500).y};
     }
-    vsm_context.create_resources(depth_images_resolution);
+    vsm_context.create_resources(depth_images_resolution, physical_device_properties.limits.minUniformBufferOffsetAlignment);
 
     // We create some attachments useful during rendering
     create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, screen_extent, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -300,6 +333,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
 }
 
 void GraphicsModuleVulkanApp::create_sets_layout() {
+    // First we create the layouts needed for the models, light and camera
     std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
     descriptor_set_layout_binding[0] = {
             0,
@@ -353,14 +387,17 @@ void GraphicsModuleVulkanApp::create_sets_layout() {
     descriptor_set_layout_create_info.pBindings = descriptor_set_layout_binding.data();
     vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &camera_data_set_layout);
 
-    std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> sets_elements_required;
-    // TODO: delete layouts in destructor and allocate the required layouts, remembering the needed sets per model and light
-
+    // Then we get all the required descriptors and request a single pool
+    std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> sets_elements_required = {
+            {
+                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 + lights.size() + objects_info.size()},
+                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lights.size() + 4*objects_info.size()}
+               },
+            1 + lights.size() + objects_info.size()
+    };
     //vulkan_helper::insert_or_sum(sets_elements_required, smaa_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, vsm_context.get_required_descriptor_pool_size_and_sets());
-
     std::vector<VkDescriptorPoolSize> descriptor_pool_size = vulkan_helper::convert_map_to_vector(sets_elements_required.first);
-
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             nullptr,
@@ -371,7 +408,140 @@ void GraphicsModuleVulkanApp::create_sets_layout() {
     };
     vkCreateDescriptorPool(device, &descriptor_pool_create_info, nullptr, &attachments_descriptor_pool);
 
+    // Next we allocate the vsm descriptors in the pool
     vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
+
+    // then we allocate descriptor sets for camera, lights and objects
+    std::vector<VkDescriptorSetLayout> layouts_of_sets;
+    layouts_of_sets.push_back(camera_data_set_layout);
+    layouts_of_sets.insert(layouts_of_sets.end(), lights.size(), light_data_set_layout);
+    layouts_of_sets.insert(layouts_of_sets.end(), objects_info.size(), pbr_model_data_set_layout);
+
+    std::vector<VkDescriptorSet> descriptor_sets(layouts_of_sets.size());
+    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            nullptr,
+            attachments_descriptor_pool,
+            static_cast<uint32_t>(layouts_of_sets.size()),
+            layouts_of_sets.data()
+    };
+    check_error(vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, descriptor_sets.data()), vulkan_helper::Error::DESCRIPTOR_SET_ALLOCATION_FAILED);
+
+    // After we write the descriptor sets for camera, lights and objects
+    std::vector<VkWriteDescriptorSet> write_descriptor_set(1 + 2*lights.size() + 2*objects_info.size());
+
+    // First we do the camera
+    VkDescriptorBufferInfo camera_descriptor_buffer_info = {
+            device_camera_lights_uniform_buffer,
+            0,
+            camera.copy_data_to_ptr(nullptr)
+    };
+    write_descriptor_set[0] = {
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            nullptr,
+            descriptor_sets[0],
+            0,
+            0,
+            1,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            nullptr,
+            &camera_descriptor_buffer_info,
+            nullptr
+    };
+
+    // Then the lights
+    std::vector<VkDescriptorBufferInfo> light_descriptor_buffer_infos(lights.size());
+    for(int i=0; i<lights.size(); i++) {
+        light_descriptor_buffer_infos[i] = {
+                device_camera_lights_uniform_buffer,
+                vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) +
+                i * vulkan_helper::get_aligned_memory_size(lights[i].copy_data_to_ptr(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment),
+                lights[i].copy_data_to_ptr(nullptr)
+        };
+    }
+    std::vector<VkDescriptorImageInfo> light_descriptor_image_infos(lights.size());
+    for(int i=0; i<lights.size(); i++) {
+        light_descriptor_image_infos[i] = {
+                device_max_aniso_linear_sampler,
+                vsm_context.get_image_view(i),
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        };
+    }
+    for (int i=0; i<lights.size(); i++) {
+        write_descriptor_set[2*i+1] = {
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                nullptr,
+                descriptor_sets[i+1],
+                0,
+                0,
+                1,
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                nullptr,
+                &light_descriptor_buffer_infos[i],
+                nullptr
+        };
+        write_descriptor_set[2*i+2] = {
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                nullptr,
+                descriptor_sets[i+1],
+                1,
+                0,
+                1,
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                &light_descriptor_image_infos[i],
+                nullptr,
+                nullptr
+        };
+    }
+
+    std::vector<VkDescriptorBufferInfo> object_descriptor_buffer_infos(objects_info.size());
+    for(uint32_t i = 0, offset = 0; i<objects_info.size(); i++) {
+        object_descriptor_buffer_infos[i] = {
+                device_model_uniform_buffer,
+                offset,
+                vulkan_helper::get_aligned_memory_size(objects_info[i].uniform_size, physical_device_properties.limits.minUniformBufferOffsetAlignment)
+        };
+        offset += vulkan_helper::get_aligned_memory_size(objects_info[i].uniform_size, physical_device_properties.limits.minUniformBufferOffsetAlignment);
+    }
+    std::vector<std::array<VkDescriptorImageInfo,4>> object_descriptor_image_infos(objects_info.size());
+    for(uint32_t i = 0; i<objects_info.size(); i++) {
+        for (uint32_t j = 0; j<object_descriptor_image_infos[i].size(); j++) {
+            object_descriptor_image_infos[i][j] = {
+                device_max_aniso_linear_sampler,
+                device_model_images_views[i][j],
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            };
+        }
+    }
+
+    // Then the objects
+    for (int i=0; i<objects_info.size(); i++) {
+        write_descriptor_set[2*i+2*lights.size()+1] = {
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                nullptr,
+                descriptor_sets[i+lights.size()+1],
+                0,
+                0,
+                1,
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                nullptr,
+                &object_descriptor_buffer_infos[i],
+                nullptr
+        };
+        write_descriptor_set[2*i+2*lights.size()+2] = {
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                nullptr,
+                descriptor_sets[i+lights.size()+1],
+                1,
+                0,
+                4,
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                object_descriptor_image_infos[i].data(),
+                nullptr,
+                nullptr
+        };
+    }
+    vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
 }
 
 void GraphicsModuleVulkanApp::create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage) {

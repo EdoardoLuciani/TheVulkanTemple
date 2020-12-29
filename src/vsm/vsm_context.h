@@ -22,16 +22,19 @@ class VSMContext {
         std::pair<VkBuffer,std::vector<VkImage>> get_device_buffer_and_images();
         std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();
 
-        void create_resources(std::vector<VkExtent2D> depth_images_res);
+        void create_resources(std::vector<VkExtent2D> depth_images_res, uint64_t min_uniform_offset_alignment);
         void init_resources(VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue);
         void allocate_descriptor_sets(VkDescriptorPool descriptor_pool);
+
+        VkImageView get_image_view(int index);
     private:
+        std::vector<VkExtent2D> depth_images_res;
+        uint64_t min_uniform_offset_alignment;
+
         VkDevice device = VK_NULL_HANDLE;
         VkSampler device_shadow_map_sampler = VK_NULL_HANDLE;
         VkSampler device_max_aniso_linear_sampler = VK_NULL_HANDLE;
         VkDescriptorSetLayout vsm_descriptor_set_layout = VK_NULL_HANDLE;
-
-        std::vector<VkExtent2D> depth_images_res;
 
         std::vector<VkImage> device_vsm_depth_images;
         std::vector<std::array<VkImageView, 2>> device_vsm_depth_image_views;

@@ -10,10 +10,7 @@
 #include "light.h"
 
 struct ModelInfo {
-    uint32_t vertices;
-    uint32_t indices;
-    VkIndexType index_data_type;
-    uint32_t mesh_data_memory_offset;
+    uint32_t uniform_size;
 };
 
 struct EngineOptions {
@@ -43,18 +40,20 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
     private:
         EngineOptions engine_options;
         VkExtent3D screen_extent;
+        VkSampler device_max_aniso_linear_sampler;
 
         // Model uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
         VkDeviceMemory host_model_uniform_memory = VK_NULL_HANDLE;
         void *host_model_uniform_buffer_ptr;
+        VkBuffer device_model_uniform_buffer = VK_NULL_HANDLE;
 
         // Models data
         VkBuffer device_mesh_data_buffer = VK_NULL_HANDLE;
         std::vector<VkImage> device_model_images;
         std::vector<std::vector<VkImageView>> device_model_images_views;
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
-        //std::vector<ModelInfo> object_info;
+        std::vector<ModelInfo> objects_info;
 
         std::vector<Light> lights;
         Camera camera;
@@ -70,7 +69,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // HDR ping pong image
         VkImage device_render_target = VK_NULL_HANDLE;
         std::array<VkImageView, 2> device_render_target_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-        // Buffer that hold camera and lights information
+        // Device buffer that hold camera and lights information
         VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
         // Todo: add SmaaContext
         //SmaaContext smaa_context;

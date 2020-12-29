@@ -98,10 +98,12 @@ VSMContext::~VSMContext() {
     for (auto& image : device_vsm_depth_images) {
         vkDestroyImage(device, image, nullptr);
     }
+    vkDestroyBuffer(device, device_vsm_extent_buffer, nullptr);
 }
 
-void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res) {
+void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, uint64_t min_uniform_offset_alignment) {
     this->depth_images_res = depth_images_res;
+    this->min_uniform_offset_alignment = min_uniform_offset_alignment;
 
     // We create two vsm depth images for every light
     device_vsm_depth_images.resize(depth_images_res.size());
@@ -131,7 +133,7 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res) {
             VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             nullptr,
             0,
-            sizeof(glm::vec2)*depth_images_res.size(),
+            vulkan_helper::get_aligned_memory_size(sizeof(glm::vec2), min_uniform_offset_alignment)*depth_images_res.size(),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VK_SHARING_MODE_EXCLUSIVE,
             0,
@@ -182,15 +184,11 @@ void VSMContext::init_resources(VkCommandPool command_pool, VkCommandBuffer comm
     };
     vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
 
-    uint32_t buffer_size = sizeof(glm::vec2)*depth_images_res.size();
-    uint8_t *images_size_data = new uint8_t[buffer_size];
-
-    for (int i=0; i<depth_images_res.size(); i++) {
-        memcpy(&images_size_data[i*sizeof(glm::vec2)], glm::value_ptr(glm::vec2(static_cast<float>(depth_images_res[i].width),
-                                                                                static_cast<float>(depth_images_res[i].height))), sizeof(glm::vec2));
+    for (uint32_t i=0; i<depth_images_res.size(); i++) {
+        vkCmdUpdateBuffer(command_buffer, device_vsm_extent_buffer, i*vulkan_helper::get_aligned_memory_size(sizeof(glm::vec2), min_uniform_offset_alignment), sizeof(glm::vec2),
+                          glm::value_ptr(glm::vec2(static_cast<float>(depth_images_res[i].width),static_cast<float>(depth_images_res[i].height))));
     }
 
-    vkCmdUpdateBuffer(command_buffer, device_vsm_extent_buffer, 0, buffer_size, images_size_data);
     // Also for the smaa_rt_metrics buffer
     VkMemoryBarrier memory_barrier = {
             VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -239,28 +237,28 @@ void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
 
     // First 4 writes of write_descriptor_set
     std::vector<VkDescriptorImageInfo> descriptor_image_infos(4*device_vsm_depth_images.size());
-    for (int i=0; i<descriptor_image_infos.size(); i=i+4) {
+    for (int i=0; i<descriptor_image_infos.size(); i++) {
         // First two are for the first pass of the blur
         descriptor_image_infos[i] = {
                 device_max_aniso_linear_sampler,
-                device_vsm_depth_image_views[i][0],
+                device_vsm_depth_image_views[i/4][0],
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
-        descriptor_image_infos[i+1] = {
+        descriptor_image_infos[++i] = {
                 device_max_aniso_linear_sampler,
-                device_vsm_depth_image_views[i][1],
+                device_vsm_depth_image_views[i/4][1],
                 VK_IMAGE_LAYOUT_GENERAL
         };
 
         // Second two are for the second pass of the blur
-        descriptor_image_infos[i+2] = {
+        descriptor_image_infos[++i] = {
                 device_max_aniso_linear_sampler,
-                device_vsm_depth_image_views[i][1],
+                device_vsm_depth_image_views[i/4][1],
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
-        descriptor_image_infos[i+3] = {
+        descriptor_image_infos[++i] = {
                 device_max_aniso_linear_sampler,
-                device_vsm_depth_image_views[i][0],
+                device_vsm_depth_image_views[i/4][0],
                 VK_IMAGE_LAYOUT_GENERAL
         };
     }
@@ -274,46 +272,50 @@ void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
         };
     }
 
-    std::vector<VkWriteDescriptorSet> write_descriptor_set(6*device_vsm_depth_images.size());
-    for (int i=0; i<device_vsm_depth_images.size(); i++) {
-        for (uint32_t j=0; j<2; j++) {
-            write_descriptor_set[6*i+3*j] = {
+    std::vector<VkWriteDescriptorSet> write_descriptor_set(3*vsm_descriptor_sets.size());
+    for (int i=0; i<write_descriptor_set.size(); i++) {
+        write_descriptor_set[i] = {
                     VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     nullptr,
-                    vsm_descriptor_sets[4*i+2*j],
+                    vsm_descriptor_sets[i/3],
                     0,
                     0,
                     1,
                     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                    &descriptor_image_infos[2*j],
+                    &descriptor_image_infos[i-i/3],
                     nullptr,
                     nullptr
-            };
-            write_descriptor_set[6*i+3*j+1] = {
+        };
+        //i++;
+        write_descriptor_set[++i] = {
                     VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     nullptr,
-                    vsm_descriptor_sets[4*i+2*j+1],
+                    vsm_descriptor_sets[i/3],
                     1,
                     0,
                     1,
                     VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                    &descriptor_image_infos[2*j+1],
+                    &descriptor_image_infos[i-i/3],
                     nullptr,
                     nullptr
-            };
-            write_descriptor_set[6*i+3*j+2] = {
+        };
+        //i++;
+        write_descriptor_set[++i] = {
                     VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     nullptr,
-                    vsm_descriptor_sets[2*i+j],
+                    vsm_descriptor_sets[i/3],
                     2,
                     0,
                     1,
                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                     nullptr,
-                    &descriptor_buffer_info[i],
+                    &descriptor_buffer_info[i/6],
                     nullptr
-            };
-        }
+        };
     }
     vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
+}
+
+VkImageView VSMContext::get_image_view(int index) {
+    return device_vsm_depth_image_views.at(index)[1];
 }

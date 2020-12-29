@@ -39,6 +39,7 @@ namespace vulkan_helper {
 	};
 
     enum class Error {
+        LOADED_MODEL_IS_NOT_PBR,
         VOLK_INITIALIZATION_FAILED,
         INSTANCE_CREATION_FAILED,
         DEBUG_REPORT_CALLBACK_CREATION_FAILED,
