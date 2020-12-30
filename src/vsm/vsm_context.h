@@ -35,16 +35,24 @@ class VSMContext {
         VkSampler device_shadow_map_sampler = VK_NULL_HANDLE;
         VkSampler device_max_aniso_linear_sampler = VK_NULL_HANDLE;
         VkDescriptorSetLayout vsm_descriptor_set_layout = VK_NULL_HANDLE;
+        VkRenderPass shadow_map_render_pass = VK_NULL_HANDLE;
 
         std::vector<VkImage> device_vsm_depth_images;
         std::vector<std::array<VkImageView, 2>> device_vsm_depth_image_views;
+
+        std::vector<VkImage> device_light_depth_images;
+        std::vector<VkImageView> device_light_depth_image_views;
+
         VkBuffer device_vsm_extent_buffer = VK_NULL_HANDLE;
+
+        std::vector<VkFramebuffer> framebuffers;
 
         // We have the same layout for two different descriptor_sets
         std::vector<VkDescriptorSet> vsm_descriptor_sets;
 
         // Vulkan methods
         void create_image_views();
+        void create_framebuffers();
 };
 
 #endif //BASE_VULKAN_APP_VSM_CONTEXT_H

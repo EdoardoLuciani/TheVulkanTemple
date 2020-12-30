@@ -40,47 +40,119 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
             VK_FALSE,
     };
     check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_max_aniso_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
+
+    create_render_pass();
+    create_sets_layouts();
 }
 
-GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
-    vkDestroySampler(device, device_max_aniso_linear_sampler, nullptr);
-
-    // Model uniform related things freed
-    vkUnmapMemory(device, host_model_uniform_memory);
-    vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
-    vkFreeMemory(device, host_model_uniform_memory, nullptr);
-
-    // Model related things freed
-    for (auto& device_model_image_views : device_model_images_views) {
-        for (auto & device_model_image_view : device_model_image_views) {
-            vkDestroyImageView(device, device_model_image_view, nullptr);
+void GraphicsModuleVulkanApp::create_render_pass() {
+    std::array<VkAttachmentDescription,2> attachment_descriptions {{
+    {
+                0,
+                VK_FORMAT_D32_SFLOAT,
+                VK_SAMPLE_COUNT_1_BIT,
+                VK_ATTACHMENT_LOAD_OP_CLEAR,
+                VK_ATTACHMENT_STORE_OP_STORE,
+                VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        },
+        {
+                0,
+                VK_FORMAT_R32G32B32A32_SFLOAT,
+                VK_SAMPLE_COUNT_1_BIT,
+                VK_ATTACHMENT_LOAD_OP_CLEAR,
+                VK_ATTACHMENT_STORE_OP_STORE,
+                VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         }
-    }
-    for (auto& device_model_image : device_model_images) {
-        vkDestroyImage(device, device_model_image, nullptr);
-    }
-    vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
-    vkDestroyBuffer(device, device_model_uniform_buffer, nullptr);
-    vkFreeMemory(device, device_model_data_memory, nullptr);
+    }};
+    std::array<VkAttachmentReference,2> attachment_references {{
+        { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL },
+        {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL }
+    }};
+    VkSubpassDescription subpass_description = {
+            0,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            0,
+            nullptr,
+            1,
+            &attachment_references[1],
+            nullptr,
+            &attachment_references[0],
+            0,
+            nullptr
+    };
+    VkRenderPassCreateInfo render_pass_create_info = {
+            VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            nullptr,
+            0,
+            attachment_descriptions.size(),
+            attachment_descriptions.data(),
+            1,
+            &subpass_description,
+            0,
+            nullptr
+    };
+    check_error(vkCreateRenderPass(device, &render_pass_create_info, nullptr, &pbr_render_pass), vulkan_helper::Error::RENDER_PASS_CREATION_FAILED);
+}
 
-    // Camera and light uniform related things freed
-    vkUnmapMemory(device, host_camera_lights_memory);
-    vkDestroyBuffer(device, host_camera_lights_uniform_buffer, nullptr);
-    vkFreeMemory(device, host_camera_lights_memory, nullptr);
+void GraphicsModuleVulkanApp::create_sets_layouts() {
+    std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
+    descriptor_set_layout_binding[0] = {
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            1,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_binding[1] = {
+            1,
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            4,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            2,
+            descriptor_set_layout_binding.data()
+    };
+    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &pbr_model_data_set_layout);
 
-    vkDestroyImageView(device, device_depth_image_view, nullptr);
-    vkDestroyImage(device, device_depth_image, nullptr);
-    for (auto &device_render_target_image_view : device_render_target_image_views) {
-        vkDestroyImageView(device, device_render_target_image_view, nullptr);
-    }
-    vkDestroyImage(device, device_render_target, nullptr);
-    vkDestroyBuffer(device, device_camera_lights_uniform_buffer, nullptr);
-    vkFreeMemory(device, device_attachments_memory, nullptr);
+    descriptor_set_layout_binding[0] = {
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            1,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_binding[1] = {
+            1,
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            1,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_create_info.bindingCount = 2;
+    descriptor_set_layout_create_info.pBindings = descriptor_set_layout_binding.data();
+    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &light_data_set_layout);
 
-    vkDestroyDescriptorSetLayout(device, pbr_model_data_set_layout, nullptr);
-    vkDestroyDescriptorSetLayout(device, light_data_set_layout, nullptr);
-    vkDestroyDescriptorSetLayout(device, camera_data_set_layout, nullptr);
-    vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
+    descriptor_set_layout_binding[0] = {
+            0,
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            1,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_create_info.bindingCount = 1;
+    descriptor_set_layout_create_info.pBindings = descriptor_set_layout_binding.data();
+    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &camera_data_set_layout);
 }
 
 void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_path, uint32_t per_object_uniform_data_size) {
@@ -329,64 +401,11 @@ void GraphicsModuleVulkanApp::init_renderer() {
     create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
 
     // After creating all resources we proceed to create the descriptor sets
-    create_sets_layout();
+    write_descriptor_sets();
+    create_framebuffers();
 }
 
-void GraphicsModuleVulkanApp::create_sets_layout() {
-    // First we create the layouts needed for the models, light and camera
-    std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
-    descriptor_set_layout_binding[0] = {
-            0,
-            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            1,
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
-    };
-    descriptor_set_layout_binding[1] = {
-            1,
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            4,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
-    };
-    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            nullptr,
-            0,
-            2,
-            descriptor_set_layout_binding.data()
-    };
-    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &pbr_model_data_set_layout);
-
-    descriptor_set_layout_binding[0] = {
-            0,
-            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            1,
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
-    };
-    descriptor_set_layout_binding[1] = {
-            1,
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            1,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
-    };
-    descriptor_set_layout_create_info.bindingCount = 2;
-    descriptor_set_layout_create_info.pBindings = descriptor_set_layout_binding.data();
-    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &light_data_set_layout);
-
-    descriptor_set_layout_binding[0] = {
-            0,
-            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            1,
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
-    };
-    descriptor_set_layout_create_info.bindingCount = 1;
-    descriptor_set_layout_create_info.pBindings = descriptor_set_layout_binding.data();
-    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &camera_data_set_layout);
-
+void GraphicsModuleVulkanApp::write_descriptor_sets() {
     // Then we get all the required descriptors and request a single pool
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> sets_elements_required = {
             {
@@ -542,6 +561,66 @@ void GraphicsModuleVulkanApp::create_sets_layout() {
         };
     }
     vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
+}
+
+void GraphicsModuleVulkanApp::create_framebuffers() {
+    std::array<VkImageView, 2> attachments {device_depth_image_view, device_render_target_image_views[0]};
+    VkFramebufferCreateInfo framebuffer_create_info = {
+            VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            nullptr,
+            0,
+            pbr_render_pass,
+            attachments.size(),
+            attachments.data(),
+            swapchain_create_info.imageExtent.width,
+            swapchain_create_info.imageExtent.height,
+            swapchain_create_info.imageArrayLayers
+    };
+    check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &pbr_framebuffer), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
+}
+
+GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
+    vkDestroyFramebuffer(device, pbr_framebuffer, nullptr);
+    vkDestroyRenderPass(device, pbr_render_pass, nullptr);
+
+    vkDestroySampler(device, device_max_aniso_linear_sampler, nullptr);
+
+    // Model uniform related things freed
+    vkUnmapMemory(device, host_model_uniform_memory);
+    vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
+    vkFreeMemory(device, host_model_uniform_memory, nullptr);
+
+    // Model related things freed
+    for (auto& device_model_image_views : device_model_images_views) {
+        for (auto & device_model_image_view : device_model_image_views) {
+            vkDestroyImageView(device, device_model_image_view, nullptr);
+        }
+    }
+    for (auto& device_model_image : device_model_images) {
+        vkDestroyImage(device, device_model_image, nullptr);
+    }
+    vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
+    vkDestroyBuffer(device, device_model_uniform_buffer, nullptr);
+    vkFreeMemory(device, device_model_data_memory, nullptr);
+
+    // Camera and light uniform related things freed
+    vkUnmapMemory(device, host_camera_lights_memory);
+    vkDestroyBuffer(device, host_camera_lights_uniform_buffer, nullptr);
+    vkFreeMemory(device, host_camera_lights_memory, nullptr);
+
+    vkDestroyImageView(device, device_depth_image_view, nullptr);
+    vkDestroyImage(device, device_depth_image, nullptr);
+    for (auto &device_render_target_image_view : device_render_target_image_views) {
+        vkDestroyImageView(device, device_render_target_image_view, nullptr);
+    }
+    vkDestroyImage(device, device_render_target, nullptr);
+    vkDestroyBuffer(device, device_camera_lights_uniform_buffer, nullptr);
+    vkFreeMemory(device, device_attachments_memory, nullptr);
+
+    vkDestroyDescriptorSetLayout(device, pbr_model_data_set_layout, nullptr);
+    vkDestroyDescriptorSetLayout(device, light_data_set_layout, nullptr);
+    vkDestroyDescriptorSetLayout(device, camera_data_set_layout, nullptr);
+    vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
 }
 
 void GraphicsModuleVulkanApp::create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage) {

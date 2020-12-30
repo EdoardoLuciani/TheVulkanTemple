@@ -84,9 +84,67 @@ VSMContext::VSMContext(VkDevice device) {
             descriptor_set_layout_binding.data()
     };
     check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &vsm_descriptor_set_layout), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
+
+    // Creation for the renderpass
+    std::array<VkAttachmentDescription,2> attachment_descriptions {{
+        {
+            0,
+            VK_FORMAT_D32_SFLOAT,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_ATTACHMENT_LOAD_OP_CLEAR,
+            VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL
+        },
+        {
+            0,
+            VK_FORMAT_R32G32_SFLOAT,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_ATTACHMENT_LOAD_OP_CLEAR,
+            VK_ATTACHMENT_STORE_OP_STORE,
+            VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        }
+    }};
+    std::array<VkAttachmentReference,2> attachment_references {{
+        { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL },
+        { 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL }
+    }};
+    VkSubpassDescription subpass_description = {
+            0,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            0,
+            nullptr,
+            1,
+            &attachment_references[1],
+            nullptr,
+            &attachment_references[0],
+            0,
+            nullptr
+    };
+    VkRenderPassCreateInfo render_pass_create_info = {
+            VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            nullptr,
+            0,
+            attachment_descriptions.size(),
+            attachment_descriptions.data(),
+            1,
+            &subpass_description,
+            0,
+            nullptr
+    };
+    check_error(vkCreateRenderPass(device, &render_pass_create_info, nullptr, &shadow_map_render_pass), vulkan_helper::Error::RENDER_PASS_CREATION_FAILED);
 }
 
 VSMContext::~VSMContext() {
+    for(auto& framebuffer : framebuffers) {
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+    vkDestroyRenderPass(device, shadow_map_render_pass, nullptr);
     vkDestroyDescriptorSetLayout(device, vsm_descriptor_set_layout, nullptr);
     vkDestroySampler(device, device_shadow_map_sampler, nullptr);
     vkDestroySampler(device, device_max_aniso_linear_sampler, nullptr);
@@ -98,6 +156,14 @@ VSMContext::~VSMContext() {
     for (auto& image : device_vsm_depth_images) {
         vkDestroyImage(device, image, nullptr);
     }
+
+    for (auto& image_view : device_light_depth_image_views) {
+        vkDestroyImageView(device, image_view, nullptr);
+    }
+    for (auto &image : device_light_depth_images) {
+        vkDestroyImage(device, image, nullptr);
+    }
+
     vkDestroyBuffer(device, device_vsm_extent_buffer, nullptr);
 }
 
@@ -107,6 +173,7 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, uint
 
     // We create two vsm depth images for every light
     device_vsm_depth_images.resize(depth_images_res.size());
+    device_light_depth_images.resize(depth_images_res.size());
     for (int i=0; i<device_vsm_depth_images.size(); i++) {
         VkImageCreateInfo image_create_info = {
                 VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -126,6 +193,11 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, uint
                 VK_IMAGE_LAYOUT_UNDEFINED
         };
         check_error(vkCreateImage(device, &image_create_info, nullptr, &device_vsm_depth_images[i]), vulkan_helper::Error::IMAGE_CREATION_FAILED);
+
+        image_create_info.format = VK_FORMAT_D32_SFLOAT;
+        image_create_info.arrayLayers = 1;
+        image_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        check_error(vkCreateImage(device, &image_create_info, nullptr, &device_light_depth_images[i]), vulkan_helper::Error::IMAGE_CREATION_FAILED);
     }
 
     // Creation of the buffer to hold the depth_image_sizes
@@ -143,7 +215,9 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, uint
 }
 
 std::pair<VkBuffer,std::vector<VkImage>> VSMContext::get_device_buffer_and_images() {
-    return std::make_pair(device_vsm_extent_buffer, device_vsm_depth_images);
+    auto vec = device_vsm_depth_images;
+    vec.insert(vec.begin(), device_light_depth_images.begin(), device_light_depth_images.end());
+    return std::make_pair(device_vsm_extent_buffer, vec);
 }
 
 std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> VSMContext::get_required_descriptor_pool_size_and_sets() {
@@ -156,6 +230,7 @@ std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> VSMContext::
 
 void VSMContext::create_image_views() {
     device_vsm_depth_image_views.resize(device_vsm_depth_images.size());
+    device_light_depth_image_views.resize(device_light_depth_images.size());
 
     for (int i=0; i<device_vsm_depth_image_views.size(); i++) {
         VkImageViewCreateInfo image_view_create_info = {
@@ -168,14 +243,40 @@ void VSMContext::create_image_views() {
                 {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
                 { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0 , 1 }
         };
-        vkCreateImageView(device, &image_view_create_info, nullptr, &device_vsm_depth_image_views[i][0]);
+        check_error(vkCreateImageView(device, &image_view_create_info, nullptr, &device_vsm_depth_image_views[i][0]), vulkan_helper::Error::IMAGE_VIEW_CREATION_FAILED);
         image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, 1 };
-        vkCreateImageView(device, &image_view_create_info, nullptr, &device_vsm_depth_image_views[i][1]);
+        check_error(vkCreateImageView(device, &image_view_create_info, nullptr, &device_vsm_depth_image_views[i][1]), vulkan_helper::Error::IMAGE_VIEW_CREATION_FAILED);
+
+        image_view_create_info.image = device_light_depth_images[i];
+        image_view_create_info.format = VK_FORMAT_D32_SFLOAT;
+        image_view_create_info.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+        check_error(vkCreateImageView(device, &image_view_create_info, nullptr, &device_light_depth_image_views[i]), vulkan_helper::Error::IMAGE_VIEW_CREATION_FAILED);
+    }
+}
+
+void VSMContext::create_framebuffers() {
+    // We need to create one framebuffer for each light
+    framebuffers.resize(depth_images_res.size());
+    for (int i=0; i<depth_images_res.size(); i++) {
+        std::array<VkImageView,2> attachments {device_light_depth_image_views[i], device_vsm_depth_image_views[i][0] };
+        VkFramebufferCreateInfo framebuffer_create_info = {
+                VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                nullptr,
+                0,
+                shadow_map_render_pass,
+                attachments.size(),
+                attachments.data(),
+                depth_images_res[i].width,
+                depth_images_res[i].height,
+                1
+        };
+        check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[i]), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
     }
 }
 
 void VSMContext::init_resources(VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue) {
     create_image_views();
+    create_framebuffers();
 
     // we submit a command to set vsm_extent_buffer
     VkCommandBufferBeginInfo command_buffer_begin_info = {
@@ -317,5 +418,5 @@ void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
 }
 
 VkImageView VSMContext::get_image_view(int index) {
-    return device_vsm_depth_image_views.at(index)[1];
+    return device_vsm_depth_image_views.at(index)[0];
 }

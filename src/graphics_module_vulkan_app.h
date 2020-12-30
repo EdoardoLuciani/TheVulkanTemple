@@ -84,8 +84,16 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
 
         VkDescriptorPool attachments_descriptor_pool = VK_NULL_HANDLE;
 
+        // PBR renderpass
+        VkRenderPass pbr_render_pass = VK_NULL_HANDLE;
+        // PBR framebuffer
+        VkFramebuffer pbr_framebuffer = VK_NULL_HANDLE;
+
         // Vulkan methods
-        void create_sets_layout();
+        void create_render_pass();
+        void create_sets_layouts();
+        void write_descriptor_sets();
+        void create_framebuffers();
 
         // Helper methods
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);
