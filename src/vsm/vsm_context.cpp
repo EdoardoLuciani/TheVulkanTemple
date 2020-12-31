@@ -2,7 +2,6 @@
 #include "../vulkan_helper.h"
 #include <unordered_map>
 #include <utility>
-#include <cstring>
 #include <iostream>
 
 VSMContext::VSMContext(VkDevice device) {
@@ -141,6 +140,14 @@ VSMContext::VSMContext(VkDevice device) {
 }
 
 VSMContext::~VSMContext() {
+    vkDestroyPipelineLayout(device, gaussian_blur_pipeline_layout, nullptr);
+    for(auto& pipeline : gaussian_blur_xy_pipelines) {
+        vkDestroyPipeline(device, pipeline, nullptr);
+    }
+
+    vkDestroyPipelineLayout(device, shadow_map_pipeline_layout, nullptr);
+    vkDestroyPipeline(device, shadow_map_pipeline, nullptr);
+
     for(auto& framebuffer : framebuffers) {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
@@ -167,7 +174,8 @@ VSMContext::~VSMContext() {
     vkDestroyBuffer(device, device_vsm_extent_buffer, nullptr);
 }
 
-void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, uint64_t min_uniform_offset_alignment) {
+void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, uint64_t min_uniform_offset_alignment,
+                                  std::string shader_dir_path, VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout) {
     this->depth_images_res = depth_images_res;
     this->min_uniform_offset_alignment = min_uniform_offset_alignment;
 
@@ -212,6 +220,312 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, uint
             nullptr
     };
     vkCreateBuffer(device, &buffer_create_info, nullptr, &device_vsm_extent_buffer);
+
+    create_shadow_map_pipeline(shader_dir_path, pbr_model_set_layout, light_set_layout);
+    create_gaussian_blur_pipelines(shader_dir_path);
+}
+
+void VSMContext::create_shadow_map_pipeline(std::string shader_dir_path, VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout) {
+    std::vector<uint8_t> shader_contents;
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//shadow_map.vert.spv", shader_contents);
+    VkShaderModuleCreateInfo shader_module_create_info = {
+            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            nullptr,
+            0,
+            shader_contents.size(),
+            reinterpret_cast<uint32_t*>(shader_contents.data())
+    };
+    VkShaderModule vertex_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//shadow_map.frag.spv", shader_contents);
+    shader_module_create_info.codeSize = shader_contents.size();
+    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+    VkShaderModule fragment_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    std::array<VkPipelineShaderStageCreateInfo,2> pipeline_shaders_stage_create_infos {{
+        {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            vertex_shader_module,
+            "main",
+            nullptr
+        },
+        {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            fragment_shader_module,
+            "main",
+            nullptr
+        }
+    }};
+
+    VkVertexInputBindingDescription vertex_input_binding_description = {
+            0,
+            12 * sizeof(float),
+            VK_VERTEX_INPUT_RATE_VERTEX
+    };
+    std::array<VkVertexInputAttributeDescription,4> vertex_input_attribute_description {{
+        {
+            0,
+            0,
+            VK_FORMAT_R32G32B32_SFLOAT,
+            0
+        },
+        {
+            1,
+            0,
+            VK_FORMAT_R32G32_SFLOAT,
+            3 * sizeof(float)
+        },
+        {
+            2,
+            0,
+            VK_FORMAT_R32G32B32_SFLOAT,
+            5 * sizeof(float)
+        },
+        {
+            3,
+            0,
+            VK_FORMAT_R32G32B32A32_SFLOAT,
+            8 * sizeof(float)
+        }
+    }};
+    VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &vertex_input_binding_description,
+            vertex_input_attribute_description.size(),
+            vertex_input_attribute_description.data()
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo pipeline_input_assembly_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            VK_FALSE
+    };
+
+    // TODO: put zero for viewport and scissor because we will set those parameters dynamically before rendering
+    VkViewport viewport = {
+            0.0f,
+            0.0f,
+            static_cast<float>(depth_images_res.front().width),
+            static_cast<float>(depth_images_res.front().height),
+            0.0f,
+            1.0f
+    };
+    VkRect2D scissor = {
+            {0,0},
+            depth_images_res.front()
+    };
+    VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &viewport,
+            1,
+            &scissor
+    };
+
+    VkPipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_FALSE,
+            VK_POLYGON_MODE_FILL,
+            VK_CULL_MODE_FRONT_BIT,
+            VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            VK_FALSE,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f
+    };
+
+    VkPipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_FALSE,
+            1.0f,
+            nullptr,
+            VK_FALSE,
+            VK_FALSE
+    };
+
+    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_TRUE,
+            VK_TRUE,
+            VK_COMPARE_OP_LESS,
+            VK_FALSE,
+            VK_FALSE,
+            {},
+            {},
+            0.0f,
+            1.0f
+    };
+
+    VkPipelineColorBlendAttachmentState pipeline_color_blend_attachment_state = {
+            VK_FALSE,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+    VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_LOGIC_OP_COPY,
+            1,
+            &pipeline_color_blend_attachment_state,
+            {0.0f,0.0f,0.0f,0.0f}
+    };
+
+    std::array<VkDynamicState,2> dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT ,VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo pipeline_dynamic_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            dynamic_states.size(),
+            dynamic_states.data()
+    };
+
+    std::array<VkDescriptorSetLayout,2> descriptor_set_layouts = { pbr_model_set_layout, light_set_layout};
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            descriptor_set_layouts.size(),
+            descriptor_set_layouts.data(),
+            0,
+            nullptr
+    };
+    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &shadow_map_pipeline_layout);
+
+    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            nullptr,
+            0,
+            pipeline_shaders_stage_create_infos.size(),
+            pipeline_shaders_stage_create_infos.data(),
+            &pipeline_vertex_input_state_create_info,
+            &pipeline_input_assembly_create_info,
+            nullptr,
+            &pipeline_viewport_state_create_info,
+            &pipeline_rasterization_state_create_info,
+            &pipeline_multisample_state_create_info,
+            &pipeline_depth_stencil_state_create_info,
+            &pipeline_color_blend_state_create_info,
+            &pipeline_dynamic_state_create_info,
+            shadow_map_pipeline_layout,
+            shadow_map_render_pass,
+            0,
+            VK_NULL_HANDLE,
+            -1
+    };
+
+    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &shadow_map_pipeline);
+    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
+    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
+}
+
+void VSMContext::create_gaussian_blur_pipelines(std::string shader_dir_path) {
+    std::vector<uint8_t> shader_contents;
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//gaussian_blur_x.comp.spv", shader_contents);
+    VkShaderModuleCreateInfo shader_module_create_info = {
+            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            nullptr,
+            0,
+            shader_contents.size(),
+            reinterpret_cast<uint32_t*>(shader_contents.data())
+    };
+    std::array<VkShaderModule,2> shader_modules;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &shader_modules[0]), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//gaussian_blur_y.comp.spv", shader_contents);
+    shader_module_create_info.codeSize = shader_contents.size();
+    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &shader_modules[1]), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    std::array<VkPipelineShaderStageCreateInfo,2> pipeline_shaders_stage_create_infos {{
+        {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_COMPUTE_BIT,
+            shader_modules[0],
+            "main",
+            nullptr
+        },
+        {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_COMPUTE_BIT,
+            shader_modules[1],
+            "main",
+            nullptr
+        }
+    }};
+
+    std::array<VkDescriptorSetLayout,1> descriptor_set_layouts = {vsm_descriptor_set_layout};
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            descriptor_set_layouts.size(),
+            descriptor_set_layouts.data(),
+            0,
+            nullptr
+    };
+    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &gaussian_blur_pipeline_layout);
+
+    std::array<VkComputePipelineCreateInfo,2> compute_pipeline_create_infos {{
+        {
+            VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+            nullptr,
+            0,
+            pipeline_shaders_stage_create_infos[0],
+            gaussian_blur_pipeline_layout,
+            VK_NULL_HANDLE,
+            -1
+        },
+        {
+            VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+            nullptr,
+            0,
+            pipeline_shaders_stage_create_infos[1],
+            gaussian_blur_pipeline_layout,
+            VK_NULL_HANDLE,
+            -1
+        }
+    }};
+
+    vkCreateComputePipelines(device, VK_NULL_HANDLE, compute_pipeline_create_infos.size(), compute_pipeline_create_infos.data(), nullptr, gaussian_blur_xy_pipelines.data());
+
+    for (auto& shader_module : shader_modules) {
+        vkDestroyShaderModule(device, shader_module, nullptr);
+    }
 }
 
 std::pair<VkBuffer,std::vector<VkImage>> VSMContext::get_device_buffer_and_images() {

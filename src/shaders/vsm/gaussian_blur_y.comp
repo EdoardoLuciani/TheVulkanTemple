@@ -4,8 +4,8 @@ layout (local_size_x = 32, local_size_y = 32) in;
 layout (set = 0, binding = 0) uniform sampler2D in_shadow_map;
 layout (set = 0, binding = 1, rg32f) uniform image2D out_shadow_map;
 
-layout (set = 1, binding = 0) uniform uniform_buffer {
-	vec4 image_size;
+layout (set = 0, binding = 2) uniform uniform_buffer {
+	vec2 image_size;
 };
 
 /*
@@ -50,6 +50,6 @@ vec4 blur13(sampler2D image, vec2 uv, vec2 resolution, vec2 direction) {
 
 void main() {
 	imageStore(out_shadow_map, ivec2(gl_GlobalInvocationID.xy),
-		blur13(in_shadow_map, gl_GlobalInvocationID.xy/image_size.zw, image_size.zw, vec2(0.0f,1.0f)));
+		blur13(in_shadow_map, gl_GlobalInvocationID.xy/image_size, image_size, vec2(0.0f,1.0f)));
 }
 

@@ -5,7 +5,6 @@
 #include "vsm/vsm_context.h"
 #include "vulkan_helper.h"
 #include <unordered_map>
-#include <iostream>
 
 GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name, std::vector<const char *> &desired_instance_level_extensions,
                                                  VkExtent2D window_size, const std::vector<const char *> &desired_device_level_extensions,
@@ -365,7 +364,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     for (int i=0; i<depth_images_resolution.size(); i++) {
         depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(500).x, lights[i].get_resolution_from_ratio(500).y};
     }
-    vsm_context.create_resources(depth_images_resolution, physical_device_properties.limits.minUniformBufferOffsetAlignment);
+    vsm_context.create_resources(depth_images_resolution, physical_device_properties.limits.minUniformBufferOffsetAlignment, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
 
     // We create some attachments useful during rendering
     create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, screen_extent, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);

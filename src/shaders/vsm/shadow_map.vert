@@ -10,9 +10,9 @@ layout (set = 0, binding = 0) uniform uniform_buffer {
 };
 
 layout (set = 1, binding = 0) uniform uniform_buffer1 {
-    mat4 camera_v;
-    mat4 camera_p;
-	vec4 light_pos[1];
+    mat4 light_v;
+    mat4 light_p;
+	vec4 light_pos;
 	vec4 light_color;
 };
 
@@ -22,6 +22,6 @@ layout (location = 0) out VS_OUT {
 
 
 void main() {
-    gl_Position = camera_p * camera_v * model * vec4(position, 1.0f);
+    gl_Position = light_p * light_v * model * vec4(position, 1.0f);
 	vs_out.position = gl_Position;
 }

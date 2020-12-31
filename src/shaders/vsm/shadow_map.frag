@@ -19,5 +19,5 @@ void main() {
 	float dy = dFdy(depth);
 	moment2 += 0.25*(dx*dx+dy*dy);
 		
-	frag_color = vec2( moment1,moment2);
+	frag_color = vec2(moment1, moment2);
 }
