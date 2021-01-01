@@ -3,14 +3,14 @@ const float PI = 3.14159265358979323846;
 #include "BRDF.inc.glsl"
 
 layout (set = 0, binding = 1) uniform sampler2D image[4];
-layout (set = 0, binding = 2) uniform sampler2D shadow_map;
 
-layout (set = 2, binding = 0) uniform uniform_buffer3 {
-    mat4 camera_v;
-    mat4 camera_p;
-	vec4 light_pos[1];
-	vec4 light_color;
+layout (set = 1, binding = 0) uniform uniform_buffer2 {
+    mat4 light_v;
+    mat4 light_p;
+    vec4 light_pos;
+    vec4 light_color;
 };
+layout (set = 1, binding = 1) uniform sampler2D shadow_map;
 
 layout (location = 0) in VS_OUT {
 	vec3 position;
@@ -79,7 +79,7 @@ void main() {
     // color without ambient
     vec3 rho = vec3(0.0);
     for(int i=0; i<1; i++) {
-        float attenuation = (light_pos[i].w == 0.0) ? 1.0 : get_sphere_light_attenuation(vec3(light_pos[i]), 100.0f);
+        float attenuation = (light_pos.w == 0.0) ? 1.0 : get_sphere_light_attenuation(vec3(light_pos), 100.0f);
         vec3 radiance = light_color.rgb * attenuation;
 
         vec3 L = normalize(fs_in.L[i]);

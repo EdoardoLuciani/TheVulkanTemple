@@ -88,12 +88,16 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         VkRenderPass pbr_render_pass = VK_NULL_HANDLE;
         // PBR framebuffer
         VkFramebuffer pbr_framebuffer = VK_NULL_HANDLE;
+        // PBR pipeline
+        VkPipelineLayout pbr_pipeline_layout = VK_NULL_HANDLE;
+        VkPipeline pbr_pipeline = VK_NULL_HANDLE;
 
         // Vulkan methods
         void create_render_pass();
         void create_sets_layouts();
         void write_descriptor_sets();
         void create_framebuffers();
+        void create_pbr_pipeline();
 
         // Helper methods
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);

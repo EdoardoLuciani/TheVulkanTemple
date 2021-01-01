@@ -402,6 +402,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
     create_framebuffers();
+    create_pbr_pipeline();
 }
 
 void GraphicsModuleVulkanApp::write_descriptor_sets() {
@@ -578,7 +579,223 @@ void GraphicsModuleVulkanApp::create_framebuffers() {
     check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &pbr_framebuffer), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
 }
 
+void GraphicsModuleVulkanApp::create_pbr_pipeline() {
+    std::vector<uint8_t> shader_contents;
+    vulkan_helper::get_binary_file_content("resources//shaders//pbr.vert.spv", shader_contents);
+    VkShaderModuleCreateInfo shader_module_create_info = {
+            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            nullptr,
+            0,
+            shader_contents.size(),
+            reinterpret_cast<uint32_t*>(shader_contents.data())
+    };
+    VkShaderModule vertex_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    vulkan_helper::get_binary_file_content("resources//shaders//pbr.frag.spv", shader_contents);
+    shader_module_create_info.codeSize = shader_contents.size();
+    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+    VkShaderModule fragment_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
+        {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            vertex_shader_module,
+            "main",
+            nullptr
+        },
+        {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            fragment_shader_module,
+            "main",
+            nullptr
+        }
+    }};
+
+    VkVertexInputBindingDescription vertex_input_binding_description = {
+            0,
+            12 * sizeof(float),
+            VK_VERTEX_INPUT_RATE_VERTEX
+    };
+    std::array<VkVertexInputAttributeDescription,4> vertex_input_attribute_description  {{
+        {
+            0,
+            0,
+            VK_FORMAT_R32G32B32_SFLOAT,
+            0
+        },
+        {
+            1,
+            0,
+            VK_FORMAT_R32G32_SFLOAT,
+            3 * sizeof(float)
+        },
+        {
+            2,
+            0,
+            VK_FORMAT_R32G32B32_SFLOAT,
+            5 * sizeof(float)
+        },
+        {
+            3,
+            0,
+            VK_FORMAT_R32G32B32A32_SFLOAT,
+            8 * sizeof(float)
+        }
+    }};
+    VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &vertex_input_binding_description,
+            vertex_input_attribute_description.size(),
+            vertex_input_attribute_description.data()
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo pipeline_input_assembly_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            VK_FALSE
+    };
+
+    VkViewport viewport = {
+            0.0f,
+            0.0f,
+            static_cast<float>(screen_extent.width),
+            static_cast<float>(screen_extent.height),
+            0.0f,
+            1.0f
+    };
+    VkRect2D scissor = {
+            {0,0},
+            {screen_extent.width, screen_extent.height}
+    };
+    VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &viewport,
+            1,
+            &scissor
+    };
+
+    VkPipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_FALSE,
+            VK_POLYGON_MODE_FILL,
+            VK_CULL_MODE_NONE,
+            VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            VK_FALSE,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f
+    };
+
+    VkPipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_FALSE,
+            1.0f,
+            nullptr,
+            VK_FALSE,
+            VK_FALSE
+    };
+
+    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_TRUE,
+            VK_TRUE,
+            VK_COMPARE_OP_LESS,
+            VK_FALSE,
+            VK_FALSE,
+            {},
+            {},
+            0.0f,
+            1.0f
+    };
+
+    VkPipelineColorBlendAttachmentState pipeline_color_blend_attachment_state = {
+            VK_FALSE,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+    VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_LOGIC_OP_COPY,
+            1,
+            &pipeline_color_blend_attachment_state,
+            {0.0f,0.0f,0.0f,0.0f}
+    };
+
+    std::array<VkDescriptorSetLayout,3> descriptor_set_layouts = {pbr_model_data_set_layout, light_data_set_layout, camera_data_set_layout};
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            descriptor_set_layouts.size(),
+            descriptor_set_layouts.data(),
+            0,
+            nullptr
+    };
+    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &pbr_pipeline_layout);
+
+    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            nullptr,
+            0,
+            pipeline_shaders_stage_create_info.size(),
+            pipeline_shaders_stage_create_info.data(),
+            &pipeline_vertex_input_state_create_info,
+            &pipeline_input_assembly_create_info,
+            nullptr,
+            &pipeline_viewport_state_create_info,
+            &pipeline_rasterization_state_create_info,
+            &pipeline_multisample_state_create_info,
+            &pipeline_depth_stencil_state_create_info,
+            &pipeline_color_blend_state_create_info,
+            nullptr,
+            pbr_pipeline_layout,
+            pbr_render_pass,
+            0,
+            VK_NULL_HANDLE,
+            -1
+    };
+    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &pbr_pipeline);
+    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
+    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
+}
+
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
+    vkDestroyPipelineLayout(device, pbr_pipeline_layout, nullptr);
+    vkDestroyPipeline(device, pbr_pipeline, nullptr);
+
     vkDestroyFramebuffer(device, pbr_framebuffer, nullptr);
     vkDestroyRenderPass(device, pbr_render_pass, nullptr);
 
