@@ -410,6 +410,12 @@ void VSMContext::create_shadow_map_pipeline(std::string shader_dir_path, VkDescr
             dynamic_states.data()
     };
 
+    // We need to tell the pipeline we will use push constants to pass a uint32_t
+    VkPushConstantRange push_constant_range = {
+        VK_SHADER_STAGE_VERTEX_BIT,
+        0,
+        sizeof(uint32_t)
+    };
     std::array<VkDescriptorSetLayout,2> descriptor_set_layouts = { pbr_model_set_layout, light_set_layout};
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -417,8 +423,8 @@ void VSMContext::create_shadow_map_pipeline(std::string shader_dir_path, VkDescr
             0,
             descriptor_set_layouts.size(),
             descriptor_set_layouts.data(),
-            0,
-            nullptr
+            1,
+            &push_constant_range
     };
     vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &shadow_map_pipeline_layout);
 
@@ -729,6 +735,121 @@ void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
         };
     }
     vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
+}
+
+void VSMContext::record_into_command_buffer(VkCommandBuffer command_buffer, std::vector<VkDescriptorSet> object_data_sets,
+                                            VkDescriptorSet light_data_set, std::vector<vulkan_helper::ObjectRenderInfo> object_render_info) {
+    std::array<VkClearValue,2> clear_values;
+    clear_values[0].depthStencil = {1.0f, 0};
+    clear_values[1].color = {1.0f, 1.0f, 1.0f, 1.0f};
+
+    for (uint32_t i=0; i<depth_images_res.size(); i++) {
+        // We first render the shadowmap
+        VkRenderPassBeginInfo render_pass_begin_info = {
+            VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            nullptr,
+            shadow_map_render_pass,
+            framebuffers[i],
+            {{0,0},{depth_images_res[i]}},
+            clear_values.size(),
+            clear_values.data()
+        };
+        vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline);
+
+        VkViewport viewport = {
+                0.0f,
+                0.0f,
+                static_cast<float>(depth_images_res[i].width),
+                static_cast<float>(depth_images_res[i].height),
+                0.0f,
+                1.0f
+        };
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+
+        VkRect2D scissor = {
+                {0,0},
+                depth_images_res[i]
+        };
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+        vkCmdPushConstants(command_buffer, shadow_map_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &i);
+
+        for (int j=0; j<object_data_sets.size(); j++) {
+            std::array<VkDescriptorSet,2> sets_to_bind {object_data_sets[j], light_data_set};
+            vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_layout, 0, sets_to_bind.size(), sets_to_bind.data(), 0, nullptr);
+
+            vkCmdBindVertexBuffers(command_buffer, 0, 1, &object_render_info[j].data_buffer, &object_render_info[j].mesh_data_offset);
+            vkCmdBindIndexBuffer(command_buffer, object_render_info[j].data_buffer, object_render_info[j].index_data_offset, object_render_info[j].index_data_type);
+            vkCmdDrawIndexed(command_buffer, object_render_info[j].indices, 1, 0, 0, 0);
+        }
+        vkCmdEndRenderPass(command_buffer);
+
+        // Then we blur the shadow_map in the x dimension
+        std::array<VkImageMemoryBarrier,2> image_memory_barriers;
+        image_memory_barriers[0] = {
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                nullptr,
+                0,
+                VK_ACCESS_SHADER_WRITE_BIT,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_GENERAL,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                device_vsm_depth_images[i],
+                { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 }
+        };
+        vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, image_memory_barriers.data());
+
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_xy_pipelines[0]);
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_pipeline_layout, 0, 1, &vsm_descriptor_sets[2*i+0], 0, nullptr);
+        vkCmdDispatch(command_buffer, std::ceil(depth_images_res[i].width/32.0f), std::ceil(depth_images_res[i].height/32.0f), 1);
+
+        // Then we blur in the y dimension
+        image_memory_barriers[0] = {
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                nullptr,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_ACCESS_SHADER_WRITE_BIT,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_IMAGE_LAYOUT_GENERAL,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                device_vsm_depth_images[i],
+                { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1 }
+        };
+        image_memory_barriers[1] = {
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                nullptr,
+                VK_ACCESS_SHADER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_IMAGE_LAYOUT_GENERAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                device_vsm_depth_images[i],
+                { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 1, 1 }
+        };
+        vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 2, image_memory_barriers.data());
+
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_xy_pipelines[1]);
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, gaussian_blur_pipeline_layout, 0, 1, &vsm_descriptor_sets[2*i+1], 0, nullptr);
+        vkCmdDispatch(command_buffer, std::ceil(depth_images_res[i].width/32.0f), std::ceil(depth_images_res[i].height/32.0f), 1);
+
+        image_memory_barriers[0] = {
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                nullptr,
+                VK_ACCESS_SHADER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_IMAGE_LAYOUT_GENERAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                device_vsm_depth_images[i],
+                { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1 }
+        };
+        vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, image_memory_barriers.data());
+    }
 }
 
 VkImageView VSMContext::get_image_view(int index) {

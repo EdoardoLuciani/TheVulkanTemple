@@ -38,7 +38,8 @@ class BaseVulkanApp {
 					  VkExtent2D window_size,
 					  const std::vector<const char*> &desired_device_level_extensions,
 					  const VkPhysicalDeviceFeatures &required_physical_device_features,
-					  VkBool32 surface_support);
+					  VkBool32 surface_support,
+					  void* additional_structure);
 		virtual ~BaseVulkanApp();
 
 	protected:

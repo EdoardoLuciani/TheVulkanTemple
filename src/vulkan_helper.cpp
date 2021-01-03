@@ -138,6 +138,26 @@ namespace vulkan_helper
 	    return VK_TRUE; 
     }
 
+    VkBool32 compare_physical_device_descriptor_indexing_features_structs(VkPhysicalDeviceDescriptorIndexingFeaturesEXT base,
+                                                                          VkPhysicalDeviceDescriptorIndexingFeaturesEXT requested) {
+        base.pNext = nullptr;
+        requested.pNext = nullptr;
+        constexpr uint32_t feature_count = static_cast<uint32_t>(sizeof(VkPhysicalDeviceDescriptorIndexingFeaturesEXT) / sizeof(VkBool32));
+
+        std::array<VkBool32, feature_count> base_bools_arr;
+        std::memcpy(base_bools_arr.data(), &base, base_bools_arr.size()*sizeof(VkBool32));
+
+        std::array<VkBool32, feature_count> requested_bools_arr;
+        std::memcpy(requested_bools_arr.data(), &requested, requested_bools_arr.size()*sizeof(VkBool32));
+
+        for(size_t i = 0; i < base_bools_arr.size(); i++) {
+            if (base_bools_arr[i] == VK_FALSE && requested_bools_arr[i] == VK_TRUE) {
+                return VK_FALSE;
+            }
+        }
+        return VK_TRUE;
+    }
+
     void normalize_vectors(glm::vec3 *vectors, int number_of_elements) {
         float max_len = FLT_MIN;
         for (int i = 0; i < number_of_elements; i++) {

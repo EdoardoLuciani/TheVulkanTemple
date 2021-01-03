@@ -18,9 +18,15 @@ int main() {
 		#error "Unknown compiler or not supported OS"
 	#endif
 
-	std::vector<const char*> desired_device_level_extensions = {"VK_KHR_swapchain"};
+	std::vector<const char*> desired_device_level_extensions = {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing"};
 	VkPhysicalDeviceFeatures selected_device_features = { 0 };
 	selected_device_features.samplerAnisotropy = VK_TRUE;
+
+    VkPhysicalDeviceDescriptorIndexingFeaturesEXT required_physical_device_indexing_features = {};
+    required_physical_device_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+    required_physical_device_indexing_features.pNext = nullptr;
+    required_physical_device_indexing_features.runtimeDescriptorArray = VK_TRUE;
+    required_physical_device_indexing_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 
 	EngineOptions options;
 	options.anti_aliasing = 0;
@@ -28,8 +34,9 @@ int main() {
 	options.HDR = 0;
 
 	try {
-		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, {800,800}, desired_device_level_extensions, selected_device_features, VK_TRUE, options);
-		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb", "resources//models//Table//Table.glb"},64);
+		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, {800,800},
+                                    desired_device_level_extensions, selected_device_features, VK_TRUE, options, &required_physical_device_indexing_features);
+		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb", "resources//models//Table//Table.glb"},128);
 		app.load_lights({
 		    {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 90.0f, 1.0f},
             {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 90.0f, 1.0f}

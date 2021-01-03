@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 #include <string>
+#include "../vulkan_helper.h"
 
 /* To use this class, it is required to call the correct sequence of calls, first the
  * constructor VSMContext, then you need to allocate a VkDevice memory big enough for
@@ -28,6 +29,8 @@ public:
                           std::string shader_dir_path, VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout);
     void init_resources(VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue);
     void allocate_descriptor_sets(VkDescriptorPool descriptor_pool);
+    void record_into_command_buffer(VkCommandBuffer command_buffer, std::vector<VkDescriptorSet> object_data_set,
+                                    VkDescriptorSet light_data_set, std::vector<vulkan_helper::ObjectRenderInfo> object_render_info);
 private:
     std::vector<VkExtent2D> depth_images_res;
     uint64_t min_uniform_offset_alignment;

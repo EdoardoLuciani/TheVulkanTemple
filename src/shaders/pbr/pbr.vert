@@ -1,4 +1,5 @@
-#version 440
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec2 tex_coord;
 layout(location = 2) in vec3 normal;
@@ -9,12 +10,16 @@ layout (set = 0, binding = 0) uniform uniform_buffer1 {
 	mat4 normal_model;
 };
 
-layout (set = 1, binding = 0) uniform uniform_buffer2 {
-	mat4 light_v;
-	mat4 light_p;
-	vec4 light_pos;
-	vec4 light_color;
+struct Light {
+	mat4 view;
+	mat4 proj;
+	vec4 pos;
+	vec4 color;
 };
+layout (set = 1, binding = 0) buffer uniform_buffer2 {
+	Light lights[];
+};
+
 
 layout (set = 2, binding = 0) uniform uniform_buffer3 {
     mat4 view;
@@ -22,12 +27,13 @@ layout (set = 2, binding = 0) uniform uniform_buffer3 {
 	vec4 camera_pos;
 };
 
+#define MAX_LIGHT_DATA 8
 layout (location = 0) out VS_OUT {
 	vec3 position;
 	vec2 tex_coord;
-	vec4 shadow_coord;
 	vec3 V;
-	vec3 L[1];
+	vec3 L[MAX_LIGHT_DATA];
+	vec4 shadow_coord[MAX_LIGHT_DATA];
 } vs_out;
 
 void main() {
@@ -38,7 +44,10 @@ void main() {
                         	0.0f,0.5f,0.0f,0.0f,
                         	0.0f,0.0f,0.5f,0.0f,
                         	0.5f,0.5f,0.5f,1.0f);
-	vs_out.shadow_coord = shadow_bias * light_p * light_v * model * vec4(position,1.0f);
+
+	for (int i=0; i<lights.length(); i++) {
+		vs_out.shadow_coord[i] = shadow_bias * lights[i].proj * lights[i].view * model * vec4(position,1.0f);
+	}
 
 	vec3 N = normalize(mat3(normal_model) * normal);
 	vec3 T = normalize(mat3(normal_model) * tangent.xyz);
@@ -50,12 +59,12 @@ void main() {
 
     vs_out.V = tbn * (vec3(camera_pos) - vs_out.position);
 	
-	for(int i=0; i<1; i++) {
-		if (light_pos.w == 0.0) {
-			vs_out.L[0] = tbn * normalize(vec3(light_pos));
+	for(int i=0; i<lights.length(); i++) {
+		if (lights[i].pos.w == 0.0) {
+			vs_out.L[i] = tbn * normalize(vec3(lights[i].pos));
 		}
 		else {
-			vs_out.L[0] = tbn * (vec3(light_pos) - vs_out.position);
+			vs_out.L[i] = tbn * (vec3(lights[i].pos) - vs_out.position);
 		}
 	}
 	gl_Position = projection * view * model * vec4(position,1.0f);

@@ -1,24 +1,30 @@
-#version 440
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
 const float PI = 3.14159265358979323846;
 #include "BRDF.inc.glsl"
 
 layout (set = 0, binding = 1) uniform sampler2D image[4];
 
-layout (set = 1, binding = 0) uniform uniform_buffer2 {
-    mat4 light_v;
-    mat4 light_p;
-    vec4 light_pos;
-    vec4 light_color;
+struct Light {
+    mat4 view;
+    mat4 proj;
+    vec4 pos;
+    vec4 color;
 };
-layout (set = 1, binding = 1) uniform sampler2D shadow_map;
+layout (set = 1, binding = 0) buffer uniform_buffer2 {
+    Light lights[];
+};
+layout (set = 1, binding = 1) uniform sampler2D shadow_map[];
 
+#define MAX_LIGHT_DATA 8
 layout (location = 0) in VS_OUT {
-	vec3 position;
-	vec2 tex_coord;
-	vec4 shadow_coord;
-	vec3 V;
-	vec3 L[1];
+    vec3 position;
+    vec2 tex_coord;
+    vec3 V;
+    vec3 L[MAX_LIGHT_DATA];
+    vec4 shadow_coord[MAX_LIGHT_DATA];
 } fs_in;
+
 layout (location = 0) out vec4 frag_color;
 
 // Utility function(s)
@@ -60,8 +66,7 @@ void main() {
     vec3 N = normalize(texture(image[2], fs_in.tex_coord).xyz * 2.0 - 1.0);
     vec3 V = normalize(fs_in.V);
 
-    // For the normal incidence, if it is a diaelectric use a F0 of 0.04,
-    // otherwise use albedo
+    // For the normal incidence, if it is a diaelectric use a F0 of 0.04, otherwise use albedo
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
     // Transforming normal incidence to index of reflectivity
@@ -78,9 +83,9 @@ void main() {
     
     // color without ambient
     vec3 rho = vec3(0.0);
-    for(int i=0; i<1; i++) {
-        float attenuation = (light_pos.w == 0.0) ? 1.0 : get_sphere_light_attenuation(vec3(light_pos), 100.0f);
-        vec3 radiance = light_color.rgb * attenuation;
+    for(int i=0; i<lights.length(); i++) {
+        float attenuation = (lights[i].pos.w == 0.0) ? 1.0 : get_sphere_light_attenuation(vec3(lights[i].pos), 100.0f);
+        vec3 radiance = lights[i].color.rgb * attenuation;
 
         vec3 L = normalize(fs_in.L[i]);
         vec3 H = normalize(V + L);
@@ -101,11 +106,11 @@ void main() {
 
         // calculate if fragment is in shadow
         float shadow = 1.0f;
-        vec4 modified_shadow_coords = fs_in.shadow_coord;
+        vec4 modified_shadow_coords = fs_in.shadow_coord[i];
         modified_shadow_coords.z -= 0.05;
         vec4 normalized_shadow_coords = modified_shadow_coords / modified_shadow_coords.w;
         if ( modified_shadow_coords.z >= 0) {
-            vec2 moments = texture(shadow_map,normalized_shadow_coords.xy).rg;
+            vec2 moments = texture(shadow_map[nonuniformEXT(i)],normalized_shadow_coords.xy).rg;
 	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
             shadow = ReduceLightBleeding(p_max, 0.99999);
         }

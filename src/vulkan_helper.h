@@ -1,3 +1,6 @@
+#ifndef VULKAN_HELPER_H
+#define VULKAN_HELPER_H
+
 #include <vector>
 #include <string>
 #include <stdint.h>
@@ -8,7 +11,7 @@
 #include "volk.h"
 
 namespace vulkan_helper {
-	typedef struct model_data_info {
+	struct model_data_info {
 		uint32_t interleaved_mesh_data_size;
 		uint32_t vertices;
 
@@ -18,7 +21,16 @@ namespace vulkan_helper {
 
         VkExtent3D image_size;
 		uint32_t image_layers;
-	} model_data_info;
+	};
+
+    struct ObjectRenderInfo {
+        uint32_t uniform_size;
+        VkBuffer data_buffer;
+        uint64_t mesh_data_offset;
+        uint64_t index_data_offset;
+        uint64_t indices;
+        VkIndexType index_data_type;
+    };
 
 	constexpr int v_model_attributes_max_set_bits = 4;
 	enum v_model_attributes {
@@ -85,6 +97,8 @@ namespace vulkan_helper {
 	uint32_t select_memory_index(const VkPhysicalDeviceMemoryProperties& physical_device_memory_properties, const VkMemoryRequirements& memory_requirements, VkMemoryPropertyFlags memory_properties);
 	VkBool32 debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject, size_t location, int32_t msgCode, const char* pLayerPrefix, const char* pMsg, void* pUserData);
 	VkBool32 compare_physical_device_features_structs(VkPhysicalDeviceFeatures base, VkPhysicalDeviceFeatures requested);
+    VkBool32 compare_physical_device_descriptor_indexing_features_structs(VkPhysicalDeviceDescriptorIndexingFeaturesEXT base,
+                                                                          VkPhysicalDeviceDescriptorIndexingFeaturesEXT requested);
 
 	void normalize_vectors(glm::vec3* vectors, int number_of_elements);
 
@@ -112,3 +126,4 @@ namespace vulkan_helper {
     void insert_or_sum(std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &target, const std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &to_sum);
     std::vector<VkDescriptorPoolSize> convert_map_to_vector(const std::unordered_map<VkDescriptorType, uint32_t> &target);
 }
+#endif //VULKAN_HELPER_H

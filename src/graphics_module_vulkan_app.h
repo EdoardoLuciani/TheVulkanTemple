@@ -1,17 +1,15 @@
 #ifndef BASE_VULKAN_APP_GRAPHICS_MODULE_VULKAN_APP_H
 #define BASE_VULKAN_APP_GRAPHICS_MODULE_VULKAN_APP_H
 
+#include <vector>
 #include <array>
 #include "base_vulkan_app.h"
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
+#include "vulkan_helper.h"
 #include <glm/glm.hpp>
 #include "camera.h"
 #include "light.h"
-
-struct ModelInfo {
-    uint32_t uniform_size;
-};
 
 struct EngineOptions {
     int anti_aliasing;
@@ -28,7 +26,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
                       const std::vector<const char*> &desired_device_level_extensions,
                       const VkPhysicalDeviceFeatures &required_physical_device_features,
                       VkBool32 surface_support,
-                      EngineOptions options);
+                      EngineOptions options,
+                      void *addional_structure);
         ~GraphicsModuleVulkanApp();
 
 		// Directly copy data from disk to VRAM
@@ -53,7 +52,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         std::vector<VkImage> device_model_images;
         std::vector<std::vector<VkImageView>> device_model_images_views;
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
-        std::vector<ModelInfo> objects_info;
+        std::vector<vulkan_helper::ObjectRenderInfo> objects_info;
 
         std::vector<Light> lights;
         Camera camera;
@@ -82,6 +81,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         VkDescriptorSetLayout light_data_set_layout = VK_NULL_HANDLE;
         VkDescriptorSetLayout camera_data_set_layout = VK_NULL_HANDLE;
 
+        std::vector<VkDescriptorSet> descriptor_sets;
         VkDescriptorPool attachments_descriptor_pool = VK_NULL_HANDLE;
 
         // PBR renderpass
@@ -98,6 +98,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void write_descriptor_sets();
         void create_framebuffers();
         void create_pbr_pipeline();
+        void record_command_buffers();
 
         // Helper methods
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);

@@ -9,19 +9,25 @@ layout (set = 0, binding = 0) uniform uniform_buffer {
 	mat4 normal_model;
 };
 
-layout (set = 1, binding = 0) uniform uniform_buffer1 {
-    mat4 light_v;
-    mat4 light_p;
-	vec4 light_pos;
-	vec4 light_color;
+struct Light {
+	mat4 view;
+	mat4 proj;
+	vec4 pos;
+	vec4 color;
+};
+layout (set = 1, binding = 0) buffer uniform_buffer2 {
+	Light lights[];
+};
+
+layout (push_constant) uniform uniform_buffer3 {
+	uint light_index;
 };
 
 layout (location = 0) out VS_OUT {
 	vec4 position;
 } vs_out;
 
-
 void main() {
-    gl_Position = light_p * light_v * model * vec4(position, 1.0f);
+    gl_Position = lights[light_index].proj * lights[light_index].view * model * vec4(position, 1.0f);
 	vs_out.position = gl_Position;
 }
