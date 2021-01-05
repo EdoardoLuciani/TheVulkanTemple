@@ -32,10 +32,12 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
 
 		// Directly copy data from disk to VRAM
 		void load_3d_objects(std::vector<std::string> model_path, uint32_t per_object_uniform_data_size);
-
         void load_lights(const std::vector<Light> &lights);
         void set_camera(Camera camera);
         void init_renderer();
+
+        uint8_t* get_model_uniform_data_ptr(int model_index);
+        void start_frame_loop();
     private:
         EngineOptions engine_options;
         VkExtent3D screen_extent;
@@ -91,6 +93,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // PBR pipeline
         VkPipelineLayout pbr_pipeline_layout = VK_NULL_HANDLE;
         VkPipeline pbr_pipeline = VK_NULL_HANDLE;
+
+        std::vector<VkSemaphore> semaphores;
 
         // Vulkan methods
         void create_render_pass();

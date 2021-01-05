@@ -24,7 +24,7 @@ namespace vulkan_helper {
 	};
 
     struct ObjectRenderInfo {
-        uint32_t uniform_size;
+        uint32_t uniform_data_size;
         VkBuffer data_buffer;
         uint64_t mesh_data_offset;
         uint64_t index_data_offset;
@@ -35,8 +35,8 @@ namespace vulkan_helper {
 	constexpr int v_model_attributes_max_set_bits = 4;
 	enum v_model_attributes {
 		V_VERTEX = 1, //00000001
-		V_NORMAL = 2, //00000010
-		V_TEX_COORD = 4, //00000100
+        V_TEX_COORD = 2,//00000010
+        V_NORMAL = 4, //00000100
 		V_TANGENT = 8, //000001000
 		V_ALL = 15 //000001111
 	};
@@ -44,8 +44,8 @@ namespace vulkan_helper {
     constexpr int t_model_attributes_max_set_bits = 4;
 	enum t_model_attributes {
 		T_ALBEDO_MAP = 1,
-		T_NORMAL_MAP = 2,
-		T_ORM_MAP = 4,
+		T_ORM_MAP = 2,
+        T_NORMAL_MAP = 4,
 		T_EMISSIVE_MAP = 8,
 		T_ALL = 15
 	};

@@ -1,6 +1,8 @@
 #include "graphics_module_vulkan_app.h"
 #include <vector>
 #include <string>
+#include <chrono>
+#include <iostream>
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
 #include "vulkan_helper.h"
@@ -40,6 +42,12 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
             VK_FALSE,
     };
     check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_max_aniso_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
+
+    VkSemaphoreCreateInfo semaphore_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
+    semaphores.resize(2);
+    for (uint32_t i = 0; i < semaphores.size(); i++) {
+        vkCreateSemaphore(device, &semaphore_create_info, nullptr, &semaphores[i]);
+    }
 
     create_render_pass();
     create_sets_layouts();
@@ -155,7 +163,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
                                           vulkan_helper::t_model_attributes::T_ALL,
                                           nullptr, model_data);
         models_total_size += vulkan_helper::get_model_data_total_size(model_data);
-        objects_info[i].uniform_size = per_object_uniform_data_size;
+        objects_info[i].uniform_data_size = per_object_uniform_data_size;
         objects_info[i].indices = model_data.indices;
         objects_info[i].index_data_type = model_data.index_data_type;
         if (model_data.image_layers != 4) {
@@ -532,9 +540,9 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
         object_descriptor_buffer_infos[i] = {
                 device_model_uniform_buffer,
                 offset,
-                vulkan_helper::get_aligned_memory_size(objects_info[i].uniform_size, physical_device_properties.limits.minUniformBufferOffsetAlignment)
+                vulkan_helper::get_aligned_memory_size(objects_info[i].uniform_data_size, physical_device_properties.limits.minUniformBufferOffsetAlignment)
         };
-        offset += vulkan_helper::get_aligned_memory_size(objects_info[i].uniform_size, physical_device_properties.limits.minUniformBufferOffsetAlignment);
+        offset += vulkan_helper::get_aligned_memory_size(objects_info[i].uniform_data_size, physical_device_properties.limits.minUniformBufferOffsetAlignment);
     }
     std::vector<std::array<VkDescriptorImageInfo,4>> object_descriptor_image_infos(objects_info.size());
     for(uint32_t i = 0; i<objects_info.size(); i++) {
@@ -811,7 +819,7 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr };
         vkBeginCommandBuffer(command_buffers[i], &command_buffer_begin_info);
 
-        VkBufferCopy buffer_copy = { 0,0,vulkan_helper::get_aligned_memory_size(objects_info.front().uniform_size, physical_device_properties.limits.minUniformBufferOffsetAlignment) * objects_info.size()};
+        VkBufferCopy buffer_copy = { 0,0,vulkan_helper::get_aligned_memory_size(objects_info.front().uniform_data_size, physical_device_properties.limits.minUniformBufferOffsetAlignment) * objects_info.size()};
         vkCmdCopyBuffer(command_buffers[i], host_model_uniform_buffer, device_model_uniform_buffer, 1, &buffer_copy);
 
         buffer_copy = {0,0, vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
@@ -876,7 +884,80 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
     }
 }
 
+uint8_t* GraphicsModuleVulkanApp::get_model_uniform_data_ptr(int model_index) {
+    return static_cast<uint8_t*>(host_model_uniform_buffer_ptr) + model_index *
+    vulkan_helper::get_aligned_memory_size(objects_info.front().uniform_data_size, physical_device_properties.limits.minUniformBufferOffsetAlignment);
+}
+
+void GraphicsModuleVulkanApp::start_frame_loop() {
+    uint32_t rendered_frames = 0;
+    std::chrono::steady_clock::time_point t1;
+
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
+
+        camera.copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data));
+        for(uint32_t i=0, offset = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment);
+            i<lights.size(); i++) {
+            offset += lights[i].copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data) + offset);
+        }
+
+        uint32_t image_index = 0;
+        VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, semaphores[0], VK_NULL_HANDLE, &image_index);
+        if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
+            //on_window_resize();
+        }
+        else if (res != VK_SUCCESS) {
+            check_error(res, vulkan_helper::Error::ACQUIRE_NEXT_IMAGE_FAILED);
+        }
+
+        VkPipelineStageFlags pipeline_stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        VkSubmitInfo submit_info = {
+                VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                nullptr,
+                1,
+                &semaphores[0],
+                &pipeline_stage_flags,
+                1,
+                &command_buffers[image_index],
+                1,
+                &semaphores[1]
+        };
+        res = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+
+        VkPresentInfoKHR present_info = {
+                VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                nullptr,
+                1,
+                &semaphores[1],
+                1,
+                &swapchain,
+                &image_index
+        };
+        res = vkQueuePresentKHR(queue, &present_info);
+        if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
+            //on_window_resize();
+        }
+        else if (res != VK_SUCCESS) {
+            check_error(res, vulkan_helper::Error::QUEUE_PRESENT_FAILED);
+        }
+
+        rendered_frames++;
+        uint32_t time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t1).count();
+        if ( time_diff > 1000) {
+            std::cout << "Msec/frame: " << ( time_diff / static_cast<float>(rendered_frames)) << std::endl;
+            rendered_frames = 0;
+            t1 = std::chrono::steady_clock::now();
+        }
+    }
+}
+
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
+    vkDeviceWaitIdle(device);
+    for (auto& semaphore : semaphores) {
+        vkDestroySemaphore(device, semaphore, nullptr);
+    }
+
     vkDestroyPipelineLayout(device, pbr_pipeline_layout, nullptr);
     vkDestroyPipeline(device, pbr_pipeline, nullptr);
 

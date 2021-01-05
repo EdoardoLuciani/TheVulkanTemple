@@ -16,7 +16,7 @@ struct Light {
 	vec4 pos;
 	vec4 color;
 };
-layout (set = 1, binding = 0) buffer uniform_buffer2 {
+layout (set = 1, binding = 0) readonly buffer uniform_buffer2 {
 	Light lights[];
 };
 

@@ -280,15 +280,15 @@ namespace vulkan_helper
 
         std::array<const char*,4> v_model_attributes_string {
                 "POSITION",
-                "NORMAL",
                 "TEXCOORD_0",
+                "NORMAL",
                 "TANGENT"
         };
 
         std::array<int,4> v_model_attributes_sizes {
                 12,
-                12,
                 8,
+                12,
                 16
         };
 
@@ -339,16 +339,16 @@ namespace vulkan_helper
         for (uint8_t i=0; i<t_model_attributes_max_set_bits; i++) {
             switch (static_cast<t_model_attributes>(t_attributes_to_copy & (1 << i))) {
                 case T_ALBEDO_MAP:
-                    map_index[0] = model.materials[0].pbrMetallicRoughness.baseColorTexture.index;
+                    map_index[i] = model.materials[0].pbrMetallicRoughness.baseColorTexture.index;
                     break;
                 case T_NORMAL_MAP:
-                	map_index[1] = model.materials[0].normalTexture.index;
+                	map_index[i] = model.materials[0].normalTexture.index;
                     break;
                 case T_ORM_MAP:
-                    map_index[2] = model.materials[0].pbrMetallicRoughness.metallicRoughnessTexture.index;
+                    map_index[i] = model.materials[0].pbrMetallicRoughness.metallicRoughnessTexture.index;
                     break;
                 case T_EMISSIVE_MAP:
-                	map_index[3] = model.materials[0].emissiveTexture.index;
+                	map_index[i] = model.materials[0].emissiveTexture.index;
                     break;
                 default:
                     continue;
@@ -390,7 +390,7 @@ namespace vulkan_helper
         // Vertex data copy
         for (uint32_t i = 0; i < out_data.vertices; i++) {
             int written_data_size = 0;
-	        for (uint8_t j=0; i<v_model_attributes_max_set_bits; i++) {
+	        for (uint8_t j=0; j<v_model_attributes_max_set_bits; j++) {
 		        if (t_attributes_to_copy & (1 << j)) {
 			        memcpy(static_cast<uint8_t *>(dst_ptr) + (i * group_size) + written_data_size,
 			               model.buffers[0].data.data() + v_attr_off[j] + i * v_model_attributes_sizes[j],

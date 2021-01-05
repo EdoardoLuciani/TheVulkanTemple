@@ -606,18 +606,26 @@ void VSMContext::init_resources(VkCommandPool command_pool, VkCommandBuffer comm
     vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
 
     for (uint32_t i=0; i<depth_images_res.size(); i++) {
+        glm::vec2 image_res(static_cast<float>(depth_images_res[i].width),static_cast<float>(depth_images_res[i].height));
         vkCmdUpdateBuffer(command_buffer, device_vsm_extent_buffer, i*vulkan_helper::get_aligned_memory_size(sizeof(glm::vec2), min_uniform_offset_alignment), sizeof(glm::vec2),
-                          glm::value_ptr(glm::vec2(static_cast<float>(depth_images_res[i].width),static_cast<float>(depth_images_res[i].height))));
+                          glm::value_ptr(image_res));
     }
+    float thing = 500;
+    vkCmdFillBuffer(command_buffer, device_vsm_extent_buffer, 0, VK_WHOLE_SIZE, thing);
 
     // Also for the smaa_rt_metrics buffer
-    VkMemoryBarrier memory_barrier = {
-            VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+    VkBufferMemoryBarrier buffer_memory_barrier = {
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             nullptr,
             VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_ACCESS_UNIFORM_READ_BIT
+            VK_ACCESS_UNIFORM_READ_BIT,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_vsm_extent_buffer,
+            0,
+            VK_WHOLE_SIZE
     };
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
     vkEndCommandBuffer(command_buffer);
 
     VkFenceCreateInfo fence_create_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,nullptr,0 };
@@ -688,7 +696,7 @@ void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
     for (int i=0; i<descriptor_buffer_info.size(); i++) {
         descriptor_buffer_info[i] = {
                 device_vsm_extent_buffer,
-                i*sizeof(glm::vec2),
+                i*vulkan_helper::get_aligned_memory_size(sizeof(glm::vec2), min_uniform_offset_alignment),
                 sizeof(glm::vec2)
         };
     }
