@@ -109,20 +109,22 @@ void GraphicsModuleVulkanApp::create_render_pass() {
 }
 
 void GraphicsModuleVulkanApp::create_sets_layouts() {
+    std::array<VkSampler,4> samplers;
+    samplers.fill(device_max_aniso_linear_sampler);
     std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
     descriptor_set_layout_binding[0] = {
             0,
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             1,
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
+            &device_max_aniso_linear_sampler
     };
     descriptor_set_layout_binding[1] = {
             1,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             4,
             VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
+            samplers.data()
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,

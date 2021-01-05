@@ -59,14 +59,14 @@ VSMContext::VSMContext(VkDevice device) {
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             1,
             VK_SHADER_STAGE_COMPUTE_BIT,
-            nullptr
+            &device_max_aniso_linear_sampler
     };
     descriptor_set_layout_binding[1] = {
             1,
             VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             1,
             VK_SHADER_STAGE_COMPUTE_BIT,
-            nullptr
+            &device_max_aniso_linear_sampler
     };
     descriptor_set_layout_binding[2] = {
             2,
