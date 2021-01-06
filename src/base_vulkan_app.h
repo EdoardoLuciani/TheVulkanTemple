@@ -19,18 +19,6 @@
 
 #include "volk.h"
 
-enum class Projection {
-	ORTHOGONAL,
-	PERSPECTIVE
-};
-
-struct EngineFeatures {
-	VkPresentModeKHR present_mode;
-	float fov;
-	Projection projection_mode;
-	float anisotropic_filtering_level;
-};
-
 class BaseVulkanApp {
 	public:
 		BaseVulkanApp(const std::string &application_name,
@@ -41,6 +29,7 @@ class BaseVulkanApp {
 					  VkBool32 surface_support,
 					  void* additional_structure);
 		virtual ~BaseVulkanApp();
+		GLFWwindow* get_glfw_window();
 
 	protected:
 		// Vulkan attributes

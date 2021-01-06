@@ -219,6 +219,8 @@ BaseVulkanApp::~BaseVulkanApp() {
     vkDestroyInstance(instance, nullptr);
 }
 
+GLFWwindow* BaseVulkanApp::get_glfw_window() { return window; }
+
 void BaseVulkanApp::create_swapchain() {
 	// Listing all available presentation
 	uint32_t presentation_modes_number;

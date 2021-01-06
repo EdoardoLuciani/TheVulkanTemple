@@ -38,6 +38,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void init_renderer();
 
         uint8_t* get_model_uniform_data_ptr(int model_index);
+        Camera* get_camera_ptr();
+
         void start_frame_loop();
     private:
         EngineOptions engine_options;

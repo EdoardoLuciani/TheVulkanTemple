@@ -17,6 +17,8 @@ class Camera {
         float aspect;
         float znear = 0.001f;
         float zfar = std::numeric_limits<float>::max();
+
+        friend class FPSCameraControl;
     private:
 };
 

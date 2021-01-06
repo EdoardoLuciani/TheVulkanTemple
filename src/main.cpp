@@ -3,6 +3,7 @@
 #include <vector>
 #include "vulkan_helper.h"
 #include "graphics_module_vulkan_app.h"
+#include "fps_camera_control.h"
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
 
@@ -36,7 +37,7 @@ int main() {
 	options.HDR = 0;
 
 	try {
-		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, {800,800},
+		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, {1000,1000},
                                     desired_device_level_extensions, selected_device_features, VK_TRUE, options, &required_physical_device_indexing_features);
 		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb", "resources//models//Table//Table.glb"},128);
 		app.load_lights({
@@ -44,6 +45,8 @@ int main() {
             {{1.0f, 1.0f, -5.0f}, {0.0f, 0.0f, 0.0f}, {10.0f, 10.0f, 10.0f}, 90.0f, 1.0f}
 		});
 		app.set_camera({{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, -10.0f}, 100.0f, 1.0f});
+		FPSCameraControl fps_camera_control(app.get_glfw_window(), app.get_camera_ptr());
+
         app.init_renderer();
 
         uint8_t* water_bottle_uniform_ptr = app.get_model_uniform_data_ptr(0);

@@ -899,6 +899,8 @@ uint8_t* GraphicsModuleVulkanApp::get_model_uniform_data_ptr(int model_index) {
     vulkan_helper::get_aligned_memory_size(objects_info.front().uniform_data_size, physical_device_properties.limits.minUniformBufferOffsetAlignment);
 }
 
+Camera* GraphicsModuleVulkanApp::get_camera_ptr() { return &camera; }
+
 void GraphicsModuleVulkanApp::start_frame_loop() {
     uint32_t rendered_frames = 0;
     std::chrono::steady_clock::time_point t1;

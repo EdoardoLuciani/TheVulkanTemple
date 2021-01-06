@@ -20,7 +20,7 @@ add_executable(base_vulkan_app
         src/volk.c
         src/vsm/vsm_context.cpp
         src/camera.cpp
-        src/light.cpp src/hdr_tonemap/hdr_tonemap_context.cpp src/hdr_tonemap/hdr_tonemap_context.h)
+        src/light.cpp src/hdr_tonemap/hdr_tonemap_context.cpp src/hdr_tonemap/hdr_tonemap_context.h src/fps_camera_control.cpp src/fps_camera_control.h)
 
 target_link_libraries(base_vulkan_app glfw3 dl pthread stdc++fs X11)
 
@@ -32,16 +32,9 @@ elseif(UNIX)
 endif()
 
 file(GLOB_RECURSE GLSL_SOURCE_FILES
-        "src/shaders/hdr_tonemap/*.comp"
-        "src/shaders/light/*.frag"
-        "src/shaders/light/*.vert"
-        "src/shaders/pbr/*.frag"
-        "src/shaders/pbr/*.vert"
-        "src/shaders/smaa/*.frag"
-        "src/shaders/smaa/*.vert"
-        "src/shaders/vsm/*.frag"
-        "src/shaders/vsm/*.vert"
-        "src/shaders/vsm/*.comp"
+        "src/shaders/*/*.comp"
+        "src/shaders/*/*.frag"
+        "src/shaders/*/*.vert"
         )
 
 foreach(GLSL ${GLSL_SOURCE_FILES})
