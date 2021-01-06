@@ -314,7 +314,7 @@ void VSMContext::create_shadow_map_pipeline(std::string shader_dir_path, VkDescr
             VK_FALSE
     };
 
-    // TODO: put zero for viewport and scissor because we will set those parameters dynamically before rendering
+    // we will set the viewport and scissor dynamically after pipeline binding
     VkViewport viewport = {
             0.0f,
             0.0f,

@@ -5,6 +5,7 @@
 #include <iostream>
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
+#include "hdr_tonemap/hdr_tonemap_context.h"
 #include "vulkan_helper.h"
 #include <unordered_map>
 
@@ -18,7 +19,8 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        required_physical_device_features,
                                        surface_support,
                                        additional_structure),
-                         vsm_context(device) {
+                         vsm_context(device),
+                         hdr_tonemap_context(device) {
     screen_extent = {window_size.width, window_size.height, 1};
 
     VkSamplerCreateInfo sampler_create_info = {
@@ -390,6 +392,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
         depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(500).x, lights[i].get_resolution_from_ratio(500).y};
     }
     vsm_context.create_resources(depth_images_resolution, physical_device_properties.limits.minUniformBufferOffsetAlignment, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
+    hdr_tonemap_context.create_resources("resources//shaders", swapchain_images.size());
 
     // We create some attachments useful during rendering
     create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, screen_extent, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -444,6 +447,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
 
     //vulkan_helper::insert_or_sum(sets_elements_required, smaa_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, vsm_context.get_required_descriptor_pool_size_and_sets());
+    vulkan_helper::insert_or_sum(sets_elements_required, hdr_tonemap_context.get_required_descriptor_pool_size_and_sets());
     std::vector<VkDescriptorPoolSize> descriptor_pool_size = vulkan_helper::convert_map_to_vector(sets_elements_required.first);
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -457,6 +461,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
 
     // Next we allocate the vsm descriptors in the pool
     vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
+    hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0], swapchain_images, swapchain_create_info.imageFormat);
 
     // then we allocate descriptor sets for camera, lights and objects
     std::vector<VkDescriptorSetLayout> layouts_of_sets;
@@ -882,6 +887,9 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
             vkCmdDrawIndexed(command_buffers[i], objects_info[j].indices, 1, 0, 0, 0);
         }
         vkCmdEndRenderPass(command_buffers[i]);
+
+        hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, swapchain_create_info.imageExtent);
+
         vkEndCommandBuffer(command_buffers[i]);
     }
 }

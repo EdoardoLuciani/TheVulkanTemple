@@ -6,6 +6,7 @@
 #include "base_vulkan_app.h"
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
+#include "hdr_tonemap/hdr_tonemap_context.h"
 #include "vulkan_helper.h"
 #include <glm/glm.hpp>
 #include "camera.h"
@@ -75,6 +76,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Todo: add SmaaContext
         //SmaaContext smaa_context;
         VSMContext vsm_context;
+        HDRTonemapContext hdr_tonemap_context;
         // Memory in which all attachment reside
         VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
 

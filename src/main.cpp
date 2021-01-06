@@ -60,6 +60,7 @@ int main() {
 
         glm::mat4 table_normal_matrix = glm::transpose(glm::inverse(table_m_matrix));
         memcpy(table_uniform_ptr + sizeof(glm::mat4), glm::value_ptr(table_normal_matrix), sizeof(glm::mat4));
+
         app.start_frame_loop();
 	}
 	catch (std::pair<int32_t,vulkan_helper::Error>& err) {

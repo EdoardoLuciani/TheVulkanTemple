@@ -9,6 +9,7 @@ if (WIN32)
 elseif(UNIX)
     add_definitions(-DVK_USE_PLATFORM_XLIB_KHR)
 endif()
+add_definitions(-DGLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 add_executable(base_vulkan_app
         src/base_vulkan_app.cpp
@@ -19,7 +20,7 @@ add_executable(base_vulkan_app
         src/volk.c
         src/vsm/vsm_context.cpp
         src/camera.cpp
-        src/light.cpp src/hdr_tonemap/hdr_tonemap.cpp src/hdr_tonemap/hdr_tonemap.h)
+        src/light.cpp src/hdr_tonemap/hdr_tonemap_context.cpp src/hdr_tonemap/hdr_tonemap_context.h)
 
 target_link_libraries(base_vulkan_app glfw3 dl pthread stdc++fs X11)
 
@@ -31,8 +32,7 @@ elseif(UNIX)
 endif()
 
 file(GLOB_RECURSE GLSL_SOURCE_FILES
-        "src/shaders/HDR/*.frag"
-        "src/shaders/HDR/*.vert"
+        "src/shaders/hdr_tonemap/*.comp"
         "src/shaders/light/*.frag"
         "src/shaders/light/*.vert"
         "src/shaders/pbr/*.frag"

@@ -91,7 +91,7 @@ float ACESFilm(float x) {
 
 void main() {
     //vec3 color = texture( render_target, gl_GlobalInvocationID.xy/image_size ).rgb;
-    vec3 color = texelFetch(render_target, gl_GlobalInvocationID.xy).rgb;
+    vec3 color = texelFetch(render_target, ivec2(gl_GlobalInvocationID.xy), 0).rgb;
     vec3 xyY = rgb_to_xyY(color);
 
     //xyY.z = ACESFilm(xyY.z);
