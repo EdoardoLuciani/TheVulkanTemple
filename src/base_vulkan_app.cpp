@@ -245,7 +245,7 @@ void BaseVulkanApp::create_swapchain() {
 	std::vector<VkSurfaceFormatKHR> surface_formats(formats_count);
 	check_error(vkGetPhysicalDeviceSurfaceFormatsKHR(selected_physical_device, surface, &formats_count, surface_formats.data()),
 				vulkan_helper::Error::SURFACE_FORMATS_RETRIEVAL_FAILED);
-	VkSurfaceFormatKHR surface_format = vulkan_helper::select_surface_format(surface_formats, { VK_FORMAT_B8G8R8A8_UNORM ,VK_COLOR_SPACE_SRGB_NONLINEAR_KHR });
+	VkSurfaceFormatKHR surface_format = vulkan_helper::select_surface_format(surface_formats, { VK_FORMAT_B8G8R8A8_UNORM,VK_COLOR_SPACE_SRGB_NONLINEAR_KHR });
 
 	VkSwapchainKHR old_swapchain = swapchain;
 	swapchain_create_info = {

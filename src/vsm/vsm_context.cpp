@@ -344,7 +344,7 @@ void VSMContext::create_shadow_map_pipeline(std::string shader_dir_path, VkDescr
             VK_FALSE,
             VK_FALSE,
             VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_FRONT_BIT,
+                VK_CULL_MODE_BACK_BIT,
             VK_FRONT_FACE_COUNTER_CLOCKWISE,
             VK_FALSE,
             0.0f,

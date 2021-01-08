@@ -36,19 +36,19 @@ float get_sphere_light_attenuation(vec3 light_p, float dist_max) {
 
 // Shadow Helping functions
 float ChebyshevUpperBound(vec2 Moments, float t) {
-    // One-tailed inequality valid if t > Moments.x 
-    if (t <= Moments.x) {
-	    return 1.0;
-    }
+    // One-tailed inequality valid if t > Moments.x
+    float p = float(t <= Moments.x);
+
     // Compute variance.
     float Variance = Moments.y - (Moments.x*Moments.x);
-    Variance = max(Variance, 0.002);
-
-    // Compute probabilistic upper bound.    
+    Variance = max(Variance, 0);
+    // Compute probabilistic upper bound.
     float d = t - Moments.x;
     float p_max = Variance / (Variance + d*d);
-    return p_max;
+    return max(p, p_max);
 }
+
+
 float linstep(float min, float max, float v) {   
     return clamp((v - min) / (max - min), 0, 1); 
 } 
@@ -57,7 +57,7 @@ float ReduceLightBleeding(float p_max, float Amount) {
     return linstep(Amount, 1, p_max); 
 }
 
-void main() {		
+void main() {
     vec3 albedo     = texture(image[0], fs_in.tex_coord).rgb;
     float metallic  = texture(image[1], fs_in.tex_coord).b;
     float roughness = texture(image[1], fs_in.tex_coord).g;
@@ -70,9 +70,12 @@ void main() {
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
     // Transforming normal incidence to index of reflectivity
+    /*
     float ior = (1+sqrt(F0.x)) / (1-sqrt(F0.x));
     ior += (1+sqrt(F0.y)) / (1-sqrt(F0.y));
     ior += (1+sqrt(F0.z)) / (1-sqrt(F0.z));
+    */
+    vec3 ior = -(F0 + 1 + 2*sqrt(F0)) / (F0 - 1);
 
     // Formula to map roughness from [0.125,1],
     // giving a less sharp look to reflection
@@ -83,7 +86,7 @@ void main() {
     
     // color without ambient
     vec3 rho = vec3(0.0);
-    for(int i=0; i<lights.length(); i++) {
+    for(int i=0; i<1; i++) {
         float attenuation = (lights[i].pos.w == 0.0) ? 1.0 : get_sphere_light_attenuation(vec3(lights[i].pos), 100.0f);
         vec3 radiance = lights[i].color.rgb * attenuation;
 
@@ -92,8 +95,10 @@ void main() {
         
         float NdotH = max(dot(N, H),0.0);
         float NdotL = max(dot(N, L),0.0);
-        float HdotV = max(dot(H, V),0.0);
+        //float HdotV = max(dot(H, V),0.0);
+        float HdotV = clamp(dot(H, V), 0.0, 1.0);
         float LdotV = max(dot(L, V),0.0);
+
 
         // In the Walter07_specular function the Walter Fresnel is used, but because ior is a single float,
         // the functions outputs a single float that can't be used for the term Ks. Because of this for NOW
@@ -101,20 +106,25 @@ void main() {
         vec3 Ks = F_Schlick(HdotV, F0);
         vec3 Kd = (vec3(1) - Ks)*(1.0 - metallic)*albedo;
 
-        vec3 rho_s = Walter07_specular(NdotL, NdotV, NdotH, HdotV, mapped_roughness, ior, Ks);
+        vec3 rho_s = CookTorrance_specular(NdotL, NdotV, NdotH, HdotV, mapped_roughness, F0);
         vec3 rho_d = OrenNayar_diffuse(LdotV, NdotL, NdotV, mapped_roughness, Kd);
 
         // calculate if fragment is in shadow
         float shadow = 1.0f;
-        vec4 modified_shadow_coords = fs_in.shadow_coord[i];
-        modified_shadow_coords.z -= 0.05;
-        vec4 normalized_shadow_coords = modified_shadow_coords / modified_shadow_coords.w;
-        if ( modified_shadow_coords.z >= 0) {
-            vec2 moments = texture(shadow_map[nonuniformEXT(i)],normalized_shadow_coords.xy).rg;
-	        float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
-            shadow = ReduceLightBleeding(p_max, 0.99999);
+        vec4 normalized_shadow_coords = fs_in.shadow_coord[i];
+        normalized_shadow_coords = normalized_shadow_coords / normalized_shadow_coords.w;
+
+        // VARIANCE SHADOW MAPPING
+        vec2 moments = texture(shadow_map[nonuniformEXT(i)],normalized_shadow_coords.xy).rg;
+	    float p_max = ChebyshevUpperBound(moments, normalized_shadow_coords.z);
+        //shadow = ReduceLightBleeding(p_max, 0.1);
+
+        // NORMAL SHADOW MAPPING
+        if (moments.x < normalized_shadow_coords.z) {
+            shadow = 0.0f;
         }
-        rho += (rho_d + rho_s) * radiance * shadow;
+
+        rho += (rho_s + rho_d) * radiance * shadow * NdotL;
     }
 
     // ambient value is 0.03
@@ -124,7 +134,8 @@ void main() {
     vec3 color = ambient + rho + vec3(texture(image[3],fs_in.tex_coord));
 
     // Gamma correction
-    color = pow(color, vec3(1.0/2.2)); 
+    //color = pow(color, vec3(1.0/2.2));
+    color = rho;
 
     frag_color = vec4(color, 1.0);
 }

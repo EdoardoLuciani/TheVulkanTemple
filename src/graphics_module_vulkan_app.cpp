@@ -389,7 +389,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
 
     std::vector<VkExtent2D> depth_images_resolution(lights.size());
     for (int i=0; i<depth_images_resolution.size(); i++) {
-        depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(500).x, lights[i].get_resolution_from_ratio(500).y};
+        depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(1000).x, lights[i].get_resolution_from_ratio(1000).y};
     }
     vsm_context.create_resources(depth_images_resolution, physical_device_properties.limits.minUniformBufferOffsetAlignment, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
     hdr_tonemap_context.create_resources("resources//shaders", swapchain_images.size());

@@ -17,14 +17,15 @@ vec3 F_Schlick(float HdotV, vec3 F0) {
     return F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
 }
 
-vec3 Walter07_specular(float NdotL, float NdotV, float NdotH, float HdotV, float roughness, float ior, vec3 Ks) {
+vec3 CookTorrance_specular(float NdotL, float NdotV, float NdotH, float HdotV, float roughness, vec3 F0) {
     float roughness2 = roughness*roughness;
     float D = D_GGX(NdotH, roughness2);
     float G = G_GGX(NdotL, roughness2) * G_GGX(NdotV, roughness2);
-    float F = F_Walter(HdotV, ior);
+    vec3 F = F_Schlick(HdotV, F0);
 
     // I removed from the denominator NdotL!, because it looks bad
-    return (Ks * D * G * F) / (4 * NdotV);
+    return (D * G * F) / max(4 * NdotV, 0.001);
+    //return vec3(ior,HdotV,F);
 }
 
 /*

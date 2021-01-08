@@ -38,7 +38,7 @@ void FPSCameraControl::key_callback(GLFWwindow* window, int key, int scancode, i
         camera->pos[2] += 0.05f * z_comp_sign * pow(z_comp, 2);
         camera->pos[0] -= 0.05f * x_comp_sign * pow(x_comp, 2);
     }
-    else if (key == GLFW_KEY_D) {
+    else if (key == GLFW_KEY_A) {
         float angle = glm::orientedAngle(glm::normalize(glm::vec2(camera->dir[0], camera->dir[2])), glm::vec2(0.0f, -1.0f));
         float z_comp = sin(angle);
         float x_comp = cos(angle);
@@ -48,7 +48,7 @@ void FPSCameraControl::key_callback(GLFWwindow* window, int key, int scancode, i
         camera->pos[2] += 0.05f * z_comp_sign * pow(z_comp, 2);
         camera->pos[0] -= 0.05f * x_comp_sign * pow(x_comp, 2);
     }
-    else if (key == GLFW_KEY_A) {
+    else if (key == GLFW_KEY_D) {
         float angle = glm::orientedAngle(glm::normalize(glm::vec2(camera->dir[0], camera->dir[2])), glm::vec2(0.0f, -1.0f));
         float z_comp = sin(angle);
         float x_comp = cos(angle);
@@ -92,7 +92,7 @@ void FPSCameraControl::cursor_position_callback(GLFWwindow* window, double xpos,
     float x_sensivity = 0.0003f;
     float y_sensivity = 0.0001f;
 
-    float key_yaw = x_sensivity * x_delta;
+    float key_yaw = x_sensivity * -x_delta;
     float key_pitch = y_sensivity * -y_delta;
 
     /*camera->dir = glm::vec3( glm::rotate(key_pitch, glm::vec3(1.0f, 0.0f, 0.0f))
