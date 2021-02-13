@@ -90,7 +90,6 @@ float ACESFilm(float x) {
 }
 
 void main() {
-    //vec3 color = texture( render_target, gl_GlobalInvocationID.xy/image_size ).rgb;
     vec3 color = texelFetch(render_target, ivec2(gl_GlobalInvocationID.xy), 0).rgb;
     vec3 xyY = rgb_to_xyY(color);
 
@@ -99,14 +98,8 @@ void main() {
     xyY.z = Tonemap_Uchimura(xyY.z);
     //xyY.z =  Tonemap_Lottes(xyY.z);
 
-    // Using the new luminance, convert back to RGB
-    vec3 out_color = xyY_to_rgb(xyY);
+    // Using the new luminance, convert back to RGB and to sRGB
+    vec3 out_color = rgb_to_srgb_approx(xyY_to_rgb(xyY));
 
-    // Convert back to sRGB and send to output buffer
-    out_color = pow(out_color, vec3(1.0/1.2));
-
-    // DEBUG TEST
-    out_color = color;
-
-    imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(pow(out_color, vec3(1.0/2.2)),1.0f));
+    imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(out_color, 1.0f));
 }

@@ -44,7 +44,7 @@ int main() {
 		    {{1.0f, 1.0f, 2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 50.0f, 50.0f}, 90.0f, 1.0f},
             {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 50.0f, 50.0f}, 90.0f, 1.0f}
 		});
-		app.set_camera({{0.0f, 0.0f, 5.0f, 0.0f}, {0.0f, 0.0f, -10.0f}, 100.0f, 1.0f});
+		app.set_camera({{0.0f, 1.0f, 5.0f, 0.0f}, {0.0f, .0f, -10.0f}, 100.0f, 1.0f});
 		FPSCameraControl fps_camera_control(app.get_glfw_window(), app.get_camera_ptr());
 
         app.init_renderer();

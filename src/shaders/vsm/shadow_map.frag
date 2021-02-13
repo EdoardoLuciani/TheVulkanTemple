@@ -7,9 +7,8 @@ layout (location = 0) in VS_OUT {
 layout (location = 0) out vec2 frag_color;
 
 void main() {
-    float depth = fs_in.position.z / fs_in.position.w;
-	//float depth = length(fs_in.position);
-	depth = depth * 0.5 + 0.5;			//Don't forget to move away from unit cube ([-1,1]) to [0,1] coordinate system
+	// we multiply the depth by .1 and add a bias
+	float depth = -fs_in.position.z * 0.1 - 0.0005;
 	
 	float moment1 = depth;
 	float moment2 = depth * depth;

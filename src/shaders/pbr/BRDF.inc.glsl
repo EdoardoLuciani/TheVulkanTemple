@@ -17,11 +17,10 @@ vec3 F_Schlick(float HdotV, vec3 F0) {
     return F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
 }
 
-vec3 CookTorrance_specular(float NdotL, float NdotV, float NdotH, float HdotV, float roughness, vec3 F0) {
+vec3 CookTorrance_specular(float NdotL, float NdotV, float NdotH, float HdotV, float roughness, vec3 F) {
     float roughness2 = roughness*roughness;
     float D = D_GGX(NdotH, roughness2);
     float G = G_GGX(NdotL, roughness2) * G_GGX(NdotV, roughness2);
-    vec3 F = F_Schlick(HdotV, F0);
 
     // I removed from the denominator NdotL!, because it looks bad
     return (D * G * F) / max(4 * NdotV, 0.001);
@@ -51,7 +50,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-vec3 OrenNayar_diffuse( float LdotV, float NdotL, float NdotV, float roughness, vec3 Kd) {
+vec3 OrenNayar_diffuse(float LdotV, float NdotL, float NdotV, float roughness, vec3 Kd) {
   float s = LdotV - NdotL * NdotV;
   float t = mix(1.0, max(NdotL, NdotV), step(0.0, s));
 

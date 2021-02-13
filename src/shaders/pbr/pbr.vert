@@ -46,7 +46,13 @@ void main() {
                         	0.5f,0.5f,0.5f,1.0f);
 
 	for (int i=0; i<lights.length(); i++) {
-		vs_out.shadow_coord[i] = shadow_bias * lights[i].proj * lights[i].view * model * vec4(position,1.0f);
+		vec4 object_world_view = lights[i].view * model * vec4(position,1.0f);
+		vec4 object_world_view_proj = shadow_bias * lights[i].proj * object_world_view;
+
+		vs_out.shadow_coord[i].x = (object_world_view_proj.x);
+		vs_out.shadow_coord[i].y = (object_world_view_proj.y);
+		vs_out.shadow_coord[i].z = -object_world_view.z * 0.1;
+		vs_out.shadow_coord[i].w = (object_world_view_proj.w);
 	}
 
 	vec3 N = normalize(mat3(normal_model) * normal);

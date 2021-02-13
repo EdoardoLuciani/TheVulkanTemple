@@ -28,6 +28,6 @@ layout (location = 0) out VS_OUT {
 } vs_out;
 
 void main() {
-	vs_out.position = lights[light_index].proj * lights[light_index].view * model * vec4(position, 1.0f);
-    gl_Position = vs_out.position;
+	vs_out.position = lights[light_index].view * model * vec4(position, 1.0f);
+    gl_Position = lights[light_index].proj * vs_out.position;
 }
