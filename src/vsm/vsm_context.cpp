@@ -53,7 +53,7 @@ VSMContext::VSMContext(VkDevice device) {
     check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_max_aniso_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
 
     // Creation of the descriptor set layout used in the shader
-    std::array<VkDescriptorSetLayoutBinding, 3> descriptor_set_layout_binding;
+    std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
     descriptor_set_layout_binding[0] = {
             0,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -67,13 +67,6 @@ VSMContext::VSMContext(VkDevice device) {
             1,
             VK_SHADER_STAGE_COMPUTE_BIT,
             &device_max_aniso_linear_sampler
-    };
-    descriptor_set_layout_binding[2] = {
-            2,
-            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            1,
-            VK_SHADER_STAGE_COMPUTE_BIT,
-            nullptr
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -170,14 +163,11 @@ VSMContext::~VSMContext() {
     for (auto &image : device_light_depth_images) {
         vkDestroyImage(device, image, nullptr);
     }
-
-    vkDestroyBuffer(device, device_vsm_extent_buffer, nullptr);
 }
 
-void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, uint64_t min_uniform_offset_alignment,
-                                  std::string shader_dir_path, VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout) {
+void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, std::string shader_dir_path,
+                                  VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout) {
     this->depth_images_res = depth_images_res;
-    this->min_uniform_offset_alignment = min_uniform_offset_alignment;
 
     // We create two vsm depth images for every light
     device_vsm_depth_images.resize(depth_images_res.size());
@@ -207,19 +197,6 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, uint
         image_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         check_error(vkCreateImage(device, &image_create_info, nullptr, &device_light_depth_images[i]), vulkan_helper::Error::IMAGE_CREATION_FAILED);
     }
-
-    // Creation of the buffer to hold the depth_image_sizes
-    VkBufferCreateInfo buffer_create_info = {
-            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            nullptr,
-            0,
-            vulkan_helper::get_aligned_memory_size(sizeof(glm::vec2), min_uniform_offset_alignment)*depth_images_res.size(),
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_SHARING_MODE_EXCLUSIVE,
-            0,
-            nullptr
-    };
-    vkCreateBuffer(device, &buffer_create_info, nullptr, &device_vsm_extent_buffer);
 
     create_shadow_map_pipeline(shader_dir_path, pbr_model_set_layout, light_set_layout);
     create_gaussian_blur_pipelines(shader_dir_path);
@@ -534,17 +511,16 @@ void VSMContext::create_gaussian_blur_pipelines(std::string shader_dir_path) {
     }
 }
 
-std::pair<VkBuffer,std::vector<VkImage>> VSMContext::get_device_buffer_and_images() {
+std::vector<VkImage> VSMContext::get_device_images() {
     auto vec = device_vsm_depth_images;
     vec.insert(vec.begin(), device_light_depth_images.begin(), device_light_depth_images.end());
-    return std::make_pair(device_vsm_extent_buffer, vec);
+    return vec;
 }
 
 std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> VSMContext::get_required_descriptor_pool_size_and_sets() {
     return {
         { {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2*device_vsm_depth_images.size()},
-            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2*device_vsm_depth_images.size()},
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2*device_vsm_depth_images.size()}},
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2*device_vsm_depth_images.size()}},
             2*device_vsm_depth_images.size()};
 }
 
@@ -594,61 +570,9 @@ void VSMContext::create_framebuffers() {
     }
 }
 
-void VSMContext::init_resources(VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue) {
+void VSMContext::init_resources() {
     create_image_views();
     create_framebuffers();
-
-    // we submit a command to set vsm_extent_buffer
-    VkCommandBufferBeginInfo command_buffer_begin_info = {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,nullptr,
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,nullptr
-    };
-    vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
-
-    for (uint32_t i=0; i<depth_images_res.size(); i++) {
-        glm::vec2 image_res(static_cast<float>(depth_images_res[i].width),static_cast<float>(depth_images_res[i].height));
-        vkCmdUpdateBuffer(command_buffer, device_vsm_extent_buffer, i*vulkan_helper::get_aligned_memory_size(sizeof(glm::vec2), min_uniform_offset_alignment), sizeof(glm::vec2),
-                          glm::value_ptr(image_res));
-    }
-    float thing = 500;
-    vkCmdFillBuffer(command_buffer, device_vsm_extent_buffer, 0, VK_WHOLE_SIZE, thing);
-
-    // Also for the smaa_rt_metrics buffer
-    VkBufferMemoryBarrier buffer_memory_barrier = {
-            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            nullptr,
-            VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_ACCESS_UNIFORM_READ_BIT,
-            VK_QUEUE_FAMILY_IGNORED,
-            VK_QUEUE_FAMILY_IGNORED,
-            device_vsm_extent_buffer,
-            0,
-            VK_WHOLE_SIZE
-    };
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
-    vkEndCommandBuffer(command_buffer);
-
-    VkFenceCreateInfo fence_create_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,nullptr,0 };
-    VkFence fence;
-    vkCreateFence(device, &fence_create_info, nullptr, &fence);
-
-    VkPipelineStageFlags flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    VkSubmitInfo submit_info = {
-            VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            nullptr,
-            0,
-            nullptr,
-            &flags,
-            0,
-            nullptr,
-            0,
-            nullptr,
-    };
-    check_error(vkQueueSubmit(queue, 1, &submit_info, fence), vulkan_helper::Error::QUEUE_SUBMIT_FAILED);
-    vkWaitForFences(device, 1, &fence, VK_TRUE, 20000000);
-
-    vkDestroyFence(device, fence, nullptr);
-    vkResetCommandPool(device, command_pool, 0);
 }
 
 void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
@@ -692,26 +616,17 @@ void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
         };
     }
 
-    std::vector<VkDescriptorBufferInfo> descriptor_buffer_info(device_vsm_depth_images.size());
-    for (int i=0; i<descriptor_buffer_info.size(); i++) {
-        descriptor_buffer_info[i] = {
-                device_vsm_extent_buffer,
-                i*vulkan_helper::get_aligned_memory_size(sizeof(glm::vec2), min_uniform_offset_alignment),
-                sizeof(glm::vec2)
-        };
-    }
-
-    std::vector<VkWriteDescriptorSet> write_descriptor_set(3*vsm_descriptor_sets.size());
+    std::vector<VkWriteDescriptorSet> write_descriptor_set(2*vsm_descriptor_sets.size());
     for (int i=0; i<write_descriptor_set.size(); i++) {
         write_descriptor_set[i] = {
                     VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     nullptr,
-                    vsm_descriptor_sets[i/3],
+                    vsm_descriptor_sets[i/2],
                     0,
                     0,
                     1,
                     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                    &descriptor_image_infos[i-i/3],
+                    &descriptor_image_infos[i],
                     nullptr,
                     nullptr
         };
@@ -719,26 +634,13 @@ void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
         write_descriptor_set[++i] = {
                     VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     nullptr,
-                    vsm_descriptor_sets[i/3],
+                    vsm_descriptor_sets[i/2],
                     1,
                     0,
                     1,
                     VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                    &descriptor_image_infos[i-i/3],
+                    &descriptor_image_infos[i],
                     nullptr,
-                    nullptr
-        };
-        //i++;
-        write_descriptor_set[++i] = {
-                    VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                    nullptr,
-                    vsm_descriptor_sets[i/3],
-                    2,
-                    0,
-                    1,
-                    VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                    nullptr,
-                    &descriptor_buffer_info[i/6],
                     nullptr
         };
     }

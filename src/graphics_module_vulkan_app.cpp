@@ -391,7 +391,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     for (int i=0; i<depth_images_resolution.size(); i++) {
         depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(1000).x, lights[i].get_resolution_from_ratio(1000).y};
     }
-    vsm_context.create_resources(depth_images_resolution, physical_device_properties.limits.minUniformBufferOffsetAlignment, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
+    vsm_context.create_resources(depth_images_resolution, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
     hdr_tonemap_context.create_resources("resources//shaders", swapchain_images.size());
 
     // We create some attachments useful during rendering
@@ -409,8 +409,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     */
 
     // We request information about the buffer and images we need from vsm_context and store them in a vector
-    device_buffers_to_allocate.push_back(vsm_context.get_device_buffer_and_images().first);
-    auto vec = vsm_context.get_device_buffer_and_images().second;
+    auto vec = vsm_context.get_device_images();
     device_images_to_allocate.insert(device_images_to_allocate.end(), vec.begin(), vec.end());
 
     // We then allocate all needed images and buffers in a single allocation
@@ -421,7 +420,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     smaa_context.init_resources("resources//textures//AreaTexDX10.R8G8", "resources//textures//SearchTex.R8",
                                 physical_device_memory_properties, command_pool, command_buffers[0], queue);
     */
-    vsm_context.init_resources(command_pool, command_buffers[0], queue);
+    vsm_context.init_resources();
 
     create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0,1);
     create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);

@@ -163,7 +163,7 @@ vec3 hue_to_rgb(float hue)
     float R = abs(hue * 6 - 3) - 1;
     float G = 2 - abs(hue * 6 - 2);
     float B = 2 - abs(hue * 6 - 4);
-    return saturate(vec3(R,G,B));
+    return clamp(vec3(R,G,B), 0, 1);
 }
 
 // Converts from HSV to linear RGB

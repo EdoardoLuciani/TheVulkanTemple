@@ -21,19 +21,18 @@ public:
     VSMContext(VkDevice device);
     ~VSMContext();
 
-    std::pair<VkBuffer, std::vector<VkImage>> get_device_buffer_and_images();
+    std::vector<VkImage> get_device_images();
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();
     VkImageView get_image_view(int index);
 
-    void create_resources(std::vector<VkExtent2D> depth_images_res, uint64_t min_uniform_offset_alignment,
-                          std::string shader_dir_path, VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout);
-    void init_resources(VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue);
+    void create_resources(std::vector<VkExtent2D> depth_images_res, std::string shader_dir_path,
+                          VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout);
+    void init_resources();
     void allocate_descriptor_sets(VkDescriptorPool descriptor_pool);
     void record_into_command_buffer(VkCommandBuffer command_buffer, std::vector<VkDescriptorSet> object_data_set,
                                     VkDescriptorSet light_data_set, std::vector<vulkan_helper::ObjectRenderInfo> object_render_info);
 private:
     std::vector<VkExtent2D> depth_images_res;
-    uint64_t min_uniform_offset_alignment;
 
     VkDevice device = VK_NULL_HANDLE;
     VkSampler device_shadow_map_sampler = VK_NULL_HANDLE;
@@ -46,8 +45,6 @@ private:
 
     std::vector<VkImage> device_light_depth_images;
     std::vector<VkImageView> device_light_depth_image_views;
-
-    VkBuffer device_vsm_extent_buffer = VK_NULL_HANDLE;
 
     std::vector<VkFramebuffer> framebuffers;
 
