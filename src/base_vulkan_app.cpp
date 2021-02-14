@@ -10,6 +10,7 @@
 BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 					  		 std::vector<const char*> &desired_instance_level_extensions,
 					  		 VkExtent2D window_size,
+					  		 bool fullscreen,
 					  		 const std::vector<const char*> &desired_device_level_extensions,
 					  		 const VkPhysicalDeviceFeatures &required_physical_device_features,
 							 VkBool32 surface_support,
@@ -66,15 +67,13 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 	if (glfwInit() != GLFW_TRUE) { check_error(VK_ERROR_UNKNOWN, vulkan_helper::Error::GLFW_INITIALIZATION_FAILED); }
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	if ((window_size.width == 0) && (window_size.height == 0)) {
-		const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
-		this->window_size.width = mode->width;
-		this->window_size.height = mode->height;
+
+    this->window_size.width = window_size.width;
+    this->window_size.height = window_size.height;
+	if (fullscreen) {
 		window = glfwCreateWindow(this->window_size.width, this->window_size.height, application_name.c_str(), glfwGetPrimaryMonitor(), nullptr);
 	}
 	else {
-		this->window_size.width = window_size.width;
-		this->window_size.height = window_size.height;
 		window = glfwCreateWindow(this->window_size.width, this->window_size.height, application_name.c_str(), nullptr, nullptr);
 	}
 	if (window == nullptr) { check_error(VK_ERROR_UNKNOWN, vulkan_helper::Error::GLFW_WINDOW_CREATION_FAILED); }

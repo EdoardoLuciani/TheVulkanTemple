@@ -37,14 +37,15 @@ int main() {
 	options.HDR = 0;
 
 	try {
-		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, {800,800},
+	    VkExtent2D screen_size = {2560,1440};
+		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, false,
                                     desired_device_level_extensions, selected_device_features, VK_TRUE, options, &required_physical_device_indexing_features);
 		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb", "resources//models//Table//Table.glb"},128);
 		app.load_lights({
 		    {{1.0f, 1.0f, 2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 0.0f, 0.0f}, 90.0f, 1.0f},
             {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 50.0f}, 90.0f, 1.0f}
 		});
-		app.set_camera({{0.0f, 1.0f, 5.0f, 0.0f}, {0.0f, .0f, -10.0f}, 100.0f, 1.0f});
+		app.set_camera({{0.0f, 1.0f, 5.0f, 0.0f}, {0.0f, .0f, -10.0f}, 100.0f, static_cast<float>(screen_size.width)/screen_size.height});
 		FPSCameraControl fps_camera_control(app.get_glfw_window(), app.get_camera_ptr());
 
         app.init_renderer();

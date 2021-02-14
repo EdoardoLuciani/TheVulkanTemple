@@ -9,19 +9,26 @@
 #include "vulkan_helper.h"
 #include <unordered_map>
 
-GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name, std::vector<const char *> &desired_instance_level_extensions,
-                                                 VkExtent2D window_size, const std::vector<const char *> &desired_device_level_extensions,
-                                                 const VkPhysicalDeviceFeatures &required_physical_device_features, VkBool32 surface_support, EngineOptions options, void* additional_structure) :
+GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name,
+                                                 std::vector<const char *> &desired_instance_level_extensions,
+                                                 VkExtent2D window_size,
+                                                 bool fullscreen,
+                                                 const std::vector<const char *> &desired_device_level_extensions,
+                                                 const VkPhysicalDeviceFeatures &required_physical_device_features,
+                                                 VkBool32 surface_support,
+                                                 EngineOptions options,
+                                                 void* additional_structure) :
                          BaseVulkanApp(application_name,
                                        desired_instance_level_extensions,
                                        window_size,
+                                       fullscreen,
                                        desired_device_level_extensions,
                                        required_physical_device_features,
                                        surface_support,
                                        additional_structure),
                          vsm_context(device),
                          hdr_tonemap_context(device) {
-    screen_extent = {window_size.width, window_size.height, 1};
+    screen_extent = {this->swapchain_create_info.imageExtent.width, this->swapchain_create_info.imageExtent.height, 1};
 
     VkSamplerCreateInfo sampler_create_info = {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -600,9 +607,9 @@ void GraphicsModuleVulkanApp::create_framebuffers() {
             pbr_render_pass,
             attachments.size(),
             attachments.data(),
-            swapchain_create_info.imageExtent.width,
-            swapchain_create_info.imageExtent.height,
-            swapchain_create_info.imageArrayLayers
+            this->screen_extent.width,
+            this->screen_extent.height,
+            1
     };
     check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &pbr_framebuffer), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
 }
@@ -870,7 +877,7 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
                 nullptr,
                 pbr_render_pass,
                 pbr_framebuffer,
-                {{0,0},{swapchain_create_info.imageExtent}},
+                {{0,0},{screen_extent.width, screen_extent.height}},
                 clear_values.size(),
                 clear_values.data()
         };
@@ -887,7 +894,7 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         }
         vkCmdEndRenderPass(command_buffers[i]);
 
-        hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, swapchain_create_info.imageExtent);
+        hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {screen_extent.width, screen_extent.height});
 
         vkEndCommandBuffer(command_buffers[i]);
     }

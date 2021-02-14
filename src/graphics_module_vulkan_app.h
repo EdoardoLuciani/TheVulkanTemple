@@ -24,6 +24,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         GraphicsModuleVulkanApp(const std::string &application_name,
                       std::vector<const char*> &desired_instance_level_extensions,
                       VkExtent2D window_size,
+                      bool fullscreen,
                       const std::vector<const char*> &desired_device_level_extensions,
                       const VkPhysicalDeviceFeatures &required_physical_device_features,
                       VkBool32 surface_support,
