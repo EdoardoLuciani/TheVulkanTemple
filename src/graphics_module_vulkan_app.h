@@ -56,7 +56,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Models data
         VkBuffer device_mesh_data_buffer = VK_NULL_HANDLE;
         std::vector<VkImage> device_model_images;
-        std::vector<std::vector<VkImageView>> device_model_images_views;
+        std::vector<VkImageView> device_model_images_views;
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
         std::vector<vulkan_helper::ObjectRenderInfo> objects_info;
 

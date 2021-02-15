@@ -3,7 +3,7 @@
 const float PI = 3.14159265358979323846;
 #include "BRDF.inc.glsl"
 
-layout (set = 0, binding = 1) uniform sampler2D image[4];
+layout (set = 0, binding = 1) uniform sampler2DArray images;
 
 struct Light {
     mat4 view;
@@ -57,12 +57,12 @@ float ReduceLightBleeding(float p_max, float Amount) {
 }
 
 void main() {
-    vec3 albedo     = texture(image[0], fs_in.tex_coord).rgb;
-    float metallic  = texture(image[1], fs_in.tex_coord).b;
-    float roughness = texture(image[1], fs_in.tex_coord).g;
-    float ao        = texture(image[1], fs_in.tex_coord).r;
+    vec3 albedo     = pow(texture(images, vec3(fs_in.tex_coord, 0)).rgb, vec3(2.2));
+    float metallic  = texture(images, vec3(fs_in.tex_coord, 1)).b;
+    float roughness = texture(images, vec3(fs_in.tex_coord, 1)).g;
+    float ao        = texture(images, vec3(fs_in.tex_coord, 1)).r;
 
-    vec3 N = normalize(texture(image[2], fs_in.tex_coord).xyz * 2.0 - 1.0);
+    vec3 N = normalize(texture(images, vec3(fs_in.tex_coord, 2)).xyz * 2.0 - 1.0);
     vec3 V = normalize(fs_in.V);
 
     // For the normal incidence, if it is a diaelectric use a F0 of 0.04, otherwise use albedo
@@ -112,7 +112,7 @@ void main() {
     vec3 ambient = vec3(0.02) * albedo * ao;
 
     // final color is composed of ambient, diffuse, specular and emissive
-    vec3 color = ambient + rho + vec3(texture(image[3],fs_in.tex_coord));
+    vec3 color = ambient + rho + vec3( texture(images,vec3(fs_in.tex_coord, 3)) );
 
     // gamma correction is applied in the tonemap stage
     frag_color = vec4(color, 1.0);

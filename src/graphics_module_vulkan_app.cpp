@@ -118,22 +118,20 @@ void GraphicsModuleVulkanApp::create_render_pass() {
 }
 
 void GraphicsModuleVulkanApp::create_sets_layouts() {
-    std::array<VkSampler,4> samplers;
-    samplers.fill(device_max_aniso_linear_sampler);
     std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
     descriptor_set_layout_binding[0] = {
             0,
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             1,
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            &device_max_aniso_linear_sampler
+            nullptr
     };
     descriptor_set_layout_binding[1] = {
             1,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            4,
+            1,
             VK_SHADER_STAGE_FRAGMENT_BIT,
-            samplers.data()
+            &device_max_aniso_linear_sampler
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -232,22 +230,15 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
     allocate_and_bind_to_memory(device_model_data_memory, {device_mesh_data_buffer, device_model_uniform_buffer}, device_model_images, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // After the buffer and the images have been allocated and binded, we process to create the image views
-    for (auto& device_model_image_views : device_model_images_views) {
-        for (auto& device_model_image_view : device_model_image_views) {
-            vkDestroyImageView(device, device_model_image_view, nullptr);
-        }
-        device_model_image_views.clear();
+    for (auto& device_model_image_view : device_model_images_views) {
+        vkDestroyImageView(device, device_model_image_view, nullptr);
     }
     device_model_images_views.clear();
 
-    // Here when creating the images views we say that the first image view of an image is of type srgb and the other ones are unorm
+    // Here when create one image view with 4 layers for every image
     device_model_images_views.resize(device_model_images.size());
     for (uint32_t i=0; i<device_model_images.size(); i++) {
-        device_model_images_views[i].resize(model_data[i].image_layers);
-        for (uint32_t j=0; j<device_model_images_views[i].size(); j++) {
-            VkFormat image_format = (j == 0) ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
-            create_image_view(device_model_images_views[i][j], device_model_images[i], image_format, VK_IMAGE_ASPECT_COLOR_BIT, j, 1);
-        }
+            create_image_view(device_model_images_views[i], device_model_images[i], VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 0, 4);
     }
 
     // After setting the required memory we register the command buffer to upload the data
@@ -445,7 +436,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> sets_elements_required = {
             {
                     {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 + objects_info.size()},
-                    {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lights.size() + 4*objects_info.size()},
+                    {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lights.size() + objects_info.size()},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}
             },
             1 + 1 + objects_info.size()
@@ -547,7 +538,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
         nullptr
     };
 
-
+    // Lastly, the objects
     std::vector<VkDescriptorBufferInfo> object_descriptor_buffer_infos(objects_info.size());
     for(uint32_t i = 0, offset = 0; i<objects_info.size(); i++) {
         object_descriptor_buffer_infos[i] = {
@@ -557,18 +548,15 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
         };
         offset += vulkan_helper::get_aligned_memory_size(objects_info[i].uniform_data_size, physical_device_properties.limits.minUniformBufferOffsetAlignment);
     }
-    std::vector<std::array<VkDescriptorImageInfo,4>> object_descriptor_image_infos(objects_info.size());
+    std::vector<VkDescriptorImageInfo> object_descriptor_image_infos(objects_info.size());
     for(uint32_t i = 0; i<objects_info.size(); i++) {
-        for (uint32_t j = 0; j<object_descriptor_image_infos[i].size(); j++) {
-            object_descriptor_image_infos[i][j] = {
-                device_max_aniso_linear_sampler,
-                device_model_images_views[i][j],
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            };
-        }
+        object_descriptor_image_infos[i] = {
+            device_max_aniso_linear_sampler,
+            device_model_images_views[i],
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        };
     }
 
-    // Then the objects
     for (int i=0; i<objects_info.size(); i++) {
         write_descriptor_set[2*i+3] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -588,9 +576,9 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
                 descriptor_sets[i+2],
                 1,
                 0,
-                4,
+                1,
                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                object_descriptor_image_infos[i].data(),
+                &object_descriptor_image_infos[i],
                 nullptr,
                 nullptr
         };
@@ -990,10 +978,8 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkFreeMemory(device, host_model_uniform_memory, nullptr);
 
     // Model related things freed
-    for (auto& device_model_image_views : device_model_images_views) {
-        for (auto & device_model_image_view : device_model_image_views) {
-            vkDestroyImageView(device, device_model_image_view, nullptr);
-        }
+    for (auto& device_model_image_view : device_model_images_views) {
+        vkDestroyImageView(device, device_model_image_view, nullptr);
     }
     for (auto& device_model_image : device_model_images) {
         vkDestroyImage(device, device_model_image, nullptr);
@@ -1065,7 +1051,7 @@ void GraphicsModuleVulkanApp::create_image_view(VkImageView &image_view, VkImage
             nullptr,
             0,
             image,
-            VK_IMAGE_VIEW_TYPE_2D,
+            layer_count == 1 ? VK_IMAGE_VIEW_TYPE_2D : VK_IMAGE_VIEW_TYPE_2D_ARRAY,
             image_format,
             {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
             {aspect_mask, 0, VK_REMAINING_MIP_LEVELS, start_layer, layer_count}
