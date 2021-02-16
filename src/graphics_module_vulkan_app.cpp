@@ -28,7 +28,6 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        additional_structure),
                          vsm_context(device),
                          hdr_tonemap_context(device) {
-    screen_extent = {this->swapchain_create_info.imageExtent.width, this->swapchain_create_info.imageExtent.height, 1};
 
     VkSamplerCreateInfo sampler_create_info = {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -393,10 +392,12 @@ void GraphicsModuleVulkanApp::init_renderer() {
     hdr_tonemap_context.create_resources("resources//shaders", swapchain_images.size());
 
     // We create some attachments useful during rendering
-    create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, screen_extent, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+                 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_depth_image);
 
-    create_image(device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, screen_extent, 2,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    create_image(device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+                 2,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_render_target);
 
     // We request information about the images and buffer we need from smaa_context and store them in a vector
@@ -446,6 +447,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     vulkan_helper::insert_or_sum(sets_elements_required, vsm_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, hdr_tonemap_context.get_required_descriptor_pool_size_and_sets());
     std::vector<VkDescriptorPoolSize> descriptor_pool_size = vulkan_helper::convert_map_to_vector(sets_elements_required.first);
+
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             nullptr,
@@ -454,6 +456,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
             static_cast<uint32_t>(descriptor_pool_size.size()),
             descriptor_pool_size.data()
     };
+    vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
     vkCreateDescriptorPool(device, &descriptor_pool_create_info, nullptr, &attachments_descriptor_pool);
 
     // Next we allocate the vsm descriptors in the pool
@@ -595,10 +598,11 @@ void GraphicsModuleVulkanApp::create_framebuffers() {
             pbr_render_pass,
             attachments.size(),
             attachments.data(),
-            this->screen_extent.width,
-            this->screen_extent.height,
+            this->swapchain_create_info.imageExtent.width,
+            this->swapchain_create_info.imageExtent.height,
             1
     };
+    vkDestroyFramebuffer(device, pbr_framebuffer, nullptr);
     check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &pbr_framebuffer), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
 }
 
@@ -623,22 +627,22 @@ void GraphicsModuleVulkanApp::create_pbr_pipeline() {
 
     std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
         {
-            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SHADER_STAGE_VERTEX_BIT,
-            vertex_shader_module,
-            "main",
-            nullptr
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                nullptr,
+                0,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                vertex_shader_module,
+                "main",
+                nullptr
         },
         {
-            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            fragment_shader_module,
-            "main",
-            nullptr
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                nullptr,
+                0,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                fragment_shader_module,
+                "main",
+                nullptr
         }
     }};
 
@@ -649,28 +653,28 @@ void GraphicsModuleVulkanApp::create_pbr_pipeline() {
     };
     std::array<VkVertexInputAttributeDescription,4> vertex_input_attribute_description  {{
         {
-            0,
-            0,
-            VK_FORMAT_R32G32B32_SFLOAT,
-            0
+                0,
+                0,
+                VK_FORMAT_R32G32B32_SFLOAT,
+                0
         },
         {
-            1,
-            0,
-            VK_FORMAT_R32G32_SFLOAT,
-            3 * sizeof(float)
+                1,
+                0,
+                VK_FORMAT_R32G32_SFLOAT,
+                3 * sizeof(float)
         },
         {
-            2,
-            0,
-            VK_FORMAT_R32G32B32_SFLOAT,
-            5 * sizeof(float)
+                2,
+                0,
+                VK_FORMAT_R32G32B32_SFLOAT,
+                5 * sizeof(float)
         },
         {
-            3,
-            0,
-            VK_FORMAT_R32G32B32A32_SFLOAT,
-            8 * sizeof(float)
+                3,
+                0,
+                VK_FORMAT_R32G32B32A32_SFLOAT,
+                8 * sizeof(float)
         }
     }};
     VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
@@ -694,14 +698,14 @@ void GraphicsModuleVulkanApp::create_pbr_pipeline() {
     VkViewport viewport = {
             0.0f,
             0.0f,
-            static_cast<float>(screen_extent.width),
-            static_cast<float>(screen_extent.height),
+            static_cast<float>(swapchain_create_info.imageExtent.width),
+            static_cast<float>(swapchain_create_info.imageExtent.height),
             0.0f,
             1.0f
     };
     VkRect2D scissor = {
             {0,0},
-            {screen_extent.width, screen_extent.height}
+            {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height}
     };
     VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
             VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -777,6 +781,15 @@ void GraphicsModuleVulkanApp::create_pbr_pipeline() {
             {0.0f,0.0f,0.0f,0.0f}
     };
 
+    std::array<VkDynamicState,2> dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT ,VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo pipeline_dynamic_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            dynamic_states.size(),
+            dynamic_states.data()
+    };
+
     std::array<VkDescriptorSetLayout,3> descriptor_set_layouts = {pbr_model_data_set_layout, light_data_set_layout, camera_data_set_layout};
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -787,6 +800,7 @@ void GraphicsModuleVulkanApp::create_pbr_pipeline() {
             0,
             nullptr
     };
+    vkDestroyPipelineLayout(device, pbr_pipeline_layout, nullptr);
     vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &pbr_pipeline_layout);
 
     VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
@@ -803,19 +817,23 @@ void GraphicsModuleVulkanApp::create_pbr_pipeline() {
             &pipeline_multisample_state_create_info,
             &pipeline_depth_stencil_state_create_info,
             &pipeline_color_blend_state_create_info,
-            nullptr,
+            &pipeline_dynamic_state_create_info,
             pbr_pipeline_layout,
             pbr_render_pass,
             0,
             VK_NULL_HANDLE,
             -1
     };
+    vkDestroyPipeline(device, pbr_pipeline, nullptr);
     vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &pbr_pipeline);
+
     vkDestroyShaderModule(device, vertex_shader_module, nullptr);
     vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
 void GraphicsModuleVulkanApp::record_command_buffers() {
+    vkResetCommandPool(device, command_pool, 0);
+
     for (uint32_t i = 0; i < swapchain_images.size(); i++) {
         VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr };
         vkBeginCommandBuffer(command_buffers[i], &command_buffer_begin_info);
@@ -865,13 +883,29 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
                 nullptr,
                 pbr_render_pass,
                 pbr_framebuffer,
-                {{0,0},{screen_extent.width, screen_extent.height}},
+                {{0,0},{swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height}},
                 clear_values.size(),
                 clear_values.data()
         };
         vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline);
+        VkViewport viewport = {
+                0.0f,
+                0.0f,
+                static_cast<float>(swapchain_create_info.imageExtent.width),
+                static_cast<float>(swapchain_create_info.imageExtent.height),
+                0.0f,
+                1.0f
+        };
+        vkCmdSetViewport(command_buffers[i], 0, 1, &viewport);
+
+        VkRect2D scissor = {
+                {0,0},
+                {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height}
+        };
+        vkCmdSetScissor(command_buffers[i], 0, 1, &scissor);
+
         for (int j=0; j<objects_info.size(); j++) {
             std::array<VkDescriptorSet,3> to_bind = { object_descriptor_sets[j], descriptor_sets[1], descriptor_sets[0] };
             vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, to_bind.size(), to_bind.data(), 0, nullptr);
@@ -882,18 +916,11 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         }
         vkCmdEndRenderPass(command_buffers[i]);
 
-        hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {screen_extent.width, screen_extent.height});
+        hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height});
 
         vkEndCommandBuffer(command_buffers[i]);
     }
 }
-
-uint8_t* GraphicsModuleVulkanApp::get_model_uniform_data_ptr(int model_index) {
-    return static_cast<uint8_t*>(host_model_uniform_buffer_ptr) + model_index *
-    vulkan_helper::get_aligned_memory_size(objects_info.front().uniform_data_size, physical_device_properties.limits.minUniformBufferOffsetAlignment);
-}
-
-Camera* GraphicsModuleVulkanApp::get_camera_ptr() { return &camera; }
 
 void GraphicsModuleVulkanApp::start_frame_loop() {
     uint32_t rendered_frames = 0;
@@ -911,7 +938,8 @@ void GraphicsModuleVulkanApp::start_frame_loop() {
         uint32_t image_index = 0;
         VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, semaphores[0], VK_NULL_HANDLE, &image_index);
         if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
-            //on_window_resize();
+            on_window_resize();
+            continue;
         }
         else if (res != VK_SUCCESS) {
             check_error(res, vulkan_helper::Error::ACQUIRE_NEXT_IMAGE_FAILED);
@@ -929,7 +957,7 @@ void GraphicsModuleVulkanApp::start_frame_loop() {
                 1,
                 &semaphores[1]
         };
-        res = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+        check_error(vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE), vulkan_helper::Error::QUEUE_SUBMIT_FAILED);
 
         VkPresentInfoKHR present_info = {
                 VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -942,7 +970,8 @@ void GraphicsModuleVulkanApp::start_frame_loop() {
         };
         res = vkQueuePresentKHR(queue, &present_info);
         if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
-            //on_window_resize();
+            on_window_resize();
+            continue;
         }
         else if (res != VK_SUCCESS) {
             check_error(res, vulkan_helper::Error::QUEUE_PRESENT_FAILED);
@@ -957,6 +986,20 @@ void GraphicsModuleVulkanApp::start_frame_loop() {
         }
     }
 }
+
+void GraphicsModuleVulkanApp::on_window_resize() {
+    vkDeviceWaitIdle(device);
+
+    create_swapchain();
+    init_renderer();
+}
+
+uint8_t* GraphicsModuleVulkanApp::get_model_uniform_data_ptr(int model_index) {
+    return static_cast<uint8_t*>(host_model_uniform_buffer_ptr) + model_index *
+    vulkan_helper::get_aligned_memory_size(objects_info.front().uniform_data_size, physical_device_properties.limits.minUniformBufferOffsetAlignment);
+}
+
+Camera* GraphicsModuleVulkanApp::get_camera_ptr() { return &camera; }
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDeviceWaitIdle(device);
@@ -1008,6 +1051,7 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
 }
 
+// ----------------- Helper methods -----------------
 void GraphicsModuleVulkanApp::create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage) {
     VkBufferCreateInfo buffer_create_info = {
         VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,

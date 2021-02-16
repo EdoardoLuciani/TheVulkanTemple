@@ -68,13 +68,11 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    this->window_size.width = window_size.width;
-    this->window_size.height = window_size.height;
 	if (fullscreen) {
-		window = glfwCreateWindow(this->window_size.width, this->window_size.height, application_name.c_str(), glfwGetPrimaryMonitor(), nullptr);
+		window = glfwCreateWindow(window_size.width, window_size.height, application_name.c_str(), glfwGetPrimaryMonitor(), nullptr);
 	}
 	else {
-		window = glfwCreateWindow(this->window_size.width, this->window_size.height, application_name.c_str(), nullptr, nullptr);
+		window = glfwCreateWindow(window_size.width, window_size.height, application_name.c_str(), nullptr, nullptr);
 	}
 	if (window == nullptr) { check_error(VK_ERROR_UNKNOWN, vulkan_helper::Error::GLFW_WINDOW_CREATION_FAILED); }
 
@@ -235,7 +233,11 @@ void BaseVulkanApp::create_swapchain() {
 				vulkan_helper::Error::SURFACE_CAPABILITIES_RETRIEVAL_FAILED);
 
 	uint32_t number_of_images = vulkan_helper::select_number_of_images(surface_capabilities);
-	VkExtent2D size_of_images = vulkan_helper::select_size_of_images(surface_capabilities, window_size);
+
+    int width, height;
+    glfwGetWindowSize(window, &width, &height);
+	VkExtent2D size_of_images = vulkan_helper::select_size_of_images(surface_capabilities, { static_cast<uint32_t>(width),static_cast<uint32_t>(height) });
+
 	VkImageUsageFlags image_usage = vulkan_helper::select_image_usage(surface_capabilities, VK_IMAGE_USAGE_STORAGE_BIT);
 	VkSurfaceTransformFlagBitsKHR surface_transform = vulkan_helper::select_surface_transform(surface_capabilities, VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR);
 

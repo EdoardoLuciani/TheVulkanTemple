@@ -9,6 +9,7 @@ FPSCameraControl::FPSCameraControl(GLFWwindow *window_handle, Camera *camera) : 
     glfwSetKeyCallback(window_handle, key_callback_static);
     glfwSetCursorPosCallback(window_handle, cursor_position_callback_static);
     glfwSetInputMode(window_handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwSetWindowSizeCallback(window_handle, window_size_callback_static);
     glfwSetWindowUserPointer(window_handle, this);
 }
 
@@ -106,3 +107,13 @@ void FPSCameraControl::cursor_position_callback(GLFWwindow* window, double xpos,
     temp = glm::normalize(temp);
     camera->dir = glm::rotate(temp, camera->dir);
 }
+
+void FPSCameraControl::window_size_callback_static(GLFWwindow* window, int width, int height) {
+    FPSCameraControl* that = static_cast<FPSCameraControl*>(glfwGetWindowUserPointer(window));
+    that->window_size_callback(window, width, height);
+}
+
+void FPSCameraControl::window_size_callback(GLFWwindow* window, int width, int height) {
+    camera->aspect = static_cast<float>(width)/height;
+}
+

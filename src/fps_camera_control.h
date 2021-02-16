@@ -16,6 +16,9 @@ class FPSCameraControl {
 
         static void cursor_position_callback_static(GLFWwindow* window, double xpos, double ypos);
         void cursor_position_callback(GLFWwindow* window, double xpos, double ypos);
+
+        static void window_size_callback_static(GLFWwindow* window, int width, int height);
+        void window_size_callback(GLFWwindow* window, int width, int height);
 };
 
 #endif

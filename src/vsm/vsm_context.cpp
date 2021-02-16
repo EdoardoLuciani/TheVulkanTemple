@@ -170,8 +170,13 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, std:
     this->depth_images_res = depth_images_res;
 
     // We create two vsm depth images for every light
+    for (int i=0; i<device_vsm_depth_images.size(); i++) {
+        vkDestroyImage(device, device_vsm_depth_images[i], nullptr);
+        vkDestroyImage(device, device_light_depth_images[i], nullptr);
+    }
     device_vsm_depth_images.resize(depth_images_res.size());
     device_light_depth_images.resize(depth_images_res.size());
+
     for (int i=0; i<device_vsm_depth_images.size(); i++) {
         VkImageCreateInfo image_create_info = {
                 VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -199,7 +204,10 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, std:
     }
 
     create_shadow_map_pipeline(shader_dir_path, pbr_model_set_layout, light_set_layout);
-    create_gaussian_blur_pipelines(shader_dir_path);
+
+    if (gaussian_blur_xy_pipelines[0] == VK_NULL_HANDLE || gaussian_blur_xy_pipelines[1] == VK_NULL_HANDLE) {
+        create_gaussian_blur_pipelines(shader_dir_path);
+    }
 }
 
 void VSMContext::create_shadow_map_pipeline(std::string shader_dir_path, VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout) {
@@ -403,6 +411,7 @@ void VSMContext::create_shadow_map_pipeline(std::string shader_dir_path, VkDescr
             1,
             &push_constant_range
     };
+    vkDestroyPipelineLayout(device, shadow_map_pipeline_layout, nullptr);
     vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &shadow_map_pipeline_layout);
 
     VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
@@ -426,8 +435,9 @@ void VSMContext::create_shadow_map_pipeline(std::string shader_dir_path, VkDescr
             VK_NULL_HANDLE,
             -1
     };
-
+    vkDestroyPipeline(device, shadow_map_pipeline, nullptr);
     vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &shadow_map_pipeline);
+
     vkDestroyShaderModule(device, vertex_shader_module, nullptr);
     vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
@@ -525,6 +535,11 @@ std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> VSMContext::
 }
 
 void VSMContext::create_image_views() {
+    for (int i=0; i<device_vsm_depth_image_views.size(); i++) {
+        vkDestroyImageView(device, device_vsm_depth_image_views[i][0], nullptr);
+        vkDestroyImageView(device, device_vsm_depth_image_views[i][1], nullptr);
+        vkDestroyImageView(device, device_light_depth_image_views[i], nullptr);
+    }
     device_vsm_depth_image_views.resize(device_vsm_depth_images.size());
     device_light_depth_image_views.resize(device_light_depth_images.size());
 
@@ -552,6 +567,10 @@ void VSMContext::create_image_views() {
 
 void VSMContext::create_framebuffers() {
     // We need to create one framebuffer for each light
+    for (auto& framebuffer : framebuffers) {
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+
     framebuffers.resize(depth_images_res.size());
     for (int i=0; i<depth_images_res.size(); i++) {
         std::array<VkImageView,2> attachments {device_light_depth_image_views[i], device_vsm_depth_image_views[i][0] };

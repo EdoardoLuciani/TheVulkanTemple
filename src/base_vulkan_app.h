@@ -38,7 +38,6 @@ class BaseVulkanApp {
 		#ifndef NDEBUG
 			VkDebugReportCallbackEXT debug_report_callback;
 		#endif
-		VkExtent2D window_size;
 		GLFWwindow* window;
 		VkSurfaceKHR surface;
 		VkPhysicalDevice selected_physical_device = VK_NULL_HANDLE;

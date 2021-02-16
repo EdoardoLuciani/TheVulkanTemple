@@ -104,6 +104,7 @@ void HDRTonemapContext::create_resources(std::string shader_dir_path, uint32_t o
             0,
             nullptr
     };
+    vkDestroyPipelineLayout(device, hdr_tonemap_pipeline_layout, nullptr);
     vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &hdr_tonemap_pipeline_layout);
 
     VkComputePipelineCreateInfo compute_pipeline_create_info = {
@@ -115,6 +116,7 @@ void HDRTonemapContext::create_resources(std::string shader_dir_path, uint32_t o
             VK_NULL_HANDLE,
             -1
     };
+    vkDestroyPipeline(device, hdr_tonemap_pipeline, nullptr);
     vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &compute_pipeline_create_info, nullptr, &hdr_tonemap_pipeline);
 
     vkDestroyShaderModule(device, compute_shader_module, nullptr);
@@ -129,7 +131,12 @@ std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> HDRTonemapCo
 
 void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, std::vector<VkImage> out_images, VkFormat image_format) {
     this->out_images = out_images;
+
+    for (int i=0; i<out_images_views.size(); i++) {
+        vkDestroyImageView(device, out_images_views[i], nullptr);
+    }
     out_images_views.resize(out_images.size());
+
     for (int i=0; i<out_images_views.size(); i++) {
         VkImageViewCreateInfo image_view_create_info = {
                 VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,

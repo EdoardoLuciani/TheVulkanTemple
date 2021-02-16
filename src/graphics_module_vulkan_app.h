@@ -38,13 +38,13 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void set_camera(Camera camera);
         void init_renderer();
 
+        void start_frame_loop();
+
+        // Methods to manage the scene objects
         uint8_t* get_model_uniform_data_ptr(int model_index);
         Camera* get_camera_ptr();
-
-        void start_frame_loop();
     private:
         EngineOptions engine_options;
-        VkExtent3D screen_extent;
         VkSampler device_max_aniso_linear_sampler;
 
         // Model uniform data
@@ -108,6 +108,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void create_framebuffers();
         void create_pbr_pipeline();
         void record_command_buffers();
+        void on_window_resize();
 
         // Helper methods
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);
