@@ -5,9 +5,12 @@
 #define SMAA_GLSL_4 1
 #define SMAA_PREDICATION 1
 
+/*
 layout (set = 1, binding = 0) uniform uniform_buffer1 {
 	vec4 SMAA_RT_METRICS;
 };
+*/
+#define SMAA_RT_METRICS vec4(1.0f/800.0f, 1.0f/800.0f, 800.0f, 800.0f)
 #include "SMAA.h"
 
 layout (location = 0) out VS_OUT {

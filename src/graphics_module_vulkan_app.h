@@ -76,8 +76,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         std::array<VkImageView, 2> device_render_target_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
         // Device buffer that hold camera and lights information
         VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
-        // Todo: add SmaaContext
-        //SmaaContext smaa_context;
+        // Contexts for graphical effects
+        SmaaContext smaa_context;
         VSMContext vsm_context;
         HDRTonemapContext hdr_tonemap_context;
         // Memory in which all attachment reside

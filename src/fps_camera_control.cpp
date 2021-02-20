@@ -8,7 +8,7 @@
 FPSCameraControl::FPSCameraControl(GLFWwindow *window_handle, Camera *camera) : camera{camera} {
     glfwSetKeyCallback(window_handle, key_callback_static);
     glfwSetCursorPosCallback(window_handle, cursor_position_callback_static);
-    glfwSetInputMode(window_handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    //glfwSetInputMode(window_handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetWindowSizeCallback(window_handle, window_size_callback_static);
     glfwSetWindowUserPointer(window_handle, this);
 }
