@@ -10,7 +10,7 @@ class SmaaContext {
         SmaaContext(VkDevice device);
         ~SmaaContext();
 
-        std::pair<VkBuffer, std::array<VkImage, 4>> get_device_buffers_and_images();
+        std::array<VkImage, 4> get_device_images();
         std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();
 
         void create_resources(VkExtent2D screen_res, std::string shader_dir_path);
@@ -24,7 +24,7 @@ class SmaaContext {
     private:
         VkDevice device = VK_NULL_HANDLE;
         VkSampler device_render_target_sampler = VK_NULL_HANDLE;
-        std::array<VkDescriptorSetLayout, 4> smaa_descriptor_sets_layout = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+        std::array<VkDescriptorSetLayout, 3> smaa_descriptor_sets_layout = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
         std::array<VkRenderPass, 3> render_passes = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
 
         VkExtent3D screen_extent;
@@ -48,11 +48,8 @@ class SmaaContext {
         VkImageView device_smaa_data_edge_image_view = VK_NULL_HANDLE;
         VkImageView device_smaa_data_weight_image_view = VK_NULL_HANDLE;
 
-        // Buffer to hold the resolution of the images, might be substituted with textureSize in shader
-        VkBuffer device_smaa_rt_metrics_buffer = VK_NULL_HANDLE;
-
         // Descriptor layouts for the pipelines
-        std::array<VkDescriptorSet, 4> smaa_descriptor_sets = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+        std::array<VkDescriptorSet, 3> smaa_descriptor_sets = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
 
         // Framebuffers for every pipeline
         std::array<VkFramebuffer, 3> framebuffers = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};

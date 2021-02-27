@@ -407,8 +407,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     device_images_to_allocate.insert(device_images_to_allocate.end(), vec.begin(), vec.end());
 
     // We request information about the images and buffer we need from smaa_context and store them in a vector
-    device_buffers_to_allocate.push_back(smaa_context.get_device_buffers_and_images().first);
-    auto smaa_array_images = smaa_context.get_device_buffers_and_images().second;
+    auto smaa_array_images = smaa_context.get_device_images();
     device_images_to_allocate.insert(device_images_to_allocate.end(), smaa_array_images.begin(), smaa_array_images.end());
 
     // We then allocate all needed images and buffers in a single allocation

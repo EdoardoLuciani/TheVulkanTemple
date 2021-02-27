@@ -29,13 +29,16 @@ SmaaContext::SmaaContext(VkDevice device) {
     };
     check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_render_target_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
 
+    std::array<VkSampler, 3> immutable_samplers;
+    immutable_samplers.fill(device_render_target_sampler);
+
     // We also need to create the layouts for the descriptors
     VkDescriptorSetLayoutBinding descriptor_set_layout_binding = {
             0,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             2,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            immutable_samplers.data()
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -51,8 +54,8 @@ SmaaContext::SmaaContext(VkDevice device) {
             0,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             3,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
+            VK_SHADER_STAGE_VERTEX_BIT |VK_SHADER_STAGE_FRAGMENT_BIT,
+            immutable_samplers.data()
     };
     descriptor_set_layout_create_info.pBindings = &descriptor_set_layout_binding;
     check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &smaa_descriptor_sets_layout[1]), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
@@ -62,22 +65,11 @@ SmaaContext::SmaaContext(VkDevice device) {
             0,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             2,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
+            VK_SHADER_STAGE_VERTEX_BIT |VK_SHADER_STAGE_FRAGMENT_BIT,
+            immutable_samplers.data()
     };
     descriptor_set_layout_create_info.pBindings = &descriptor_set_layout_binding;
     check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &smaa_descriptor_sets_layout[2]), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
-
-    // Last layout is for the SMAA_RT_METRICS which contain the resolution
-    descriptor_set_layout_binding = {
-            0,
-            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            1,
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
-    };
-    descriptor_set_layout_create_info.pBindings = &descriptor_set_layout_binding;
-    check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &smaa_descriptor_sets_layout[3]), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
 
     // Smaa edge renderpass
     std::array<VkAttachmentDescription, 2> attachment_description {{
@@ -145,7 +137,6 @@ SmaaContext::~SmaaContext() {
         vkDestroyRenderPass(device, render_pass, nullptr);
     }
 
-    vkDestroyBuffer(device, device_smaa_rt_metrics_buffer, nullptr);
     vkDestroyImageView(device, device_smaa_area_image_view, nullptr);
     vkDestroyImageView(device, device_smaa_search_image_view, nullptr);
     vkDestroyImageView(device, device_smaa_stencil_image_view, nullptr);
@@ -169,16 +160,14 @@ SmaaContext::~SmaaContext() {
     }
 }
 
-std::pair<VkBuffer, std::array<VkImage, 4>> SmaaContext::get_device_buffers_and_images() {
-    return std::make_pair(device_smaa_rt_metrics_buffer,
-                          std::array<VkImage, 4>{device_smaa_area_image, device_smaa_search_image, device_smaa_stencil_image, device_smaa_data_image});
+std::array<VkImage, 4> SmaaContext::get_device_images() {
+    return std::array<VkImage, 4>{device_smaa_area_image, device_smaa_search_image, device_smaa_stencil_image, device_smaa_data_image};
 }
 
 std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> SmaaContext::get_required_descriptor_pool_size_and_sets() {
     return {
-            {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7},
-             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}},
-            4
+            {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7}},
+            3
     };
 }
 
@@ -226,19 +215,6 @@ void SmaaContext::create_resources(VkExtent2D screen_res, std::string shader_dir
     vkDestroyImage(device, device_smaa_data_image, nullptr);
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_data_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 
-    // We need to create a device buffer that is gonna hold SMAA_RT_METRICS of size 16b
-    VkBufferCreateInfo buffer_create_info = {
-            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            nullptr,
-            0,
-            16,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_SHARING_MODE_EXCLUSIVE,
-            0,
-            nullptr
-    };
-    vkDestroyBuffer(device, device_smaa_rt_metrics_buffer, nullptr);
-    check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &device_smaa_rt_metrics_buffer), vulkan_helper::Error::BUFFER_CREATION_FAILED);
 }
 
 void SmaaContext::create_edge_pipeline(std::string shader_dir_path) {
@@ -328,7 +304,7 @@ void SmaaContext::create_edge_pipeline(std::string shader_dir_path) {
             VK_FALSE,
             VK_FALSE,
             VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_FRONT_BIT,
+            VK_CULL_MODE_NONE,
             VK_FRONT_FACE_COUNTER_CLOCKWISE,
             VK_FALSE,
             0.0f,
@@ -385,13 +361,12 @@ void SmaaContext::create_edge_pipeline(std::string shader_dir_path) {
             {0.0f,0.0f,0.0f,0.0f}
     };
 
-    std::array<VkDescriptorSetLayout,2> smaa_edge_descriptor_set_layouts = { smaa_descriptor_sets_layout[0], smaa_descriptor_sets_layout[3] };
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             nullptr,
             0,
-            smaa_edge_descriptor_set_layouts.size(),
-            smaa_edge_descriptor_set_layouts.data(),
+            1,
+            &smaa_descriptor_sets_layout[0],
             0,
             nullptr
     };
@@ -563,20 +538,6 @@ void SmaaContext::init_resources(std::string support_images_dir, const VkPhysica
     };
     vkCmdCopyBufferToImage(command_buffer, host_transition_buffer, device_smaa_search_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
-    /*
-    glm::vec4 value_to_copy = glm::vec4(1.0f / screen_extent.width,
-                                    1.0f / screen_extent.height,
-                                    static_cast<float>(screen_extent.width),
-                                    static_cast<float>(screen_extent.height));
-    */
-
-    std::array<float, 4> value_to_copy = {1.0f / screen_extent.width,
-                                          1.0f / screen_extent.height,
-                                          static_cast<float>(screen_extent.width),
-                                          static_cast<float>(screen_extent.height)};
-
-    vkCmdUpdateBuffer(command_buffer, device_smaa_rt_metrics_buffer, 0, sizeof(glm::vec4),
-                      value_to_copy.data());
 
     // After the copy we need to transition the images to be shader ready
     image_memory_barriers[0] = {
@@ -594,14 +555,7 @@ void SmaaContext::init_resources(std::string support_images_dir, const VkPhysica
     image_memory_barriers[1] = image_memory_barriers[0];
     image_memory_barriers[1].image = device_smaa_search_image;
 
-    // Also for the smaa_rt_metrics buffer
-    VkMemoryBarrier memory_barrier = {
-            VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            nullptr,
-            VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_ACCESS_UNIFORM_READ_BIT
-    };
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
     vkEndCommandBuffer(command_buffer);
 
     VkFenceCreateInfo fence_create_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,nullptr,0 };
@@ -655,9 +609,7 @@ void SmaaContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
             { device_render_target_sampler, device_smaa_data_weight_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
     }};
 
-    VkDescriptorBufferInfo smaa_rt_metrics = {device_smaa_rt_metrics_buffer, 0, sizeof(glm::vec4)};
-
-    std::array<VkWriteDescriptorSet,4> write_descriptor_set {{{
+    std::array<VkWriteDescriptorSet,3> write_descriptor_set {{{
         // First write is for the smaa edge descriptor
         VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         nullptr,
@@ -695,19 +647,6 @@ void SmaaContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
         smaa_blend_descriptor_images_info.data(),
         nullptr,
         nullptr
-        },
-            // Fourth write is for smaa_rt_metrics
-        {
-        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        nullptr,
-        smaa_descriptor_sets[3],
-        0,
-        0,
-        1,
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        nullptr,
-        &smaa_rt_metrics,
-        nullptr
         }
     }};
     vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
@@ -730,8 +669,7 @@ void SmaaContext::record_into_command_buffer(VkCommandBuffer command_buffer) {
     vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smaa_pipelines[0]);
-    std::array<VkDescriptorSet, 2> bind_smaa_descriptor_sets = { smaa_descriptor_sets[0], smaa_descriptor_sets[3] };
-    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smaa_pipelines_layout[0], 0, bind_smaa_descriptor_sets.size(), bind_smaa_descriptor_sets.data(), 0, nullptr);
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smaa_pipelines_layout[0], 0, 1, &smaa_descriptor_sets[0], 0, nullptr);
     vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
     // Smaa edge renderpass end
