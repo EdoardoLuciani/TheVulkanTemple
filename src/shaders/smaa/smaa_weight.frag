@@ -5,12 +5,11 @@
 #define SMAA_GLSL_4 1
 #define SMAA_PREDICATION 1
 
-layout (set = 1, binding = 0) uniform uniform_buffer1 {
-	vec4 SMAA_RT_METRICS;
-};
+layout (set = 0, binding = 0) uniform sampler2D textures[3];
+
+vec4 SMAA_RT_METRICS = vec4(1.0f/textureSize(textures[0], 0), textureSize(textures[0], 0));
 #include "SMAA.h"
 
-layout (set = 0, binding = 0) uniform sampler2D textures[3];
 layout (location = 0) in VS_OUT {
 	vec2 tex_coord;
     vec2 pixcoord;

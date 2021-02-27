@@ -27,7 +27,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        surface_support,
                                        additional_structure),
                          vsm_context(device),
-                         smaa_context(device),
+                         smaa_context(device, VK_FORMAT_R32G32B32A32_SFLOAT),
                          hdr_tonemap_context(device) {
 
     VkSamplerCreateInfo sampler_create_info = {
@@ -414,13 +414,12 @@ void GraphicsModuleVulkanApp::init_renderer() {
     allocate_and_bind_to_memory(device_attachments_memory, device_buffers_to_allocate, device_images_to_allocate,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // We then upload the images to memory
-
-    vsm_context.init_resources();
-    smaa_context.init_resources("resources//textures", physical_device_memory_properties, command_pool, command_buffers[0], queue);
-
     create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0,1);
     create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
     create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
+
+    vsm_context.init_resources();
+    smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
 
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();

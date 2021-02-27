@@ -7,7 +7,7 @@
 
 class SmaaContext {
     public:
-        SmaaContext(VkDevice device);
+        SmaaContext(VkDevice device, VkFormat out_image_format);
         ~SmaaContext();
 
         std::array<VkImage, 4> get_device_images();
@@ -15,7 +15,7 @@ class SmaaContext {
 
         void create_resources(VkExtent2D screen_res, std::string shader_dir_path);
         void init_resources(std::string support_images_dir, const VkPhysicalDeviceMemoryProperties &memory_properties,
-                            VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue);
+                            VkImageView out_image_view, VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue);
 
         void allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView depth_image_view);
 
@@ -58,8 +58,10 @@ class SmaaContext {
         std::array<VkPipeline, 3> smaa_pipelines = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
 
         void create_edge_pipeline(std::string shader_dir_path);
+        void create_weight_pipeline(std::string shader_dir_path);
+        void create_blend_pipeline(std::string shader_dir_path);
         void create_image_views();
-        void create_framebuffers();
+        void create_framebuffers(VkImageView out_image_view);
 };
 
 #endif //BASE_VULKAN_APP_SMAA_CONTEXT_H
