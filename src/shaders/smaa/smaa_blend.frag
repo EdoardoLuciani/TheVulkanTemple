@@ -18,6 +18,5 @@ layout (location = 0) in VS_OUT {
 layout (location = 0) out vec4 frag_color;
 
 void main() {
-    vec4 color = SMAANeighborhoodBlendingPS(fs_in.tex_coord, fs_in.offset, textures[0], textures[1]);
-	frag_color = vec4(pow(vec3(color), vec3(2.2)),1.0f);
+    frag_color = SMAANeighborhoodBlendingPS(fs_in.tex_coord, fs_in.offset, textures[0], textures[1]);
 }

@@ -290,7 +290,7 @@ void SmaaContext::create_resources(VkExtent2D screen_res, std::string shader_dir
     vkDestroyImage(device, device_smaa_area_image, nullptr);
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_area_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 
-    image_create_info.format = VK_FORMAT_R8_UNORM;
+    image_create_info.format = smaa_search_image_format;
     image_create_info.extent = smaa_search_image_extent;
     vkDestroyImage(device, device_smaa_search_image, nullptr);
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_search_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
@@ -308,7 +308,6 @@ void SmaaContext::create_resources(VkExtent2D screen_res, std::string shader_dir
     image_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     vkDestroyImage(device, device_smaa_data_image, nullptr);
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_data_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
-
 }
 
 void SmaaContext::create_edge_pipeline(std::string shader_dir_path) {
@@ -611,8 +610,8 @@ void SmaaContext::create_weight_pipeline(std::string shader_dir_path) {
             VK_COMPARE_OP_LESS,
             VK_FALSE,
             VK_TRUE,
-            {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL, 0xff, 0xff, 1 },
-            {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL, 0xff, 0xff, 1 },
+            {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0xff, 0xff, 1 },
+            {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0xff, 0xff, 1 },
             0.0f,
             1.0f
     };
@@ -1068,8 +1067,8 @@ void SmaaContext::init_resources(std::string support_images_dir, const VkPhysica
             0,
             nullptr,
             &flags,
-            0,
-            nullptr,
+            1,
+            &command_buffer,
             0,
             nullptr,
     };

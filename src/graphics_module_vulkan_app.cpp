@@ -458,7 +458,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     // Next we allocate the vsm descriptors in the pool
     vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
     smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0], device_depth_image_view);
-    hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0], swapchain_images, swapchain_create_info.imageFormat);
+    hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[1], swapchain_images, swapchain_create_info.imageFormat);
 
     // then we allocate descriptor sets for camera, lights and objects
     std::vector<VkDescriptorSetLayout> layouts_of_sets;
