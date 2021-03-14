@@ -103,7 +103,7 @@ void main() {
         // apply the chebyshev variance equation to give a probability that the fragment is in shadow
 	    float p_max = ChebyshevUpperBound(moments, fs_in.shadow_coord[i].z);
         // We apply a fix to the light bleeding problem
-        float shadow = ReduceLightBleeding(p_max, 0.5);
+        float shadow = ReduceLightBleeding(p_max, 0.6);
 
         rho += (rho_s + rho_d) * radiance * NdotL * shadow;
     }

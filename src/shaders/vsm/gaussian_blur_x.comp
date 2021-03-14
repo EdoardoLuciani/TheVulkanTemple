@@ -2,7 +2,7 @@
 layout (local_size_x = 32, local_size_y = 32) in;
 
 layout (set = 0, binding = 0) uniform sampler2D in_shadow_map;
-layout (set = 0, binding = 1, rg32f) uniform image2D out_shadow_map;
+layout (set = 0, binding = 1, rg16f) uniform image2D out_shadow_map;
 
 /*
 -----------------------------------------------------------

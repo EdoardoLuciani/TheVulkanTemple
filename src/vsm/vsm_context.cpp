@@ -92,7 +92,7 @@ VSMContext::VSMContext(VkDevice device) {
         },
         {
             0,
-            VK_FORMAT_R32G32_SFLOAT,
+            VK_FORMAT_R16G16_SFLOAT,
             VK_SAMPLE_COUNT_1_BIT,
             VK_ATTACHMENT_LOAD_OP_CLEAR,
             VK_ATTACHMENT_STORE_OP_STORE,
@@ -183,7 +183,7 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, std:
                 nullptr,
                 0,
                 VK_IMAGE_TYPE_2D,
-                VK_FORMAT_R32G32_SFLOAT,
+                VK_FORMAT_R16G16_SFLOAT,
                 {depth_images_res[i].width, depth_images_res[i].height, 1},
                 1,
                 2,
@@ -550,7 +550,7 @@ void VSMContext::create_image_views() {
                 0,
                 device_vsm_depth_images[i],
                 VK_IMAGE_VIEW_TYPE_2D,
-                VK_FORMAT_R32G32_SFLOAT,
+                VK_FORMAT_R16G16_SFLOAT,
                 {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
                 { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0 , 1 }
         };
