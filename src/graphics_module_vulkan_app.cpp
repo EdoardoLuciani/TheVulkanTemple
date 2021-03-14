@@ -131,7 +131,7 @@ void GraphicsModuleVulkanApp::create_sets_layouts() {
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             1,
             VK_SHADER_STAGE_FRAGMENT_BIT,
-            &max_aniso_linear_sampler
+            nullptr
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -532,7 +532,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
 
     // Next we allocate the vsm descriptors in the pool
     vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
-    smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0], device_depth_image_view);
+    smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0]);
     hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[1], swapchain_images, swapchain_create_info.imageFormat);
 
     // then we allocate descriptor sets for camera, lights and objects

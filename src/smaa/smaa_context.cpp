@@ -36,7 +36,7 @@ SmaaContext::SmaaContext(VkDevice device, VkFormat out_image_format) {
     VkDescriptorSetLayoutBinding descriptor_set_layout_binding = {
             0,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            2,
+            1,
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
             immutable_samplers.data()
     };
@@ -1082,7 +1082,7 @@ void SmaaContext::init_resources(std::string support_images_dir, const VkPhysica
     vkFreeMemory(device, host_transition_memory, nullptr);
 }
 
-void SmaaContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView depth_image_view) {
+void SmaaContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view) {
     VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             nullptr,
@@ -1092,9 +1092,8 @@ void SmaaContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
     };
     check_error(vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, smaa_descriptor_sets.data()), vulkan_helper::Error::DESCRIPTOR_SET_ALLOCATION_FAILED);
 
-    std::array<VkDescriptorImageInfo, 2> smaa_edge_descriptor_images_info {{
-            { device_render_target_sampler, input_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-            { device_render_target_sampler, depth_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+    std::array<VkDescriptorImageInfo, 1> smaa_edge_descriptor_images_info {{
+            { device_render_target_sampler, input_image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
     }};
 
     std::array<VkDescriptorImageInfo, 3> smaa_weight_descriptor_images_info {{

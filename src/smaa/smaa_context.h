@@ -17,7 +17,7 @@ class SmaaContext {
         void init_resources(std::string support_images_dir, const VkPhysicalDeviceMemoryProperties &memory_properties,
                             VkImageView out_image_view, VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue);
 
-        void allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView depth_image_view);
+        void allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view);
 
         void record_into_command_buffer(VkCommandBuffer command_buffer);
 

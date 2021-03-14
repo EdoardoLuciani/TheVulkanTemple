@@ -3,11 +3,11 @@
 #define SMAA_PRESET_ULTRA 1
 #define SMAA_INCLUDE_PS 1
 #define SMAA_GLSL_4 1
-#define SMAA_PREDICATION 1
+//#define SMAA_PREDICATION 1
 
-layout (set = 0, binding = 0) uniform sampler2D textures[2];
+layout (set = 0, binding = 0) uniform sampler2D color_tex;
 
-vec4 SMAA_RT_METRICS = vec4(1.0f/textureSize(textures[0], 0), textureSize(textures[0], 0));
+vec4 SMAA_RT_METRICS = vec4(1.0f/textureSize(color_tex, 0), textureSize(color_tex, 0));
 #include "SMAA.h"
 
 layout (location = 0) in VS_OUT {
@@ -18,5 +18,5 @@ layout (location = 0) in VS_OUT {
 layout (location = 0) out vec2 frag_color;
 
 void main() {
-    frag_color = SMAAColorEdgeDetectionPS(fs_in.tex_coord, fs_in.offset, textures[0], textures[1]);
+    frag_color = SMAAColorEdgeDetectionPS(fs_in.tex_coord, fs_in.offset, color_tex);
 }
