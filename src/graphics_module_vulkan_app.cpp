@@ -27,7 +27,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        surface_support,
                                        additional_structure),
                          vsm_context(device),
-                         smaa_context(device, VK_FORMAT_R32G32B32A32_SFLOAT),
+                         smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
                          hdr_tonemap_context(device) {
 
     VkSamplerCreateInfo sampler_create_info = {
@@ -77,7 +77,7 @@ void GraphicsModuleVulkanApp::create_render_pass() {
         },
         {
                 0,
-                VK_FORMAT_R32G32B32A32_SFLOAT,
+                VK_FORMAT_B10G11R11_UFLOAT_PACK32,
                 VK_SAMPLE_COUNT_1_BIT,
                 VK_ATTACHMENT_LOAD_OP_CLEAR,
                 VK_ATTACHMENT_STORE_OP_STORE,
@@ -473,7 +473,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
                  1, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_depth_image);
 
-    create_image(device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+    create_image(device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
                  2, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_render_target);
 
@@ -490,8 +490,8 @@ void GraphicsModuleVulkanApp::init_renderer() {
 
     // We then upload the images to memory
     create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0,1);
-    create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
-    create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
+    create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+    create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
 
     vsm_context.init_resources();
     smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
