@@ -125,5 +125,7 @@ namespace vulkan_helper {
 
     void insert_or_sum(std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &target, const std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> &to_sum);
     std::vector<VkDescriptorPoolSize> convert_map_to_vector(const std::unordered_map<VkDescriptorType, uint32_t> &target);
+
+    uint32_t get_mipmap_count(VkExtent3D image_extent);
 }
 #endif //VULKAN_HELPER_H

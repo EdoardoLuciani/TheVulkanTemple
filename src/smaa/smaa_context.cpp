@@ -17,7 +17,7 @@ SmaaContext::SmaaContext(VkDevice device, VkFormat out_image_format) {
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            1,
+            0.0f,
             VK_FALSE,
             0.0f,
             VK_FALSE,
@@ -994,6 +994,7 @@ void SmaaContext::init_resources(std::string support_images_dir, const VkPhysica
     vkUnmapMemory(device, host_transition_memory);
 
     // Then we record the command buffer to submit the command
+    vkResetCommandPool(device, command_pool, 0);
     VkCommandBufferBeginInfo command_buffer_begin_info = {
             VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,nullptr,
             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,nullptr

@@ -40,7 +40,7 @@ VSMContext::VSMContext(VkDevice device) {
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            1,
+            0.0f,
             VK_TRUE,
             16.0f,
             VK_FALSE,

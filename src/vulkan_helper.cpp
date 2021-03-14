@@ -457,4 +457,8 @@ namespace vulkan_helper
         return out_vec;
     }
 
+    uint32_t get_mipmap_count(VkExtent3D image_extent) {
+        return static_cast<uint32_t>(std::floor(std::log2(std::max(image_extent.width, image_extent.height)))) + 1;
+    }
+
 } // namespace vulkan_helper

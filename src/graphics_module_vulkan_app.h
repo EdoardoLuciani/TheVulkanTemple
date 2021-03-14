@@ -45,7 +45,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         Camera* get_camera_ptr();
     private:
         EngineOptions engine_options;
-        VkSampler device_max_aniso_linear_sampler;
+        VkSampler max_aniso_linear_sampler;
+        std::vector<VkSampler> model_image_samplers;
 
         // Model uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
@@ -112,7 +113,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
 
         // Helper methods
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);
-        void create_image(VkImage &image, VkFormat format, VkExtent3D image_size, uint32_t layers, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags = 0);
+        void create_image(VkImage &image, VkFormat format, VkExtent3D image_size, uint32_t layers, uint32_t mipmaps_count, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags = 0);
         void create_image_view(VkImageView &image_view, VkImage image, VkFormat image_format, VkImageAspectFlags aspect_mask, uint32_t start_layer, uint32_t layer_count);
         void allocate_and_bind_to_memory(VkDeviceMemory &memory, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VkMemoryPropertyFlags flags);
         void submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags stage_flags,

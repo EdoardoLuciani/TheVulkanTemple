@@ -40,7 +40,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            1,
+            0.0f,
             VK_TRUE,
             16.0f,
             VK_FALSE,
@@ -50,7 +50,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
             VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
             VK_FALSE,
     };
-    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_max_aniso_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
+    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &max_aniso_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
 
     VkSemaphoreCreateInfo semaphore_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
     semaphores.resize(2);
@@ -131,7 +131,7 @@ void GraphicsModuleVulkanApp::create_sets_layouts() {
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             1,
             VK_SHADER_STAGE_FRAGMENT_BIT,
-            &device_max_aniso_linear_sampler
+            &max_aniso_linear_sampler
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -215,30 +215,60 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
     // We also need to create a device buffer for the model's uniform
     create_buffer(device_model_uniform_buffer, uniform_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
-    // We must also create images for the textures of every object, after destroying the precedent images
-    for(auto &device_model_image : device_model_images) {
+    // We must also create an image for the textures of every object along with their samplers, after destroying the precedent images and samplers
+    for (auto &device_model_image : device_model_images) {
         vkDestroyImage(device, device_model_image, nullptr);
     }
     device_model_images.clear();
+
+    for(auto &model_image_sampler : model_image_samplers) {
+        vkDestroySampler(device, model_image_sampler, nullptr);
+    }
+    model_image_samplers.clear();
+
     for (int i=0; i<model_data.size(); i++) {
         if (vulkan_helper::get_model_texture_size(model_data[i])) {
+            uint32_t mipmap_levels = vulkan_helper::get_mipmap_count(model_data[i].image_size);
+
             device_model_images.push_back(VK_NULL_HANDLE);
             create_image(device_model_images.back(), VK_FORMAT_R8G8B8A8_UNORM, model_data[i].image_size, model_data[i].image_layers,
-                         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT);
+                         mipmap_levels, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+
+            model_image_samplers.push_back(VK_NULL_HANDLE);
+            VkSamplerCreateInfo sampler_create_info = {
+                    VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                    nullptr,
+                    0,
+                    VK_FILTER_LINEAR,
+                    VK_FILTER_LINEAR,
+                    VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                    VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                    VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                    VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                    0.0f,
+                    VK_TRUE,
+                    16.0f,
+                    VK_FALSE,
+                    VK_COMPARE_OP_ALWAYS,
+                    0.0f,
+                    static_cast<float>(mipmap_levels),
+                    VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+                    VK_FALSE,
+            };
+            check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &model_image_samplers.back()), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
         }
     }
     allocate_and_bind_to_memory(device_model_data_memory, {device_mesh_data_buffer, device_model_uniform_buffer}, device_model_images, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    // After the buffer and the images have been allocated and binded, we process to create the image views
+    // After the buffer and the images have been allocated and binded, we create the image views with 4 layers for every image
     for (auto& device_model_image_view : device_model_images_views) {
         vkDestroyImageView(device, device_model_image_view, nullptr);
     }
     device_model_images_views.clear();
 
-    // Here when create one image view with 4 layers for every image
     device_model_images_views.resize(device_model_images.size());
     for (uint32_t i=0; i<device_model_images.size(); i++) {
-            create_image_view(device_model_images_views[i], device_model_images[i], VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 0, 4);
+            create_image_view(device_model_images_views[i], device_model_images[i], VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 0, model_data[i].image_layers);
     }
 
     // After setting the required memory we register the command buffer to upload the data
@@ -269,7 +299,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
     }
     vkCmdCopyBuffer(command_buffers[0], host_model_data_buffer, device_mesh_data_buffer, buffer_copies.size(), buffer_copies.data());
 
-    // We need to transition the device images to DST_OPTIMAL
+    // We need to transition all layers and first mipmap of the device images to DST_OPTIMAL
     std::vector<VkImageMemoryBarrier> image_memory_barriers(device_model_images.size());
     for (int i=0; i<image_memory_barriers.size(); i++) {
         image_memory_barriers[i] = {
@@ -303,7 +333,52 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
         vkCmdCopyBufferToImage(command_buffers[0], host_model_data_buffer, device_model_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
     }
 
-    // After the copy we need to transition the images to be shader ready
+    // After copying the images we need to generate the mipmaps
+    for (int i=0; i < image_memory_barriers.size(); i++) {
+        VkImageMemoryBarrier image_memory_barrier;
+        image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        image_memory_barrier.pNext = nullptr;
+
+        image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        image_memory_barrier.image = device_model_images[i];
+
+        image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        image_memory_barrier.subresourceRange.levelCount = 1;
+        image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+        image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+        VkOffset3D mip_size = { static_cast<int32_t>(model_data[i].image_size.width), static_cast<int32_t>(model_data[i].image_size.height), static_cast<int32_t>(model_data[i].image_size.depth)};
+
+        // We first transition the j-1 mipmap level to SRC_OPTIMAL, perform the copy to the j mipmap level and transition j-1 to SHADER_READ_ONLY
+        for (uint32_t j = 1; j < vulkan_helper::get_mipmap_count(model_data[i].image_size); j++) {
+            image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            image_memory_barrier.subresourceRange.baseMipLevel = j - 1;
+            vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
+
+            VkImageBlit image_blit {
+                {VK_IMAGE_ASPECT_COLOR_BIT, j - 1, 0, model_data[i].image_layers},
+                {{ 0, 0, 0 }, mip_size},
+                {VK_IMAGE_ASPECT_COLOR_BIT, j, 0, model_data[i].image_layers},
+                {{ 0, 0, 0 }, mip_size.x > 1 ? mip_size.x / 2 : 1, mip_size.y > 1 ? mip_size.y / 2 : 1, 1}
+            };
+            vkCmdBlitImage(command_buffers[0], device_model_images[i], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, device_model_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_blit, VK_FILTER_LINEAR);
+
+            image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
+
+            if (mip_size.x > 1) mip_size.x /= 2;
+            if (mip_size.y > 1) mip_size.y /= 2;
+        }
+    }
+
+    // After the copy we need to transition the last mipmap level (which is still in DST_OPTIMAL) to be shader ready
     for (int i=0; i<image_memory_barriers.size(); i++) {
         image_memory_barriers[i] = {
             VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -315,7 +390,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::string> model_pat
             VK_QUEUE_FAMILY_IGNORED,
             VK_QUEUE_FAMILY_IGNORED,
             device_model_images[i],
-            {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+            {VK_IMAGE_ASPECT_COLOR_BIT, vulkan_helper::get_mipmap_count(model_data[i].image_size) - 1, 1, 0, VK_REMAINING_ARRAY_LAYERS}
         };
     }
     vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
@@ -395,11 +470,11 @@ void GraphicsModuleVulkanApp::init_renderer() {
 
     // We create some attachments useful during rendering
     create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
-                 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+                 1, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_depth_image);
 
     create_image(device_render_target, VK_FORMAT_R32G32B32A32_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
-                 2,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+                 2, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_render_target);
 
     // We request information about the buffer and images we need from vsm_context and store them in a vector
@@ -507,7 +582,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     std::vector<VkDescriptorImageInfo> light_descriptor_image_infos(lights.size());
     for(int i=0; i<lights.size(); i++) {
         light_descriptor_image_infos[i] = {
-                device_max_aniso_linear_sampler,
+                max_aniso_linear_sampler,
                 vsm_context.get_image_view(i),
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
@@ -551,9 +626,9 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     std::vector<VkDescriptorImageInfo> object_descriptor_image_infos(objects_info.size());
     for(uint32_t i = 0; i<objects_info.size(); i++) {
         object_descriptor_image_infos[i] = {
-            device_max_aniso_linear_sampler,
-            device_model_images_views[i],
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                model_image_samplers[i],
+                device_model_images_views[i],
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
     }
 
@@ -1012,7 +1087,12 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyFramebuffer(device, pbr_framebuffer, nullptr);
     vkDestroyRenderPass(device, pbr_render_pass, nullptr);
 
-    vkDestroySampler(device, device_max_aniso_linear_sampler, nullptr);
+    vkDestroySampler(device, max_aniso_linear_sampler, nullptr);
+
+    for(auto &model_image_sampler : model_image_samplers) {
+        vkDestroySampler(device, model_image_sampler, nullptr);
+    }
+    model_image_samplers.clear();
 
     // Model uniform related things freed
     vkUnmapMemory(device, host_model_uniform_memory);
@@ -1066,7 +1146,7 @@ void GraphicsModuleVulkanApp::create_buffer(VkBuffer &buffer, uint64_t size, VkB
     check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &buffer), vulkan_helper::Error::BUFFER_CREATION_FAILED);
 }
 
-void GraphicsModuleVulkanApp::create_image(VkImage &image, VkFormat format, VkExtent3D image_size, uint32_t layers, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags) {
+void GraphicsModuleVulkanApp::create_image(VkImage &image, VkFormat format, VkExtent3D image_size, uint32_t layers, uint32_t mipmaps_count, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags) {
     VkImageCreateInfo image_create_info = {
             VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             nullptr,
@@ -1074,7 +1154,7 @@ void GraphicsModuleVulkanApp::create_image(VkImage &image, VkFormat format, VkEx
             VK_IMAGE_TYPE_2D,
             format,
             image_size,
-            1,
+            mipmaps_count,
             layers,
             VK_SAMPLE_COUNT_1_BIT,
             VK_IMAGE_TILING_OPTIMAL,
