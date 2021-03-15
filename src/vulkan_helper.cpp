@@ -245,18 +245,6 @@ namespace vulkan_helper
         return alignment * std::ceil(mem_size/static_cast<float>(alignment));
     }
 
-    uint32_t get_aligned_memory_size(VkMemoryRequirements m_r) {
-        return m_r.alignment * std::ceil(static_cast<float>(m_r.size) / m_r.alignment);
-    }
-
-    uint32_t get_aligned_memory_size(VkMemoryRequirements m_r, uint32_t alignment) {
-        return alignment * std::ceil(static_cast<float>(m_r.size) / alignment);
-    }
-
-    uint32_t get_alignment_memory(uint64_t mem_size, uint32_t alignment) {
-        return alignment - (mem_size % alignment);
-    }
-
     // The model in order to be processed correctly should have:
     // - Same number of vertex, tangents, texture coordinates and normals
     // - Equal size for every image
@@ -354,13 +342,13 @@ namespace vulkan_helper
                     map_index[i] = model.materials[0].pbrMetallicRoughness.baseColorTexture.index;
                     break;
                 case T_NORMAL_MAP:
-                	map_index[i] = model.materials[0].normalTexture.index;
+                    map_index[i] = model.materials[0].normalTexture.index;
                     break;
                 case T_ORM_MAP:
                     map_index[i] = model.materials[0].pbrMetallicRoughness.metallicRoughnessTexture.index;
                     break;
                 case T_EMISSIVE_MAP:
-                	map_index[i] = model.materials[0].emissiveTexture.index;
+                    map_index[i] = model.materials[0].emissiveTexture.index;
                     break;
                 default:
                     continue;
@@ -394,22 +382,22 @@ namespace vulkan_helper
         // Calculate the block size for each vertex
         int group_size = 0;
         for (uint8_t i=0; i<v_model_attributes_max_set_bits; i++) {
-        	if (t_attributes_to_copy & (1 << i)) {
-		        group_size += v_model_attributes_sizes[i];
-        	}
+            if (t_attributes_to_copy & (1 << i)) {
+                group_size += v_model_attributes_sizes[i];
+            }
         }
 
         // Vertex data copy
         for (uint32_t i = 0; i < out_data.vertices; i++) {
             int written_data_size = 0;
-	        for (uint8_t j=0; j<v_model_attributes_max_set_bits; j++) {
-		        if (t_attributes_to_copy & (1 << j)) {
-			        memcpy(static_cast<uint8_t *>(dst_ptr) + (i * group_size) + written_data_size,
-			               model.buffers[0].data.data() + v_attr_off[j] + i * v_model_attributes_sizes[j],
-			               v_model_attributes_sizes[j]);
-			        written_data_size += v_model_attributes_sizes[j];
-		        }
-	        }
+            for (uint8_t j=0; j<v_model_attributes_max_set_bits; j++) {
+                if (t_attributes_to_copy & (1 << j)) {
+                    memcpy(static_cast<uint8_t *>(dst_ptr) + (i * group_size) + written_data_size,
+                           model.buffers[0].data.data() + v_attr_off[j] + i * v_model_attributes_sizes[j],
+                           v_model_attributes_sizes[j]);
+                    written_data_size += v_model_attributes_sizes[j];
+                }
+            }
         }
 
         for (uint32_t i = 0; i < out_data.indices; i++) {
@@ -420,12 +408,12 @@ namespace vulkan_helper
 
         int progressive_data = 0;
         for (uint8_t i=0; i<t_model_attributes_max_set_bits; i++) {
-	        if (t_attributes_to_copy & (1 << i)) {
-		        memcpy(static_cast<uint8_t *>(dst_ptr) + out_data.interleaved_mesh_data_size + out_data.index_data_size + progressive_data,
-		               model.images[map_index[i]].image.data(),
-		               model.images[map_index[i]].image.size());
-		        progressive_data += model.images[map_index[i]].image.size();
-	        }
+            if (t_attributes_to_copy & (1 << i)) {
+                memcpy(static_cast<uint8_t *>(dst_ptr) + out_data.interleaved_mesh_data_size + out_data.index_data_size + progressive_data,
+                       model.images[map_index[i]].image.data(),
+                       model.images[map_index[i]].image.size());
+                progressive_data += model.images[map_index[i]].image.size();
+            }
         }
         return 0;
     }
