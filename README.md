@@ -3,7 +3,7 @@ TheVulkanTemple is a cross-platform vulkan rendering engine that focuses on simp
 TheVulkanTemple uses Variance Shadow Mapping for shadows, a Cook-Torrance BRDF for Physically Based Rendering, SMAA for antialiasing and finally HDR tonemapping.
 It supports fullscreen mode as well as windowed. Due to its modularity, it is quite easy to add features or to integrate it in larger projects.
 
-![alt text](https://github.com/EdoardoLuciani/TheVulkanTemple/blob/master/docs/Screenshot.PNG)
+![alt text](https://github.com/EdoardoLuciani/TheVulkanTemple/blob/refactor/docs/Screenshot.png)
 
 ## Features
 - PBR Pipeline
