@@ -7,10 +7,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
 
-#define MAGIC_ENUM_RANGE_MIN 0
-#define MAGIC_ENUM_RANGE_MAX 256
-#include "magic_enum.hpp"
-
 int main() {
     std::vector<const char*> desired_instance_level_extensions = {"VK_KHR_surface"};
 	#ifdef _WIN64
@@ -20,30 +16,15 @@ int main() {
 	#else
 		#error "Unknown compiler or not supported OS"
 	#endif
-
-	std::vector<const char*> desired_device_level_extensions = {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing"};
-	VkPhysicalDeviceFeatures selected_device_features = { 0 };
-	selected_device_features.samplerAnisotropy = VK_TRUE;
-
-    VkPhysicalDeviceDescriptorIndexingFeaturesEXT required_physical_device_indexing_features = {};
-    required_physical_device_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
-    required_physical_device_indexing_features.pNext = nullptr;
-    required_physical_device_indexing_features.runtimeDescriptorArray = VK_TRUE;
-    required_physical_device_indexing_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-
-	EngineOptions options;
-	options.anti_aliasing = 0;
-	options.shadows = 0;
-	options.HDR = 0;
-
+  
 	try {
-	    VkExtent2D screen_size = {2560,1440};
+	  VkExtent2D screen_size = {2560,1440};
 		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, true,
                                     desired_device_level_extensions, selected_device_features, VK_TRUE, options, &required_physical_device_indexing_features);
 		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb", "resources//models//Table//Table.glb"},128);
 		app.load_lights({
 		    {{1.0f, 1.0f, 2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 0.0f, 0.0f}, 90.0f, 1.0f},
-            {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 50.0f}, 90.0f, 1.0f}
+        {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 50.0f}, 90.0f, 1.0f}
 		});
 		app.set_camera({{0.0f, 1.0f, 5.0f, 0.0f}, {0.0f, .0f, -10.0f}, 100.0f, static_cast<float>(screen_size.width)/screen_size.height});
 		FPSCameraControl fps_camera_control(app.get_glfw_window(), app.get_camera_ptr());

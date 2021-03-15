@@ -245,6 +245,18 @@ namespace vulkan_helper
         return alignment * std::ceil(mem_size/static_cast<float>(alignment));
     }
 
+    uint32_t get_aligned_memory_size(VkMemoryRequirements m_r) {
+        return m_r.alignment * std::ceil(static_cast<float>(m_r.size) / m_r.alignment);
+    }
+
+    uint32_t get_aligned_memory_size(VkMemoryRequirements m_r, uint32_t alignment) {
+        return alignment * std::ceil(static_cast<float>(m_r.size) / alignment);
+    }
+
+    uint32_t get_alignment_memory(uint64_t mem_size, uint32_t alignment) {
+        return alignment - (mem_size % alignment);
+    }
+
     // The model in order to be processed correctly should have:
     // - Same number of vertex, tangents, texture coordinates and normals
     // - Equal size for every image
