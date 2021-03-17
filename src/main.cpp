@@ -40,30 +40,22 @@ int main() {
 	    VkExtent2D screen_size = {2560,1440};
 		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, true,
                                     desired_device_level_extensions, selected_device_features, VK_TRUE, options, &required_physical_device_indexing_features);
-		app.load_3d_objects({"resources/models/WaterBottle/WaterBottle.glb", "resources//models//Table//Table.glb"},128);
+
+        glm::mat4 water_bottle_m_matrix = glm::translate(glm::vec3(-1.0f, 0.05f, -0.5f))*glm::scale(glm::vec3(0.4f,0.4f,0.4f));
+        glm::mat4 table_m_matrix = glm::translate(glm::vec3(0.5f, -0.35f, 0.0f))*glm::rotate(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f))
+                                   *glm::scale(glm::vec3(3.0f,3.0f,3.0f));
+
+		app.load_3d_objects({{"resources/models/WaterBottle/WaterBottle.glb", water_bottle_m_matrix},
+                             {"resources//models//Table//Table.glb", table_m_matrix}
+		});
 		app.load_lights({
 		    {{1.0f, 1.0f, 2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 0.0f, 0.0f}, 90.0f, 1.0f},
-        {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 50.0f}, 90.0f, 1.0f}
+            {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 50.0f}, 90.0f, 1.0f}
 		});
 		app.set_camera({{0.0f, 1.0f, 5.0f, 0.0f}, {0.0f, .0f, -10.0f}, 100.0f, static_cast<float>(screen_size.width)/screen_size.height});
 		FPSCameraControl fps_camera_control(app.get_glfw_window(), app.get_camera_ptr());
 
         app.init_renderer();
-
-        uint8_t* water_bottle_uniform_ptr = app.get_model_uniform_data_ptr(0);
-        glm::mat4 water_bottle_m_matrix = glm::translate(glm::vec3(-1.0f, 0.05f, -0.5f))*glm::scale(glm::vec3(0.4f,0.4f,0.4f));
-        memcpy(water_bottle_uniform_ptr, glm::value_ptr(water_bottle_m_matrix), sizeof(glm::mat4));
-
-        glm::mat4 water_bottle_normal_matrix = glm::transpose(glm::inverse(water_bottle_m_matrix));
-        memcpy(water_bottle_uniform_ptr + sizeof(glm::mat4), glm::value_ptr(water_bottle_normal_matrix), sizeof(glm::mat4));
-
-        uint8_t* table_uniform_ptr = app.get_model_uniform_data_ptr(1);
-        glm::mat4 table_m_matrix = glm::translate(glm::vec3(0.5f, -0.35f, 0.0f))*glm::rotate(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f))
-                         *glm::scale(glm::vec3(3.0f,3.0f,3.0f));
-        memcpy(table_uniform_ptr, glm::value_ptr(table_m_matrix), sizeof(glm::mat4));
-
-        glm::mat4 table_normal_matrix = glm::transpose(glm::inverse(table_m_matrix));
-        memcpy(table_uniform_ptr + sizeof(glm::mat4), glm::value_ptr(table_normal_matrix), sizeof(glm::mat4));
 
         app.start_frame_loop();
 	}

@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 #include "camera.h"
 #include "light.h"
+#include "gltf_model.h"
 
 struct EngineOptions {
     int anti_aliasing;
@@ -33,7 +34,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         ~GraphicsModuleVulkanApp();
 
 		// Directly copy data from disk to VRAM
-		void load_3d_objects(std::vector<std::string> model_path, uint32_t per_object_uniform_data_size);
+		void load_3d_objects(std::vector<GltfModel> gltf_models);
         void load_lights(const std::vector<Light> &lights);
         void set_camera(Camera camera);
         void init_renderer();
@@ -59,7 +60,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         std::vector<VkImage> device_model_images;
         std::vector<VkImageView> device_model_images_views;
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
-        std::vector<vulkan_helper::ObjectRenderInfo> objects_info;
+
+        std::vector<vk_object_render_info> objects;
 
         std::vector<Light> lights;
         Camera camera;

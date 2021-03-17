@@ -7,49 +7,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <unordered_map>
-#include <tiny_gltf.h>
 #include "volk.h"
 
 namespace vulkan_helper {
-	struct model_data_info {
-		uint32_t interleaved_mesh_data_size;
-		uint32_t vertices;
-
-		uint32_t index_data_size;
-		uint32_t indices;
-		VkIndexType index_data_type;
-
-        VkExtent3D image_size;
-		uint32_t image_layers;
-	};
-
-    struct ObjectRenderInfo {
-        uint32_t uniform_data_size;
-        VkBuffer data_buffer;
-        uint64_t mesh_data_offset;
-        uint64_t index_data_offset;
-        uint64_t indices;
-        VkIndexType index_data_type;
-    };
-
-	constexpr int v_model_attributes_max_set_bits = 4;
-	enum v_model_attributes {
-		V_VERTEX = 1, //00000001
-        V_TEX_COORD = 2,//00000010
-        V_NORMAL = 4, //00000100
-		V_TANGENT = 8, //000001000
-		V_ALL = 15 //000001111
-	};
-
-    constexpr int t_model_attributes_max_set_bits = 4;
-	enum t_model_attributes {
-		T_ALBEDO_MAP = 1,
-		T_ORM_MAP = 2,
-        T_NORMAL_MAP = 4,
-		T_EMISSIVE_MAP = 8,
-		T_ALL = 15
-	};
-
     enum class Error {
         LOADED_MODEL_IS_NOT_PBR,
         VOLK_INITIALIZATION_FAILED,
@@ -109,17 +69,6 @@ namespace vulkan_helper {
 
 	uint32_t get_alignment_memory(uint64_t mem_size, uint32_t alignment);
     uint32_t get_aligned_memory_size(uint64_t mem_size, uint32_t alignment);
-
-    int copy_gltf_contents(tinygltf::Model &model,
-                           uint8_t v_attributes_to_copy,
-                           bool vertex_normalize,
-                           bool index_resolve,
-                           uint8_t t_attributes_to_copy,
-                           void *dst_ptr, vulkan_helper::model_data_info &out_data);
-
-	uint64_t get_model_data_total_size(const model_data_info &model);
-    uint64_t get_model_mesh_and_index_data_size(const model_data_info &model);
-    uint64_t get_model_texture_size(const model_data_info &model);
 
     void check_error(int32_t last_return_value, Error error_location);
 

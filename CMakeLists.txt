@@ -20,7 +20,7 @@ add_executable(base_vulkan_app
         src/volk.c
         src/vsm/vsm_context.cpp
         src/camera.cpp
-        src/light.cpp src/hdr_tonemap/hdr_tonemap_context.cpp src/hdr_tonemap/hdr_tonemap_context.h src/fps_camera_control.cpp src/fps_camera_control.h)
+        src/light.cpp src/hdr_tonemap/hdr_tonemap_context.cpp src/hdr_tonemap/hdr_tonemap_context.h src/fps_camera_control.cpp src/fps_camera_control.h src/gltf_model.cpp src/gltf_model.h)
 
 target_link_libraries(base_vulkan_app glfw3 dl pthread stdc++fs X11)
 

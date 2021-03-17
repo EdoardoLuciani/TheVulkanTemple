@@ -1,5 +1,6 @@
 #include "vsm_context.h"
 #include "../vulkan_helper.h"
+#include "../gltf_model.h"
 #include <unordered_map>
 #include <utility>
 #include <iostream>
@@ -667,7 +668,7 @@ void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
 }
 
 void VSMContext::record_into_command_buffer(VkCommandBuffer command_buffer, std::vector<VkDescriptorSet> object_data_sets,
-                                            VkDescriptorSet light_data_set, std::vector<vulkan_helper::ObjectRenderInfo> object_render_info) {
+                                            VkDescriptorSet light_data_set, const std::vector<vk_object_render_info> &objects) {
     std::array<VkClearValue,2> clear_values;
     clear_values[0].depthStencil = {1.0f, 0};
     clear_values[1].color = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -708,9 +709,9 @@ void VSMContext::record_into_command_buffer(VkCommandBuffer command_buffer, std:
             std::array<VkDescriptorSet,2> sets_to_bind {object_data_sets[j], light_data_set};
             vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_layout, 0, sets_to_bind.size(), sets_to_bind.data(), 0, nullptr);
 
-            vkCmdBindVertexBuffers(command_buffer, 0, 1, &object_render_info[j].data_buffer, &object_render_info[j].mesh_data_offset);
-            vkCmdBindIndexBuffer(command_buffer, object_render_info[j].data_buffer, object_render_info[j].index_data_offset, object_render_info[j].index_data_type);
-            vkCmdDrawIndexed(command_buffer, object_render_info[j].indices, 1, 0, 0, 0);
+            vkCmdBindVertexBuffers(command_buffer, 0, 1, &objects[j].data_buffer, &objects[j].mesh_data_offset);
+            vkCmdBindIndexBuffer(command_buffer, objects[j].data_buffer, objects[j].index_data_offset, objects[j].model.get_last_copy_index_type());
+            vkCmdDrawIndexed(command_buffer, objects[j].model.get_last_copy_indices(), 1, 0, 0, 0);
         }
         vkCmdEndRenderPass(command_buffer);
 

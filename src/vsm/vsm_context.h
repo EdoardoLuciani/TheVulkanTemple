@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include "../vulkan_helper.h"
+#include "../gltf_model.h"
 
 /* To use this class, it is required to call the correct sequence of calls, first the
  * constructor VSMContext, then you need to allocate a VkDevice memory big enough for
@@ -30,7 +31,7 @@ public:
     void init_resources();
     void allocate_descriptor_sets(VkDescriptorPool descriptor_pool);
     void record_into_command_buffer(VkCommandBuffer command_buffer, std::vector<VkDescriptorSet> object_data_set,
-                                    VkDescriptorSet light_data_set, std::vector<vulkan_helper::ObjectRenderInfo> object_render_info);
+                                    VkDescriptorSet light_data_set, const std::vector<vk_object_render_info> &object_render_info);
 private:
     std::vector<VkExtent2D> depth_images_res;
 
