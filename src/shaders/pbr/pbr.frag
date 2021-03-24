@@ -20,12 +20,15 @@ layout (set = 1, binding = 1) uniform sampler2D shadow_map[];
 layout (location = 0) in VS_OUT {
     vec3 position;
     vec2 tex_coord;
+    vec3 N_g;
     vec3 V;
     vec3 L[MAX_LIGHT_DATA];
     vec4 shadow_coord[MAX_LIGHT_DATA];
+    mat3 tbn;
 } fs_in;
 
 layout (location = 0) out vec4 frag_color;
+layout (location = 1) out vec4 normal_g_image;
 
 // Utility function(s)
 float get_sphere_light_attenuation(vec3 light_p, float dist_max) {
@@ -37,7 +40,7 @@ float get_sphere_light_attenuation(vec3 light_p, float dist_max) {
 // Shadow Helping functions
 float ChebyshevUpperBound(vec2 Moments, float t) {
     // One-tailed inequality valid if t > Moments.x
-    float p = float(t <= Moments.x);
+    float p = float(t > Moments.x);
     // Compute variance.
     float Variance = Moments.y - (Moments.x*Moments.x);
     Variance = max(Variance, 0.000001);
@@ -46,8 +49,6 @@ float ChebyshevUpperBound(vec2 Moments, float t) {
     float p_max = Variance / (Variance + d*d);
     return max(p, p_max);
 }
-
-
 float linstep(float min, float max, float v) {   
     return clamp((v - min) / (max - min), 0, 1); 
 } 
@@ -116,4 +117,8 @@ void main() {
 
     // gamma correction is applied in the tonemap stage
     frag_color = vec4(color, 1.0);
+
+    vec3 normal_to_write = (normalize(fs_in.N_g) + 1) / 2;
+    normal_g_image = vec4(normal_to_write.x, normal_to_write.y, normal_to_write.z, 0.0);
+    //normal_g_image = vec4((normalize(fs_in.tbn * (texture(images, vec3(fs_in.tex_coord, 2)).xyz * 2.0 - 1.0)) + 1) / 2, 0.0);
 }

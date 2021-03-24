@@ -35,6 +35,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
     #else
         std::vector<const char*> desired_validation_layers = { "VK_LAYER_KHRONOS_validation" };
         desired_instance_level_extensions.push_back("VK_EXT_debug_report");
+        desired_instance_level_extensions.push_back("VK_EXT_debug_utils");
     #endif
 
 	VkInstanceCreateInfo instance_create_info = {
@@ -108,25 +109,18 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 
 	std::vector<std::pair<size_t, size_t>> plausible_devices_d_index_qf_index;
 	for (uint32_t i = 0; i < devices.size(); i++) {
-	    void *p_next = nullptr;
-        VkPhysicalDeviceDescriptorIndexingFeaturesEXT descriptor_indexing_features = {
-                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT,
-                nullptr
-        };
-	    if (std::find(desired_device_level_extensions.begin(), desired_device_level_extensions.end(), "VK_EXT_descriptor_indexing") != desired_device_level_extensions.end()) {
-            p_next = &descriptor_indexing_features;
-	    }
 	    VkPhysicalDeviceFeatures2 devices_features = {
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-            p_next
+            vulkan_helper::create_device_feature_struct_chain(desired_device_level_extensions)
 	    };
         vkGetPhysicalDeviceFeatures2(devices[i], &devices_features);
-        bool requested_features_are_available = vulkan_helper::compare_physical_device_features_structs(devices_features.features, required_physical_device_features);
-        if (devices_features.pNext != nullptr) {
-            requested_features_are_available = requested_features_are_available &&
-                    vulkan_helper::compare_physical_device_descriptor_indexing_features_structs(*static_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(devices_features.pNext),
-                                                                                                *static_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(additional_structure));
-        }
+
+        VkBool32 requested_features_are_available = vulkan_helper::compare_device_features_struct(&devices_features.features, &required_physical_device_features, sizeof(VkPhysicalDeviceFeatures));
+        requested_features_are_available &= vulkan_helper::compare_device_feature_struct_chain(devices_features.pNext, additional_structure);
+
+        //
+        // FREE THE STRUCT CHAIN STRUCTURE!!
+        //
 
 		if (requested_features_are_available) {
 			uint32_t families_count;

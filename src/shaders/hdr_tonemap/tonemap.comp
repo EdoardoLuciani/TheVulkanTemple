@@ -101,5 +101,8 @@ void main() {
     // Using the new luminance, convert back to RGB and to sRGB
     vec3 out_color = rgb_to_srgb_approx(xyY_to_rgb(xyY));
 
+    // debug mode!!!
+    //out_color = color;
+
     imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(out_color, 1.0f));
 }

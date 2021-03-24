@@ -45,7 +45,8 @@ namespace vulkan_helper {
         FRAMEBUFFER_CREATION_FAILED,
         SHADER_MODULE_CREATION_FAILED,
         ACQUIRE_NEXT_IMAGE_FAILED,
-        QUEUE_PRESENT_FAILED
+        QUEUE_PRESENT_FAILED,
+        FFX_CACAO_INIT_FAILED
     };
 
 	VkPresentModeKHR select_presentation_mode(const std::vector<VkPresentModeKHR>& presentation_modes, VkPresentModeKHR desired_presentation_mode);
@@ -56,9 +57,11 @@ namespace vulkan_helper {
 	VkSurfaceFormatKHR select_surface_format(const std::vector<VkSurfaceFormatKHR>& surface_formats, VkSurfaceFormatKHR desired_surface_format);
 	uint32_t select_memory_index(const VkPhysicalDeviceMemoryProperties& physical_device_memory_properties, const VkMemoryRequirements& memory_requirements, VkMemoryPropertyFlags memory_properties);
 	VkBool32 debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject, size_t location, int32_t msgCode, const char* pLayerPrefix, const char* pMsg, void* pUserData);
-	VkBool32 compare_physical_device_features_structs(VkPhysicalDeviceFeatures base, VkPhysicalDeviceFeatures requested);
-    VkBool32 compare_physical_device_descriptor_indexing_features_structs(VkPhysicalDeviceDescriptorIndexingFeaturesEXT base,
-                                                                          VkPhysicalDeviceDescriptorIndexingFeaturesEXT requested);
+
+    VkBool32 compare_device_features_struct(const void* base, const void* requested, uint32_t size);
+
+    void* create_device_feature_struct_chain(const std::vector<const char*> &device_extensions);
+    VkBool32 compare_device_feature_struct_chain(const void *base, const void* requested);
 
 	void normalize_vectors(glm::vec3* vectors, int number_of_elements);
 

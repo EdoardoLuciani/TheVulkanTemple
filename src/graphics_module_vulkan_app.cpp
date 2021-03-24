@@ -6,8 +6,12 @@
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
 #include "hdr_tonemap/hdr_tonemap_context.h"
+#include "ffx_cacao/ffx_cacao.h"
 #include "vulkan_helper.h"
 #include <unordered_map>
+
+// TESTING
+#include <DirectXMath/DirectXMath.h>
 
 GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name,
                                                  std::vector<const char *> &desired_instance_level_extensions,
@@ -29,6 +33,20 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                          vsm_context(device),
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
                          hdr_tonemap_context(device) {
+
+    // We create the context for fx-cacao
+    size_t ffx_cacao_context_size = ffxCacaoVkGetContextSize();
+    fx_cacao_context = reinterpret_cast<FfxCacaoVkContext*>(new uint8_t[ffx_cacao_context_size]);
+    FfxCacaoVkCreateInfo info = {};
+    info.physicalDevice = selected_physical_device;
+    info.device = device;
+    info.flags = FFX_CACAO_VK_CREATE_USE_16_BIT;
+#ifndef NDEBUG
+    info.flags = info.flags | FFX_CACAO_VK_CREATE_USE_DEBUG_MARKERS | FFX_CACAO_VK_CREATE_NAME_OBJECTS;
+#endif
+    if (ffxCacaoVkInitContext(fx_cacao_context, &info)) {
+        throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
+    }
 
     VkSamplerCreateInfo sampler_create_info = {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -63,7 +81,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
 }
 
 void GraphicsModuleVulkanApp::create_render_pass() {
-    std::array<VkAttachmentDescription,2> attachment_descriptions {{
+    std::array<VkAttachmentDescription, 3> attachment_descriptions {{
     {
                 0,
                 VK_FORMAT_D32_SFLOAT,
@@ -85,18 +103,30 @@ void GraphicsModuleVulkanApp::create_render_pass() {
                 VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        },
+        {
+                0,
+                VK_FORMAT_R16G16B16A16_SFLOAT,
+                VK_SAMPLE_COUNT_1_BIT,
+                VK_ATTACHMENT_LOAD_OP_CLEAR,
+                VK_ATTACHMENT_STORE_OP_STORE,
+                VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         }
     }};
-    std::array<VkAttachmentReference,2> attachment_references {{
+    std::array<VkAttachmentReference,3> attachment_references {{
         { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL },
-        {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL }
+        {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL },
+        {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL }
     }};
     VkSubpassDescription subpass_description = {
             0,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             0,
             nullptr,
-            1,
+            2,
             &attachment_references[1],
             nullptr,
             &attachment_references[0],
@@ -462,8 +492,12 @@ void GraphicsModuleVulkanApp::init_renderer() {
     device_images_to_allocate.push_back(device_depth_image);
 
     create_image(device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
-                 2, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+                 2, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
     device_images_to_allocate.push_back(device_render_target);
+
+    create_image(device_normal_g_image, VK_FORMAT_R16G16B16A16_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+                 1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    device_images_to_allocate.push_back(device_normal_g_image);
 
     // We request information about the buffer and images we need from vsm_context and store them in a vector
     auto vec = vsm_context.get_device_images();
@@ -476,13 +510,32 @@ void GraphicsModuleVulkanApp::init_renderer() {
     // We then allocate all needed images and buffers in a single allocation
     allocate_and_bind_to_memory(device_attachments_memory, device_buffers_to_allocate, device_images_to_allocate,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    // We then upload the images to memory
+    // We then create the image views
     create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0,1);
     create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
     create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
+    create_image_view(device_normal_g_image_view, device_normal_g_image, VK_FORMAT_R16G16B16A16_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
 
     vsm_context.init_resources();
     smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
+
+    ffxCacaoVkDestroyScreenSizeDependentResources(fx_cacao_context);
+    FfxCacaoVkScreenSizeInfo screenSizeInfo = {};
+    screenSizeInfo.width = swapchain_create_info.imageExtent.width;
+    screenSizeInfo.height = swapchain_create_info.imageExtent.height;
+    screenSizeInfo.depthView = device_depth_image_view;
+    screenSizeInfo.normalsView = device_normal_g_image_view;
+    screenSizeInfo.output = device_render_target;
+    screenSizeInfo.outputView = device_render_target_image_views[1];
+    if (ffxCacaoVkInitScreenSizeDependentResources(fx_cacao_context, &screenSizeInfo)) {
+        throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
+    }
+
+    FfxCacaoSettings settings = FFX_CACAO_DEFAULT_SETTINGS;
+    //settings.generateNormals = FFX_CACAO_TRUE;
+    if (ffxCacaoVkUpdateSettings(fx_cacao_context, &settings)) {
+        throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
+    }
 
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
@@ -650,7 +703,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
 }
 
 void GraphicsModuleVulkanApp::create_framebuffers() {
-    std::array<VkImageView, 2> attachments {device_depth_image_view, device_render_target_image_views[0]};
+    std::array<VkImageView, 3> attachments {device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view};
     VkFramebufferCreateInfo framebuffer_create_info = {
             VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             nullptr,
@@ -820,7 +873,18 @@ void GraphicsModuleVulkanApp::create_pbr_pipeline() {
             1.0f
     };
 
-    VkPipelineColorBlendAttachmentState pipeline_color_blend_attachment_state = {
+    std::array<VkPipelineColorBlendAttachmentState, 2> pipeline_color_blend_attachment_state;
+    pipeline_color_blend_attachment_state[0] = {
+            VK_FALSE,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+    pipeline_color_blend_attachment_state[1] = {
             VK_FALSE,
             VK_BLEND_FACTOR_ONE,
             VK_BLEND_FACTOR_ZERO,
@@ -836,8 +900,8 @@ void GraphicsModuleVulkanApp::create_pbr_pipeline() {
             0,
             VK_FALSE,
             VK_LOGIC_OP_COPY,
-            1,
-            &pipeline_color_blend_attachment_state,
+            pipeline_color_blend_attachment_state.size(),
+            pipeline_color_blend_attachment_state.data(),
             {0.0f,0.0f,0.0f,0.0f}
     };
 
@@ -934,9 +998,10 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         std::vector<VkDescriptorSet> object_descriptor_sets(descriptor_sets.begin() + 2, descriptor_sets.end());
         vsm_context.record_into_command_buffer(command_buffers[i], object_descriptor_sets, descriptor_sets[1], objects);
 
-        std::array<VkClearValue,2> clear_values;
+        std::array<VkClearValue,3> clear_values;
         clear_values[0].depthStencil = {1.0f, 0};
         clear_values[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+        clear_values[2].color = {0.0f, 0.0f, 0.0f, 0.0f};
 
         VkRenderPassBeginInfo render_pass_begin_info = {
                 VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -978,18 +1043,60 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
 
         smaa_context.record_into_command_buffer(command_buffers[i]);
 
+        glm::mat4 glm_proj = camera.get_proj_matrix(); // matrix needs to be in row-major hence we need to transpose it from column-major to row-major
+        glm_proj[1][1] *= -1;
+
+        glm::mat4 glm_norm_world_to_view = glm::transpose(glm::inverse(camera.get_view_matrix()));
+
+        glm::vec3 camera_pos = camera.get_pos(); //glm::vec3(5.1, 1.9, -1.4);
+        glm::vec3 camera_dir = camera.get_dir(); //glm::vec3(0.9, 0.18, -0.34);
+        DirectX::XMMATRIX m_view = DirectX::XMMatrixLookAtRH(DirectX::XMLoadFloat3(reinterpret_cast<const DirectX::XMFLOAT3 *>(glm::value_ptr(camera_pos))),
+                                                             DirectX::XMLoadFloat3(reinterpret_cast<const DirectX::XMFLOAT3 *>(glm::value_ptr(camera_dir))),
+                                                             DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+
+        DirectX::XMMATRIX dxm_norm_world_to_view = DirectX::XMMATRIX(1, 0, 0, 0,
+                                                                     0, 1, 0, 0,
+                                                                     0, 0, -1, 0,
+                                                                     0, 0, 0, 1) * DirectX::XMMatrixInverse(nullptr, m_view);
+
+        //DirectX::XMMATRIX dxm_norm_world_to_view = DirectX::XMMatrixTranspose(DirectX::XMMatrixInverse(nullptr, m_view));
+
+        DirectX::XMFLOAT4X4 p;
+        XMStoreFloat4x4(&p, dxm_norm_world_to_view);
+
+        FfxCacaoMatrix4x4 proj;
+        memcpy(&proj, glm::value_ptr(glm_proj), sizeof(glm::mat4));
+
+        FfxCacaoMatrix4x4 norm_world_to_view;
+        //memcpy(&norm_world_to_view, glm::value_ptr(glm_norm_world_to_view), sizeof(glm::mat4));
+        //memcpy(&norm_world_to_view, &dxm_norm_world_to_view, sizeof(glm::mat4));
+
+        norm_world_to_view.elements[0][0] = p._11; norm_world_to_view.elements[0][1] = p._12; norm_world_to_view.elements[0][2] = p._13; norm_world_to_view.elements[0][3] = p._14;
+        norm_world_to_view.elements[1][0] = p._21; norm_world_to_view.elements[1][1] = p._22; norm_world_to_view.elements[1][2] = p._23; norm_world_to_view.elements[1][3] = p._24;
+        norm_world_to_view.elements[2][0] = p._31; norm_world_to_view.elements[2][1] = p._32; norm_world_to_view.elements[2][2] = p._33; norm_world_to_view.elements[2][3] = p._34;
+        norm_world_to_view.elements[3][0] = p._41; norm_world_to_view.elements[3][1] = p._42; norm_world_to_view.elements[3][2] = p._43; norm_world_to_view.elements[3][3] = p._44;
+
+        //ffxCacaoVkDraw(fx_cacao_context, command_buffers[i], &proj, &norm_world_to_view);
+
         hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height});
 
         vkEndCommandBuffer(command_buffers[i]);
     }
 }
 
-void GraphicsModuleVulkanApp::start_frame_loop() {
+void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModuleVulkanApp*)> resize_callback,
+                                               std::function<void(GraphicsModuleVulkanApp*, uint32_t)> frame_start) {
     uint32_t rendered_frames = 0;
-    std::chrono::steady_clock::time_point t1;
+    std::chrono::steady_clock::time_point frames_time, current_frame, last_frame;
+    uint32_t delta_time;
 
     while (!glfwWindowShouldClose(window)) {
+        current_frame = std::chrono::steady_clock::now();
+        delta_time = std::chrono::duration_cast<std::chrono::milliseconds>(current_frame - last_frame).count();
+        last_frame = current_frame;
+
         glfwPollEvents();
+        frame_start(this, delta_time);
 
         camera.copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data));
         for(uint32_t i = 0, offset = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment);
@@ -1005,12 +1112,15 @@ void GraphicsModuleVulkanApp::start_frame_loop() {
         uint32_t image_index = 0;
         VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, semaphores[0], VK_NULL_HANDLE, &image_index);
         if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
-            on_window_resize();
+            on_window_resize(resize_callback);
             continue;
         }
         else if (res != VK_SUCCESS) {
             check_error(res, vulkan_helper::Error::ACQUIRE_NEXT_IMAGE_FAILED);
         }
+
+        vkDeviceWaitIdle(device);
+        this->record_command_buffers();
 
         VkPipelineStageFlags pipeline_stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         VkSubmitInfo submit_info = {
@@ -1037,7 +1147,7 @@ void GraphicsModuleVulkanApp::start_frame_loop() {
         };
         res = vkQueuePresentKHR(queue, &present_info);
         if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
-            on_window_resize();
+            on_window_resize(resize_callback);
             continue;
         }
         else if (res != VK_SUCCESS) {
@@ -1045,30 +1155,29 @@ void GraphicsModuleVulkanApp::start_frame_loop() {
         }
 
         rendered_frames++;
-        uint32_t time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t1).count();
+        uint32_t time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - frames_time).count();
         if ( time_diff > 1000) {
             std::cout << "Msec/frame: " << ( time_diff / static_cast<float>(rendered_frames)) << std::endl;
             rendered_frames = 0;
-            t1 = std::chrono::steady_clock::now();
+            frames_time = std::chrono::steady_clock::now();
         }
     }
 }
 
-void GraphicsModuleVulkanApp::on_window_resize() {
+void GraphicsModuleVulkanApp::on_window_resize(std::function<void(GraphicsModuleVulkanApp*)> resize_callback) {
     vkDeviceWaitIdle(device);
-
     create_swapchain();
     init_renderer();
+    resize_callback(this);
 }
-
-uint8_t* GraphicsModuleVulkanApp::get_model_uniform_data_ptr(int model_index) {
-    return nullptr;
-}
-
-Camera* GraphicsModuleVulkanApp::get_camera_ptr() { return &camera; }
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDeviceWaitIdle(device);
+
+    ffxCacaoVkDestroyScreenSizeDependentResources(fx_cacao_context);
+    ffxCacaoVkDestroyContext(fx_cacao_context);
+    delete[] reinterpret_cast<uint8_t*>(fx_cacao_context);
+
     for (auto& semaphore : semaphores) {
         vkDestroySemaphore(device, semaphore, nullptr);
     }
@@ -1113,6 +1222,8 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
         vkDestroyImageView(device, device_render_target_image_view, nullptr);
     }
     vkDestroyImage(device, device_render_target, nullptr);
+    vkDestroyImageView(device, device_normal_g_image_view, nullptr);
+    vkDestroyImage(device, device_normal_g_image, nullptr);
     vkDestroyBuffer(device, device_camera_lights_uniform_buffer, nullptr);
     vkFreeMemory(device, device_attachments_memory, nullptr);
 

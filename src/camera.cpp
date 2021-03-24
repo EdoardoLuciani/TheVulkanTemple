@@ -11,6 +11,27 @@ glm::uvec2 Camera::get_resolution_from_ratio(int size) {
     return {size*aspect, size};
 }
 
+glm::mat4 Camera::get_proj_matrix() {
+    glm::mat4 perspective_matrix;
+    if (zfar == std::numeric_limits<float>::max()) {
+        perspective_matrix = glm::infinitePerspective(fov, aspect, znear);
+    }
+    else {
+        perspective_matrix = glm::perspective(fov, aspect, znear, zfar);
+    }
+    perspective_matrix[1][1] *= -1;
+
+    return perspective_matrix;
+}
+
+glm::mat4 Camera::get_view_matrix() {
+    return glm::lookAt(glm::vec3(pos), dir, glm::vec3(0.0f, -1.0f, 0.0f));
+}
+
+glm::mat4 Camera::get_view_matrix2() {
+    return glm::lookAt(glm::vec3(pos), dir, glm::vec3(0.0f, 1.0f, 0.0f));
+}
+
 uint32_t Camera::copy_data_to_ptr(uint8_t *ptr) {
     if (ptr != nullptr) {
         memcpy(ptr, glm::value_ptr(glm::lookAt(glm::vec3(pos), dir, glm::vec3(0.0f, -1.0f, 0.0f))), sizeof(glm::mat4));

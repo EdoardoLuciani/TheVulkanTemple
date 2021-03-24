@@ -10,6 +10,7 @@ elseif(UNIX)
     add_definitions(-DVK_USE_PLATFORM_XLIB_KHR)
 endif()
 add_definitions(-DGLM_FORCE_DEPTH_ZERO_TO_ONE)
+add_definitions(-DGLM_FORCE_LEFT_HANDED)
 
 add_executable(base_vulkan_app
         src/base_vulkan_app.cpp
@@ -20,7 +21,16 @@ add_executable(base_vulkan_app
         src/volk.c
         src/vsm/vsm_context.cpp
         src/camera.cpp
-        src/light.cpp src/hdr_tonemap/hdr_tonemap_context.cpp src/hdr_tonemap/hdr_tonemap_context.h src/fps_camera_control.cpp src/fps_camera_control.h src/gltf_model.cpp src/gltf_model.h)
+        src/light.cpp
+        src/hdr_tonemap/hdr_tonemap_context.cpp
+        src/hdr_tonemap/hdr_tonemap_context.h
+        src/gltf_model.cpp
+        src/gltf_model.h
+
+        src/ffx_cacao/ffx_cacao.h
+        src/ffx_cacao/ffx_cacao.cpp
+        src/ffx_cacao/ffx_cacao_defines.h
+        )
 
 target_link_libraries(base_vulkan_app glfw3 dl pthread stdc++fs X11)
 

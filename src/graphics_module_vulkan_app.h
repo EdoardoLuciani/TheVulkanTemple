@@ -3,10 +3,12 @@
 
 #include <vector>
 #include <array>
+#include <functional>
 #include "base_vulkan_app.h"
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
 #include "hdr_tonemap/hdr_tonemap_context.h"
+#include "ffx_cacao/ffx_cacao.h"
 #include "vulkan_helper.h"
 #include <glm/glm.hpp>
 #include "camera.h"
@@ -39,13 +41,15 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void set_camera(Camera camera);
         void init_renderer();
 
-        void start_frame_loop();
+        void start_frame_loop(std::function<void(GraphicsModuleVulkanApp*)> resize_callback,
+                              std::function<void(GraphicsModuleVulkanApp*, uint32_t)> frame_start);
 
         // Methods to manage the scene objects
-        uint8_t* get_model_uniform_data_ptr(int model_index);
-        Camera* get_camera_ptr();
+        Camera* get_camera_ptr() { return &camera; };
+        Light* get_light_ptr(uint32_t idx) { return &lights.at(idx); };
     private:
         EngineOptions engine_options;
+
         VkSampler max_aniso_linear_sampler;
         std::vector<VkSampler> model_image_samplers;
 
@@ -77,12 +81,16 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // HDR ping pong image
         VkImage device_render_target = VK_NULL_HANDLE;
         std::array<VkImageView, 2> device_render_target_image_views = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        // Image for normal g-buffer
+        VkImage device_normal_g_image = VK_NULL_HANDLE;
+        VkImageView device_normal_g_image_view = VK_NULL_HANDLE;
         // Device buffer that hold camera and lights information
         VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
         // Contexts for graphical effects
         SmaaContext smaa_context;
         VSMContext vsm_context;
         HDRTonemapContext hdr_tonemap_context;
+        FfxCacaoVkContext *fx_cacao_context = nullptr;
         // Memory in which all attachment reside
         VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
 
@@ -111,7 +119,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void create_framebuffers();
         void create_pbr_pipeline();
         void record_command_buffers();
-        void on_window_resize();
+        void on_window_resize(std::function<void(GraphicsModuleVulkanApp*)> resize_callback);
 
         // Helper methods
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);

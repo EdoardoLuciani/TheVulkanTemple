@@ -5,6 +5,7 @@
 #include <fstream>
 #include <algorithm>
 #include <bitset>
+#include <cstring>
 
 namespace vulkan_helper
 {
@@ -118,41 +119,85 @@ namespace vulkan_helper
         return VK_FALSE;
     }
 
-    VkBool32 compare_physical_device_features_structs(VkPhysicalDeviceFeatures base, VkPhysicalDeviceFeatures requested) {
-	    constexpr uint32_t feature_count = static_cast<uint32_t>(sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32));
+    VkBool32 compare_device_features_struct(const void* base, const void* requested, uint32_t size) {
+        uint8_t offset = sizeof(int) + sizeof(void*);
 
-    	std::array<VkBool32, feature_count> base_bools_arr;
-	    std::memcpy(base_bools_arr.data(), &base, base_bools_arr.size()*sizeof(VkBool32));
+        const VkBool32 *base_str_ptr = reinterpret_cast<const VkBool32*>(reinterpret_cast<const uint8_t*>(base) + offset);
+        const VkBool32 *requested_str_ptr = reinterpret_cast<const VkBool32*>(reinterpret_cast<const uint8_t*>(requested) + offset);
 
-    	std::array<VkBool32, feature_count> requested_bools_arr;
-	    std::memcpy(requested_bools_arr.data(), &requested, requested_bools_arr.size()*sizeof(VkBool32));
-
-	    for(size_t i = 0; i < base_bools_arr.size(); i++) {
-		    if (base_bools_arr[i] == VK_FALSE && requested_bools_arr[i] == VK_TRUE) {
-			    return VK_FALSE;
-		    }
-	    }
-	    return VK_TRUE; 
-    }
-
-    VkBool32 compare_physical_device_descriptor_indexing_features_structs(VkPhysicalDeviceDescriptorIndexingFeaturesEXT base,
-                                                                          VkPhysicalDeviceDescriptorIndexingFeaturesEXT requested) {
-        base.pNext = nullptr;
-        requested.pNext = nullptr;
-        constexpr uint32_t feature_count = static_cast<uint32_t>(sizeof(VkPhysicalDeviceDescriptorIndexingFeaturesEXT) / sizeof(VkBool32));
-
-        std::array<VkBool32, feature_count> base_bools_arr;
-        std::memcpy(base_bools_arr.data(), &base, base_bools_arr.size()*sizeof(VkBool32));
-
-        std::array<VkBool32, feature_count> requested_bools_arr;
-        std::memcpy(requested_bools_arr.data(), &requested, requested_bools_arr.size()*sizeof(VkBool32));
-
-        for(size_t i = 0; i < base_bools_arr.size(); i++) {
-            if (base_bools_arr[i] == VK_FALSE && requested_bools_arr[i] == VK_TRUE) {
+        uint32_t corrected_size = (size - offset)/sizeof(VkBool32);
+        for(size_t i = 0; i < corrected_size; i++) {
+            if (base_str_ptr[i] == VK_FALSE && requested_str_ptr[i] == VK_TRUE) {
                 return VK_FALSE;
             }
         }
         return VK_TRUE;
+    }
+
+    void* create_device_feature_struct_chain(const std::vector<const char*> &device_extensions) {
+        void *first = nullptr;
+        void *last = nullptr;
+
+        for (const auto &device_extension : device_extensions) {
+            if (!strcmp(device_extension,"VK_EXT_descriptor_indexing")) {
+                VkPhysicalDeviceDescriptorIndexingFeaturesEXT* str = new VkPhysicalDeviceDescriptorIndexingFeaturesEXT;
+                str->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+                str->pNext = nullptr;
+
+                if (first == nullptr) {
+                    first = str;
+                }
+                else {
+                    // Even though the precendent type is not really this one we use it anyway
+                    reinterpret_cast<VkPhysicalDeviceFeatures2*>(last)->pNext = str;
+                }
+                last = str;
+
+            }
+            else if (!strcmp(device_extension,"VK_KHR_shader_float16_int8")) {
+                VkPhysicalDeviceShaderFloat16Int8FeaturesKHR* str = new VkPhysicalDeviceShaderFloat16Int8FeaturesKHR;
+                str->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR;
+                str->pNext = nullptr;
+
+                if (first == nullptr) {
+                    first = str;
+                }
+                else {
+                    // Even though the precendent type is not really this one we use it anyway
+                    reinterpret_cast<VkPhysicalDeviceFeatures2*>(last)->pNext = str;
+                }
+                last = str;
+
+            }
+        }
+        return first;
+    }
+
+    VkBool32 compare_device_feature_struct_chain(void const *base, void const *requested) {
+        void const *p_next_base = base;
+        void const *p_next_requested = requested;
+
+        while (p_next_base != nullptr && p_next_requested != nullptr) {
+            switch(*reinterpret_cast<const int*>(p_next_base)) {
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT:
+                    if (!compare_device_features_struct(p_next_base, p_next_requested, sizeof(VkPhysicalDeviceDescriptorIndexingFeaturesEXT))) {
+                        return VK_FALSE;
+                    }
+
+                    p_next_base = reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT const*>(p_next_base)->pNext;
+                    p_next_requested = reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT const*>(p_next_requested)->pNext;
+                    break;
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR:
+                    if (!compare_device_features_struct(p_next_base, p_next_requested, sizeof(VkPhysicalDeviceShaderFloat16Int8FeaturesKHR))) {
+                        return VK_FALSE;
+                    }
+
+                    p_next_base = reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR const*>(p_next_base)->pNext;
+                    p_next_requested = reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR const*>(p_next_requested)->pNext;
+                    break;
+            }
+        }
+        return (p_next_base == nullptr && p_next_requested == nullptr) ? VK_TRUE : VK_FALSE;
     }
 
     void normalize_vectors(glm::vec3 *vectors, int number_of_elements) {
