@@ -59,8 +59,8 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             0.0f,
-            VK_TRUE,
-            16.0f,
+            VK_FALSE,
+            0.0f,
             VK_FALSE,
             VK_COMPARE_OP_ALWAYS,
             0.0f,
@@ -499,6 +499,10 @@ void GraphicsModuleVulkanApp::init_renderer() {
                  1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_normal_g_image);
 
+    create_image(device_global_ao_image, VK_FORMAT_R16_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+                 1, 1, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    device_images_to_allocate.push_back(device_global_ao_image);
+
     // We request information about the buffer and images we need from vsm_context and store them in a vector
     auto vec = vsm_context.get_device_images();
     device_images_to_allocate.insert(device_images_to_allocate.end(), vec.begin(), vec.end());
@@ -515,6 +519,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
     create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
     create_image_view(device_normal_g_image_view, device_normal_g_image, VK_FORMAT_R16G16B16A16_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+    create_image_view(device_global_ao_image_view, device_global_ao_image, VK_FORMAT_R16_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
 
     vsm_context.init_resources();
     smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
@@ -525,14 +530,14 @@ void GraphicsModuleVulkanApp::init_renderer() {
     screenSizeInfo.height = swapchain_create_info.imageExtent.height;
     screenSizeInfo.depthView = device_depth_image_view;
     screenSizeInfo.normalsView = device_normal_g_image_view;
-    screenSizeInfo.output = device_render_target;
-    screenSizeInfo.outputView = device_render_target_image_views[1];
+    screenSizeInfo.output = device_global_ao_image;
+    screenSizeInfo.outputView = device_global_ao_image_view;
     if (ffxCacaoVkInitScreenSizeDependentResources(fx_cacao_context, &screenSizeInfo)) {
         throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
     }
 
     FfxCacaoSettings settings = FFX_CACAO_DEFAULT_SETTINGS;
-    //settings.generateNormals = FFX_CACAO_TRUE;
+    settings.generateNormals = FFX_CACAO_TRUE;
     if (ffxCacaoVkUpdateSettings(fx_cacao_context, &settings)) {
         throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
     }
@@ -574,7 +579,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     // Next we allocate the vsm descriptors in the pool
     vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
     smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0]);
-    hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[1], swapchain_images, swapchain_create_info.imageFormat);
+    hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[1], device_global_ao_image_view, swapchain_images, swapchain_create_info.imageFormat);
 
     // then we allocate descriptor sets for camera, lights and objects
     std::vector<VkDescriptorSetLayout> layouts_of_sets;
@@ -837,7 +842,7 @@ void GraphicsModuleVulkanApp::create_pbr_pipeline() {
             VK_FALSE,
             VK_FALSE,
             VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_NONE,
+            VK_CULL_MODE_BACK_BIT,
             VK_FRONT_FACE_COUNTER_CLOCKWISE,
             VK_FALSE,
             0.0f,
@@ -1043,16 +1048,10 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
 
         smaa_context.record_into_command_buffer(command_buffers[i]);
 
-        glm::mat4 glm_proj = camera.get_proj_matrix(); // matrix needs to be in row-major hence we need to transpose it from column-major to row-major
-        glm_proj[1][1] *= -1;
-
-        glm::mat4 glm_norm_world_to_view = glm::transpose(glm::inverse(camera.get_view_matrix()));
-
-        glm::vec3 camera_pos = camera.get_pos(); //glm::vec3(5.1, 1.9, -1.4);
-        glm::vec3 camera_dir = camera.get_dir(); //glm::vec3(0.9, 0.18, -0.34);
-        DirectX::XMMATRIX m_view = DirectX::XMMatrixLookAtRH(DirectX::XMLoadFloat3(reinterpret_cast<const DirectX::XMFLOAT3 *>(glm::value_ptr(camera_pos))),
-                                                             DirectX::XMLoadFloat3(reinterpret_cast<const DirectX::XMFLOAT3 *>(glm::value_ptr(camera_dir))),
-                                                             DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+        // ----------------- TESTING ---------------------
+        DirectX::XMMATRIX m_view = DirectX::XMMatrixLookAtRH(DirectX::XMLoadFloat3(reinterpret_cast<const DirectX::XMFLOAT3 *>(glm::value_ptr(camera.pos))),
+                                                             DirectX::XMLoadFloat3(reinterpret_cast<const DirectX::XMFLOAT3 *>(glm::value_ptr(camera.dir))),
+                                                             DirectX::XMVectorSet(0.0f, -1.0f, 0.0f, 0.0f));
 
         DirectX::XMMATRIX dxm_norm_world_to_view = DirectX::XMMATRIX(1, 0, 0, 0,
                                                                      0, 1, 0, 0,
@@ -1060,23 +1059,26 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
                                                                      0, 0, 0, 1) * DirectX::XMMatrixInverse(nullptr, m_view);
 
         //DirectX::XMMATRIX dxm_norm_world_to_view = DirectX::XMMatrixTranspose(DirectX::XMMatrixInverse(nullptr, m_view));
-
         DirectX::XMFLOAT4X4 p;
         XMStoreFloat4x4(&p, dxm_norm_world_to_view);
 
-        FfxCacaoMatrix4x4 proj;
-        memcpy(&proj, glm::value_ptr(glm_proj), sizeof(glm::mat4));
+        //norm_world_to_view.elements[0][0] = p._11; norm_world_to_view.elements[0][1] = p._12; norm_world_to_view.elements[0][2] = p._13; norm_world_to_view.elements[0][3] = p._14;
+        //norm_world_to_view.elements[1][0] = p._21; norm_world_to_view.elements[1][1] = p._22; norm_world_to_view.elements[1][2] = p._23; norm_world_to_view.elements[1][3] = p._24;
+        //norm_world_to_view.elements[2][0] = p._31; norm_world_to_view.elements[2][1] = p._32; norm_world_to_view.elements[2][2] = p._33; norm_world_to_view.elements[2][3] = p._34;
+        //norm_world_to_view.elements[3][0] = p._41; norm_world_to_view.elements[3][1] = p._42; norm_world_to_view.elements[3][2] = p._43; norm_world_to_view.elements[3][3] = p._44;
+
+        glm::mat4 glm_norm_world_to_view = glm::mat4(1, 0, 0, 0,
+                                                     0, 1, 0, 0,
+                                                     0, 0, -1, 0,
+                                                     0, 0, 0, 1) * glm::inverse(camera.get_view_matrix());
 
         FfxCacaoMatrix4x4 norm_world_to_view;
-        //memcpy(&norm_world_to_view, glm::value_ptr(glm_norm_world_to_view), sizeof(glm::mat4));
-        //memcpy(&norm_world_to_view, &dxm_norm_world_to_view, sizeof(glm::mat4));
+        memcpy(&norm_world_to_view, glm::value_ptr(glm_norm_world_to_view), sizeof(glm::mat4));
 
-        norm_world_to_view.elements[0][0] = p._11; norm_world_to_view.elements[0][1] = p._12; norm_world_to_view.elements[0][2] = p._13; norm_world_to_view.elements[0][3] = p._14;
-        norm_world_to_view.elements[1][0] = p._21; norm_world_to_view.elements[1][1] = p._22; norm_world_to_view.elements[1][2] = p._23; norm_world_to_view.elements[1][3] = p._24;
-        norm_world_to_view.elements[2][0] = p._31; norm_world_to_view.elements[2][1] = p._32; norm_world_to_view.elements[2][2] = p._33; norm_world_to_view.elements[2][3] = p._34;
-        norm_world_to_view.elements[3][0] = p._41; norm_world_to_view.elements[3][1] = p._42; norm_world_to_view.elements[3][2] = p._43; norm_world_to_view.elements[3][3] = p._44;
+        FfxCacaoMatrix4x4 proj;
+        memcpy(&proj, glm::value_ptr(camera.get_proj_matrix()), sizeof(glm::mat4));
 
-        //ffxCacaoVkDraw(fx_cacao_context, command_buffers[i], &proj, &norm_world_to_view);
+        ffxCacaoVkDraw(fx_cacao_context, command_buffers[i], &proj, &norm_world_to_view);
 
         hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height});
 
@@ -1224,6 +1226,8 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyImage(device, device_render_target, nullptr);
     vkDestroyImageView(device, device_normal_g_image_view, nullptr);
     vkDestroyImage(device, device_normal_g_image, nullptr);
+    vkDestroyImageView(device, device_global_ao_image_view, nullptr);
+    vkDestroyImage(device, device_global_ao_image, nullptr);
     vkDestroyBuffer(device, device_camera_lights_uniform_buffer, nullptr);
     vkFreeMemory(device, device_attachments_memory, nullptr);
 

@@ -2,7 +2,7 @@
 layout (local_size_x = 32, local_size_y = 32) in;
 #include "ColorSpaces.inc.glsl"
 
-layout(set = 0, binding = 0) uniform sampler2D render_target;
+layout(set = 0, binding = 0) uniform sampler2D render_target[2];
 layout(set = 0, binding = 1, r11f_g11f_b10f) uniform image2D out_image;
 
 float Tonemap_Lottes(float x) {
@@ -90,7 +90,8 @@ float ACESFilm(float x) {
 }
 
 void main() {
-    vec3 color = texelFetch(render_target, ivec2(gl_GlobalInvocationID.xy), 0).rgb;
+    float ao = texelFetch(render_target[1], ivec2(gl_GlobalInvocationID.xy), 0).r;
+    vec3 color = texelFetch(render_target[0], ivec2(gl_GlobalInvocationID.xy), 0).rgb * ao;
     vec3 xyY = rgb_to_xyY(color);
 
     //xyY.z = ACESFilm(xyY.z);
@@ -102,7 +103,7 @@ void main() {
     vec3 out_color = rgb_to_srgb_approx(xyY_to_rgb(xyY));
 
     // debug mode!!!
-    //out_color = color;
+    //out_color = vec3(ao);
 
     imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(out_color, 1.0f));
 }

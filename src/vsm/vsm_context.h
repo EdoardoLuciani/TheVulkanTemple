@@ -37,7 +37,7 @@ private:
 
     VkDevice device = VK_NULL_HANDLE;
     VkSampler device_shadow_map_sampler = VK_NULL_HANDLE;
-    VkSampler device_max_aniso_linear_sampler = VK_NULL_HANDLE;
+    VkSampler device_render_target_sampler = VK_NULL_HANDLE;
     VkDescriptorSetLayout vsm_descriptor_set_layout = VK_NULL_HANDLE;
     VkRenderPass shadow_map_render_pass = VK_NULL_HANDLE;
 

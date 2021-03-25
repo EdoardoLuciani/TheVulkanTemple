@@ -19,8 +19,8 @@ HDRTonemapContext::HDRTonemapContext(VkDevice device) {
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             0.0f,
-            VK_TRUE,
-            16.0f,
+            VK_FALSE,
+            0.0f,
             VK_FALSE,
             VK_COMPARE_OP_ALWAYS,
             0.0f,
@@ -28,23 +28,24 @@ HDRTonemapContext::HDRTonemapContext(VkDevice device) {
             VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
             VK_FALSE,
     };
-    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_max_aniso_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
+    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_render_target_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
+    std::array<VkSampler,2> descriptor_set_layout_binding_samplers = {device_render_target_sampler, device_render_target_sampler};
 
     // We create the descriptor set layout for the compute shader
     std::array<VkDescriptorSetLayoutBinding,2> descriptor_set_layout_binding;
     descriptor_set_layout_binding[0] = {
             0,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            1,
+            2,
             VK_SHADER_STAGE_COMPUTE_BIT,
-            &device_max_aniso_linear_sampler
+            descriptor_set_layout_binding_samplers.data()
     };
     descriptor_set_layout_binding[1] = {
             1,
             VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             1,
             VK_SHADER_STAGE_COMPUTE_BIT,
-            &device_max_aniso_linear_sampler
+            &device_render_target_sampler
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -64,7 +65,7 @@ HDRTonemapContext::~HDRTonemapContext() {
     vkDestroyPipelineLayout(device, hdr_tonemap_pipeline_layout, nullptr);
     vkDestroyPipeline(device, hdr_tonemap_pipeline, nullptr);
 
-    vkDestroySampler(device, device_max_aniso_linear_sampler, nullptr);
+    vkDestroySampler(device, device_render_target_sampler, nullptr);
     vkDestroyDescriptorSetLayout(device, hdr_tonemap_set_layout, nullptr);
 }
 
@@ -124,12 +125,12 @@ void HDRTonemapContext::create_resources(std::string shader_dir_path, uint32_t o
 
 std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> HDRTonemapContext::get_required_descriptor_pool_size_and_sets() {
     return {
-            { {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, out_images_count},
+            { {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, out_images_count*2},
               {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, out_images_count}},
             out_images_count};
 }
 
-void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, std::vector<VkImage> out_images, VkFormat image_format) {
+void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView input_ao_image_view, std::vector<VkImage> out_images, VkFormat image_format) {
     this->out_images = out_images;
 
     for (int i=0; i<out_images_views.size(); i++) {
@@ -162,26 +163,31 @@ void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_poo
     };
     check_error(vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, hdr_tonemap_descriptor_sets.data()), vulkan_helper::Error::DESCRIPTOR_SET_ALLOCATION_FAILED);
 
-    std::vector<VkDescriptorImageInfo> descriptor_image_infos(2*out_images_count);
+    std::vector<VkDescriptorImageInfo> descriptor_image_infos(3*out_images_count);
     for(int i=0; i<descriptor_image_infos.size(); i++) {
         descriptor_image_infos[i] = {
-                device_max_aniso_linear_sampler,
+                device_render_target_sampler,
                 input_image_view,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
         descriptor_image_infos[++i] = {
-                device_max_aniso_linear_sampler,
-                out_images_views[i/2],
+                device_render_target_sampler,
+                input_ao_image_view,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        };
+        descriptor_image_infos[++i] = {
+                device_render_target_sampler,
+                out_images_views[i/3],
                 VK_IMAGE_LAYOUT_GENERAL
         };
     }
 
-    std::vector<VkWriteDescriptorSet> write_descriptor_set(2*out_images_count);
+    std::vector<VkWriteDescriptorSet> write_descriptor_set(3*out_images_count);
     for(int i=0; i<write_descriptor_set.size(); i++) {
         write_descriptor_set[i] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
-                hdr_tonemap_descriptor_sets[i/2],
+                hdr_tonemap_descriptor_sets[i/3],
                 0,
                 0,
                 1,
@@ -193,7 +199,19 @@ void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_poo
         write_descriptor_set[++i] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
-                hdr_tonemap_descriptor_sets[i/2],
+                hdr_tonemap_descriptor_sets[i/3],
+                0,
+                1,
+                1,
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                &descriptor_image_infos[i],
+                nullptr,
+                nullptr
+        };
+        write_descriptor_set[++i] = {
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                nullptr,
+                hdr_tonemap_descriptor_sets[i/3],
                 1,
                 0,
                 1,

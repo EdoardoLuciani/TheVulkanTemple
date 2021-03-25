@@ -16,42 +16,20 @@ VSMContext::VSMContext(VkDevice device) {
             VK_FILTER_LINEAR,
             VK_FILTER_LINEAR,
             VK_SAMPLER_MIPMAP_MODE_LINEAR,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
             0.0f,
-            VK_TRUE,
-            16.0f,
             VK_FALSE,
-            VK_COMPARE_OP_LESS,
+            0.0f,
+            VK_FALSE,
+            VK_COMPARE_OP_ALWAYS,
             0.0f,
             1.0f,
             VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
             VK_FALSE,
     };
-    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_shadow_map_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
-
-    sampler_create_info = {
-            VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FILTER_LINEAR,
-            VK_FILTER_LINEAR,
-            VK_SAMPLER_MIPMAP_MODE_LINEAR,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            0.0f,
-            VK_TRUE,
-            16.0f,
-            VK_FALSE,
-            VK_COMPARE_OP_ALWAYS,
-            0.0f,
-            1.0f,
-            VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
-            VK_FALSE,
-    };
-    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_max_aniso_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
+    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_render_target_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
 
     // Creation of the descriptor set layout used in the shader
     std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
@@ -60,14 +38,14 @@ VSMContext::VSMContext(VkDevice device) {
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             1,
             VK_SHADER_STAGE_COMPUTE_BIT,
-            &device_max_aniso_linear_sampler
+            &device_render_target_sampler
     };
     descriptor_set_layout_binding[1] = {
             1,
             VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             1,
             VK_SHADER_STAGE_COMPUTE_BIT,
-            &device_max_aniso_linear_sampler
+            &device_render_target_sampler
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -93,7 +71,7 @@ VSMContext::VSMContext(VkDevice device) {
         },
         {
             0,
-            VK_FORMAT_R16G16_SFLOAT,
+            VK_FORMAT_R32G32_SFLOAT,
             VK_SAMPLE_COUNT_1_BIT,
             VK_ATTACHMENT_LOAD_OP_CLEAR,
             VK_ATTACHMENT_STORE_OP_STORE,
@@ -147,8 +125,7 @@ VSMContext::~VSMContext() {
     }
     vkDestroyRenderPass(device, shadow_map_render_pass, nullptr);
     vkDestroyDescriptorSetLayout(device, vsm_descriptor_set_layout, nullptr);
-    vkDestroySampler(device, device_shadow_map_sampler, nullptr);
-    vkDestroySampler(device, device_max_aniso_linear_sampler, nullptr);
+    vkDestroySampler(device, device_render_target_sampler, nullptr);
 
     for (auto& image_views : device_vsm_depth_image_views) {
         vkDestroyImageView(device, image_views[0], nullptr);
@@ -184,7 +161,7 @@ void VSMContext::create_resources(std::vector<VkExtent2D> depth_images_res, std:
                 nullptr,
                 0,
                 VK_IMAGE_TYPE_2D,
-                VK_FORMAT_R16G16_SFLOAT,
+                VK_FORMAT_R32G32_SFLOAT,
                 {depth_images_res[i].width, depth_images_res[i].height, 1},
                 1,
                 2,
@@ -551,7 +528,7 @@ void VSMContext::create_image_views() {
                 0,
                 device_vsm_depth_images[i],
                 VK_IMAGE_VIEW_TYPE_2D,
-                VK_FORMAT_R16G16_SFLOAT,
+                VK_FORMAT_R32G32_SFLOAT,
                 {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
                 { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0 , 1 }
         };
@@ -613,24 +590,24 @@ void VSMContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool) {
     for (int i=0; i<descriptor_image_infos.size(); i++) {
         // First two are for the first pass of the blur
         descriptor_image_infos[i] = {
-                device_max_aniso_linear_sampler,
+                device_render_target_sampler,
                 device_vsm_depth_image_views[i/4][0],
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
         descriptor_image_infos[++i] = {
-                device_max_aniso_linear_sampler,
+                device_render_target_sampler,
                 device_vsm_depth_image_views[i/4][1],
                 VK_IMAGE_LAYOUT_GENERAL
         };
 
         // Second two are for the second pass of the blur
         descriptor_image_infos[++i] = {
-                device_max_aniso_linear_sampler,
+                device_render_target_sampler,
                 device_vsm_depth_image_views[i/4][1],
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
         descriptor_image_infos[++i] = {
-                device_max_aniso_linear_sampler,
+                device_render_target_sampler,
                 device_vsm_depth_image_views[i/4][0],
                 VK_IMAGE_LAYOUT_GENERAL
         };
