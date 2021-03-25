@@ -112,6 +112,8 @@ VSMContext::VSMContext(VkDevice device) {
 }
 
 VSMContext::~VSMContext() {
+    vkDeviceWaitIdle(device);
+
     vkDestroyPipelineLayout(device, gaussian_blur_pipeline_layout, nullptr);
     for(auto& pipeline : gaussian_blur_xy_pipelines) {
         vkDestroyPipeline(device, pipeline, nullptr);

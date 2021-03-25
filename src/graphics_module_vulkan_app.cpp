@@ -10,9 +10,6 @@
 #include "vulkan_helper.h"
 #include <unordered_map>
 
-// TESTING
-#include <DirectXMath/DirectXMath.h>
-
 GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name,
                                                  std::vector<const char *> &desired_instance_level_extensions,
                                                  VkExtent2D window_size,
@@ -423,6 +420,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     vkWaitForFences(device, 1, &fence, VK_TRUE, 20000000);
 
     // After the copy has finished we do cleanup
+    vkDeviceWaitIdle(device);
     vkResetCommandPool(device, command_pool, 0);
     vkDestroyFence(device, fence, nullptr);
     vkDestroyBuffer(device, host_model_data_buffer, nullptr);
@@ -1047,25 +1045,6 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         vkCmdEndRenderPass(command_buffers[i]);
 
         smaa_context.record_into_command_buffer(command_buffers[i]);
-
-        // ----------------- TESTING ---------------------
-        DirectX::XMMATRIX m_view = DirectX::XMMatrixLookAtRH(DirectX::XMLoadFloat3(reinterpret_cast<const DirectX::XMFLOAT3 *>(glm::value_ptr(camera.pos))),
-                                                             DirectX::XMLoadFloat3(reinterpret_cast<const DirectX::XMFLOAT3 *>(glm::value_ptr(camera.dir))),
-                                                             DirectX::XMVectorSet(0.0f, -1.0f, 0.0f, 0.0f));
-
-        DirectX::XMMATRIX dxm_norm_world_to_view = DirectX::XMMATRIX(1, 0, 0, 0,
-                                                                     0, 1, 0, 0,
-                                                                     0, 0, -1, 0,
-                                                                     0, 0, 0, 1) * DirectX::XMMatrixInverse(nullptr, m_view);
-
-        //DirectX::XMMATRIX dxm_norm_world_to_view = DirectX::XMMatrixTranspose(DirectX::XMMatrixInverse(nullptr, m_view));
-        DirectX::XMFLOAT4X4 p;
-        XMStoreFloat4x4(&p, dxm_norm_world_to_view);
-
-        //norm_world_to_view.elements[0][0] = p._11; norm_world_to_view.elements[0][1] = p._12; norm_world_to_view.elements[0][2] = p._13; norm_world_to_view.elements[0][3] = p._14;
-        //norm_world_to_view.elements[1][0] = p._21; norm_world_to_view.elements[1][1] = p._22; norm_world_to_view.elements[1][2] = p._23; norm_world_to_view.elements[1][3] = p._24;
-        //norm_world_to_view.elements[2][0] = p._31; norm_world_to_view.elements[2][1] = p._32; norm_world_to_view.elements[2][2] = p._33; norm_world_to_view.elements[2][3] = p._34;
-        //norm_world_to_view.elements[3][0] = p._41; norm_world_to_view.elements[3][1] = p._42; norm_world_to_view.elements[3][2] = p._43; norm_world_to_view.elements[3][3] = p._44;
 
         glm::mat4 glm_norm_world_to_view = glm::mat4(1, 0, 0, 0,
                                                      0, 1, 0, 0,

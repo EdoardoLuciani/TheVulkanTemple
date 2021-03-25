@@ -47,6 +47,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Methods to manage the scene objects
         Camera* get_camera_ptr() { return &camera; };
         Light* get_light_ptr(uint32_t idx) { return &lights.at(idx); };
+        GltfModel* get_gltf_model_ptr(uint32_t idx) { return &objects.at(idx).model; };
     private:
         EngineOptions engine_options;
 
@@ -66,7 +67,6 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
 
         std::vector<vk_object_render_info> objects;
-
         std::vector<Light> lights;
         Camera camera;
 

@@ -58,6 +58,8 @@ HDRTonemapContext::HDRTonemapContext(VkDevice device) {
 }
 
 HDRTonemapContext::~HDRTonemapContext() {
+    vkDeviceWaitIdle(device);
+
     for (auto& out_image_view : out_images_views) {
         vkDestroyImageView(device, out_image_view, nullptr);
     }

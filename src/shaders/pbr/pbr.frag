@@ -59,9 +59,8 @@ float ReduceLightBleeding(float p_max, float Amount) {
 
 void main() {
     vec3 albedo     = pow(texture(images, vec3(fs_in.tex_coord, 0)).rgb, vec3(2.2));
-    float metallic  = texture(images, vec3(fs_in.tex_coord, 1)).b;
     float roughness = texture(images, vec3(fs_in.tex_coord, 1)).g;
-    float ao        = texture(images, vec3(fs_in.tex_coord, 1)).r;
+    float metallic  = texture(images, vec3(fs_in.tex_coord, 1)).b;
 
     vec3 N = normalize(texture(images, vec3(fs_in.tex_coord, 2)).xyz * 2.0 - 1.0);
     vec3 V = normalize(fs_in.V);
@@ -110,7 +109,7 @@ void main() {
     }
 
     // ambient value is 0.02
-    vec3 ambient = vec3(0.02) * albedo * ao;
+    vec3 ambient = vec3(0.02) * albedo;
 
     // final color is composed of ambient, diffuse, specular and emissive
     vec3 color = ambient + rho + vec3( texture(images,vec3(fs_in.tex_coord, 3)) );

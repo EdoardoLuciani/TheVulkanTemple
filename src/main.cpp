@@ -1,12 +1,10 @@
 #include <iostream>
 #include <utility>
 #include <vector>
-#include <chrono>
 #include "graphics_module_vulkan_app.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/transform.hpp>
-#include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/polar_coordinates.hpp>
 
 #define MAGIC_ENUM_RANGE_MIN 0
@@ -59,7 +57,16 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
 
     // LIGHTS REGULATION
     double time = glfwGetTime();
+    /*
     app->get_light_ptr(0)->pos = glm::vec4(glm::cos(time)*4, 1.0f, glm::sin(time)*4, 1.0f);
+    app->get_light_ptr(1)->color = glm::vec3(glm::abs(glm::tan(time*2.0f)*2.0f), 0.0f, 0.0f);
+
+    app->get_gltf_model_ptr(0)->set_model_matrix(glm::translate(glm::vec3(-1.0f, 0.02f, -0.5f))*glm::rotate(static_cast<float>(time*5), glm::vec3(1.0f, 0.0f, 0.0f))*glm::scale(glm::vec3(0.4f,0.4f,0.4f)));
+    app->get_gltf_model_ptr(1)->set_model_matrix(glm::translate(glm::vec3(0.5f, -0.35f, 0.0f))*glm::rotate(static_cast<float>(time), glm::vec3(0.0f, 1.0f, 0.0f))
+    *glm::scale(glm::vec3(2.5f,2.5f,2.5f)));
+    app->get_gltf_model_ptr(3)->set_model_matrix(glm::translate(glm::vec3(-0.8f, -1.5f, 0.5f))*glm::rotate(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f))
+                                           *glm::scale(glm::vec3(0.2f,0.2f,0.2f))*glm::scale(glm::vec3(1.0f, 1.0f, glm::abs(glm::cos(time)))*10.0f+1.0f));
+    */
 }
 
 int main() {
@@ -102,13 +109,18 @@ int main() {
         glm::mat4 water_bottle_m_matrix = glm::translate(glm::vec3(-1.0f, 0.02f, -0.5f))*glm::scale(glm::vec3(0.4f,0.4f,0.4f));
         glm::mat4 table_m_matrix = glm::translate(glm::vec3(0.5f, -0.35f, 0.0f))*glm::rotate(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f))
                                    *glm::scale(glm::vec3(3.0f,3.0f,3.0f));
+        glm::mat4 floor_m_matrix = glm::translate(glm::vec3(-0.8f, -1.5f, 0.0f))*glm::scale(glm::vec3(2.5f,2.5f,2.5f));
+        glm::mat4 chair_m_matrix = glm::translate(glm::vec3(-0.8f, -1.5f, 0.5f))*glm::rotate(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f))
+                *glm::scale(glm::vec3(1.5f,1.5f,1.5f));
 
 		app.load_3d_objects({{"resources/models/WaterBottle/WaterBottle.glb", water_bottle_m_matrix},
-                             {"resources//models//Table//Table.glb", table_m_matrix}
+                             {"resources//models//Table//Table.glb", table_m_matrix},
+                             {"resources//models//MarbleFloor//MarbleFloor.glb", floor_m_matrix},
+                             {"resources//models//SchoolChair//SchoolChair.glb", chair_m_matrix}
 		});
 		app.load_lights({
-		    {{1.0f, 1.0f, 2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 0.0f, 0.0f}, glm::radians(90.0f), 1.0f},
-            {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 50.0f}, glm::radians(90.0f), 1.0f}
+		    {{1.0f, 1.0f, 2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 50.0f, 0.0f}, glm::radians(90.0f), 1.0f},
+            {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 10.0f, 25.0f}, glm::radians(90.0f), 1.0f}
 		});
 		app.set_camera({{0.0f, 1.0f, 5.0f, 0.0f}, {0.0f, 0.0f, -10.0f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.1f, 1000.0f});
 

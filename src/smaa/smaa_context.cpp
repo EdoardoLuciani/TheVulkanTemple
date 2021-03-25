@@ -220,6 +220,8 @@ SmaaContext::SmaaContext(VkDevice device, VkFormat out_image_format) {
 }
 
 SmaaContext::~SmaaContext() {
+    vkDeviceWaitIdle(device);
+
     for (auto& smaa_descriptor_set_layout : smaa_descriptor_sets_layout) {
         vkDestroyDescriptorSetLayout(device, smaa_descriptor_set_layout, nullptr);
     }
@@ -994,6 +996,7 @@ void SmaaContext::init_resources(std::string support_images_dir, const VkPhysica
     vkUnmapMemory(device, host_transition_memory);
 
     // Then we record the command buffer to submit the command
+    vkDeviceWaitIdle(device);
     vkResetCommandPool(device, command_pool, 0);
     VkCommandBufferBeginInfo command_buffer_begin_info = {
             VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,nullptr,

@@ -11,6 +11,14 @@ elseif(UNIX)
 endif()
 add_definitions(-DGLM_FORCE_DEPTH_ZERO_TO_ONE)
 add_definitions(-DGLM_FORCE_LEFT_HANDED)
+add_definitions(-DGLM_FORCE_SSE4)
+
+add_library(sse4_1 INTERFACE IMPORTED)
+if(MSVC)
+    target_compile_options(sse4_1 INTERFACE /arch:SSE4.1)
+else()
+    target_compile_options(sse4_1 INTERFACE -msse4.1)
+endif()
 
 add_executable(base_vulkan_app
         src/base_vulkan_app.cpp
@@ -26,7 +34,6 @@ add_executable(base_vulkan_app
         src/hdr_tonemap/hdr_tonemap_context.h
         src/gltf_model.cpp
         src/gltf_model.h
-
         src/ffx_cacao/ffx_cacao.h
         src/ffx_cacao/ffx_cacao.cpp
         src/ffx_cacao/ffx_cacao_defines.h
