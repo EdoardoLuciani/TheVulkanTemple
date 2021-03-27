@@ -1,45 +1,74 @@
 cmake_minimum_required(VERSION 3.0)
-project(base_vulkan_app)
+project(TheVulkanTemple)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_VERBOSE_MAKEFILE ON)
-
+# Adding compile definitions and options
+add_library(compiler_flags INTERFACE)
+target_compile_features(compiler_flags INTERFACE cxx_std_17)
 if (WIN32)
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR)
+    target_compile_definitions(compiler_flags INTERFACE "VK_USE_PLATFORM_WIN32_KHR")
+    target_compile_definitions(compiler_flags INTERFACE "GLFW_EXPOSE_NATIVE_WIN32")
+    target_compile_definitions(compiler_flags INTERFACE "_CRT_SECURE_NO_WARNINGS")
 elseif(UNIX)
-    add_definitions(-DVK_USE_PLATFORM_XLIB_KHR)
+    target_compile_definitions(compiler_flags INTERFACE "VK_USE_PLATFORM_XLIB_KHR")
+    target_compile_definitions(compiler_flags INTERFACE "GLFW_EXPOSE_NATIVE_X11")
 endif()
-add_definitions(-DGLM_FORCE_DEPTH_ZERO_TO_ONE)
-add_definitions(-DGLM_FORCE_LEFT_HANDED)
-add_definitions(-DGLM_FORCE_SSE4)
+target_compile_definitions(compiler_flags INTERFACE "GLM_FORCE_DEPTH_ZERO_TO_ONE")
+target_compile_definitions(compiler_flags INTERFACE "GLM_FORCE_LEFT_HANDED")
+target_compile_definitions(compiler_flags INTERFACE "GLM_FORCE_SSE4")
 
-add_library(sse4_1 INTERFACE IMPORTED)
 if(MSVC)
-    target_compile_options(sse4_1 INTERFACE /arch:SSE4.1)
+    target_compile_options(compiler_flags INTERFACE /arch:SSE4.1)
 else()
-    target_compile_options(sse4_1 INTERFACE -msse4.1)
+    target_compile_options(compiler_flags INTERFACE -msse4.1)
+    target_compile_options(compiler_flags INTERFACE -Wall)
 endif()
+# End compile definitions and options
 
-add_executable(base_vulkan_app
-        src/base_vulkan_app.cpp
-        src/main.cpp
-        src/vulkan_helper.cpp
-        src/graphics_module_vulkan_app.cpp
-        src/smaa/smaa_context.cpp
-        src/volk.c
-        src/vsm/vsm_context.cpp
-        src/camera.cpp
-        src/light.cpp
-        src/hdr_tonemap/hdr_tonemap_context.cpp
-        src/hdr_tonemap/hdr_tonemap_context.h
-        src/gltf_model.cpp
-        src/gltf_model.h
-        src/ffx_cacao/ffx_cacao.h
-        src/ffx_cacao/ffx_cacao.cpp
-        src/ffx_cacao/ffx_cacao_defines.h
+set(SRC_DIR "${PROJECT_SOURCE_DIR}/src")
+set(ENGINE_SRC_DIR "${SRC_DIR}/TheVulkanTemple")
+
+# Library for TheVulkanTemple engine
+add_library(engine OBJECT
+        ${ENGINE_SRC_DIR}/base_vulkan_app.cpp
+        ${ENGINE_SRC_DIR}/base_vulkan_app.h
+        ${ENGINE_SRC_DIR}/vulkan_helper.cpp
+        ${ENGINE_SRC_DIR}/vulkan_helper.h
+        ${ENGINE_SRC_DIR}/graphics_module_vulkan_app.cpp
+        ${ENGINE_SRC_DIR}/graphics_module_vulkan_app.h
+        ${ENGINE_SRC_DIR}/smaa/smaa_context.cpp
+        ${ENGINE_SRC_DIR}/smaa/smaa_context.h
+        ${ENGINE_SRC_DIR}/volk.c
+        ${ENGINE_SRC_DIR}/volk.h
+        ${ENGINE_SRC_DIR}/vsm/vsm_context.cpp
+        ${ENGINE_SRC_DIR}/vsm/vsm_context.h
+        ${ENGINE_SRC_DIR}/camera.cpp
+        ${ENGINE_SRC_DIR}/camera.h
+        ${ENGINE_SRC_DIR}/light.cpp
+        ${ENGINE_SRC_DIR}/light.h
+        ${ENGINE_SRC_DIR}/hdr_tonemap/hdr_tonemap_context.cpp
+        ${ENGINE_SRC_DIR}/hdr_tonemap/hdr_tonemap_context.h
+        ${ENGINE_SRC_DIR}/gltf_model.cpp
+        ${ENGINE_SRC_DIR}/gltf_model.h
+        ${ENGINE_SRC_DIR}/ffx_cacao/ffx_cacao.h
+        ${ENGINE_SRC_DIR}/ffx_cacao/ffx_cacao.cpp
+        ${ENGINE_SRC_DIR}/ffx_cacao/ffx_cacao_defines.h
+        )
+target_link_libraries(engine compiler_flags glfw3 dl pthread stdc++fs X11)
+
+# Library for the sample
+add_executable(sample
+        ${SRC_DIR}/magic_enum.hpp
+        ${SRC_DIR}/main.cpp)
+
+target_link_libraries(sample compiler_flags engine)
+
+add_custom_command(TARGET sample POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/resources"  "$<TARGET_FILE_DIR:sample>/resources"
         )
 
-target_link_libraries(base_vulkan_app glfw3 dl pthread stdc++fs X11)
+add_custom_command(TARGET sample POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:sample>/resources/shaders/"
+        )
 
 # SPIR-V Shader compilation
 if (WIN32)
@@ -49,9 +78,9 @@ elseif(UNIX)
 endif()
 
 file(GLOB_RECURSE GLSL_SOURCE_FILES
-        "src/shaders/*/*.comp"
-        "src/shaders/*/*.frag"
-        "src/shaders/*/*.vert"
+        "${ENGINE_SRC_DIR}/shaders/*/*.comp"
+        "${ENGINE_SRC_DIR}/shaders/*/*.frag"
+        "${ENGINE_SRC_DIR}/shaders/*/*.vert"
         )
 
 foreach(GLSL ${GLSL_SOURCE_FILES})
@@ -68,8 +97,6 @@ add_custom_target(
         shaders DEPENDS ${SPIRV_BINARY_FILES}
 )
 
-add_dependencies(base_vulkan_app shaders)
+add_dependencies(sample shaders)
 
-add_custom_command(TARGET base_vulkan_app POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "resources/shaders/"
-        )
+

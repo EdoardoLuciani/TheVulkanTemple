@@ -186,7 +186,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
 
     // Get the total size of the models to allocate a buffer for it and copy them to host memory
     uint64_t models_total_size = 0;
-    for (int i = 0; i < gltf_models.size(); i++) {
+    for (uint32_t i = 0; i < gltf_models.size(); i++) {
         //objects[i].model = std::move(gltf_models[i]);
         objects[i].model = gltf_models[i];
         objects[i].model.copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true,true,
@@ -207,7 +207,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     // After getting a pointer for the host memory, we iterate once again in the models to copy them to memory and store some information about them
     uint64_t offset = 0;
     uint64_t mesh_and_index_data_size = 0;
-    for (int i=0; i < objects.size(); i++) {
+    for (uint32_t i=0; i < objects.size(); i++) {
         objects[i].model.copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true, true,
                                                 GltfModel::t_model_attributes::T_ALL, static_cast<uint8_t*>(model_host_data_pointer) + offset);
         offset += objects[i].model.get_last_copy_total_size();
@@ -238,7 +238,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     }
     model_image_samplers.clear();
 
-    for (int i=0; i<objects.size(); i++) {
+    for (uint32_t i=0; i<objects.size(); i++) {
         if (objects[i].model.get_last_copy_texture_size()) {
             uint32_t mipmap_levels = vulkan_helper::get_mipmap_count(objects[i].model.get_last_copy_image_extent());
 
@@ -296,7 +296,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     uint64_t src_offset = 0;
     uint64_t dst_offset = 0;
     std::vector<VkBufferCopy> buffer_copies(objects.size());
-    for (int i=0; i<buffer_copies.size(); i++) {
+    for (uint32_t i=0; i<buffer_copies.size(); i++) {
         objects[i].data_buffer = device_mesh_data_buffer;
 
         buffer_copies[i].srcOffset = src_offset;
@@ -313,7 +313,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
 
     // We need to transition all layers and first mipmap of the device images to DST_OPTIMAL
     std::vector<VkImageMemoryBarrier> image_memory_barriers(device_model_images.size());
-    for (int i=0; i<image_memory_barriers.size(); i++) {
+    for (uint32_t i=0; i<image_memory_barriers.size(); i++) {
         image_memory_barriers[i] = {
             VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             nullptr,
@@ -331,7 +331,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
 
     // We perform the copy from the host buffer to the device images
     uint64_t image_data_offset = 0;
-    for (int i=0; i<device_model_images.size(); i++) {
+    for (uint32_t i=0; i<device_model_images.size(); i++) {
         image_data_offset += objects[i].model.get_last_copy_mesh_and_index_data_size();
         VkBufferImageCopy buffer_image_copy = {
             image_data_offset,
@@ -346,7 +346,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     }
 
     // After copying the images we need to generate the mipmaps
-    for (int i=0; i < image_memory_barriers.size(); i++) {
+    for (uint32_t i=0; i < image_memory_barriers.size(); i++) {
         VkImageMemoryBarrier image_memory_barrier;
         image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         image_memory_barrier.pNext = nullptr;
@@ -393,7 +393,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     }
 
     // After the copy we need to transition the last mipmap level (which is still in DST_OPTIMAL) to be shader ready
-    for (int i=0; i<image_memory_barriers.size(); i++) {
+    for (uint32_t i=0; i<image_memory_barriers.size(); i++) {
         image_memory_barriers[i] = {
             VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             nullptr,
@@ -477,7 +477,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     device_buffers_to_allocate.push_back(device_camera_lights_uniform_buffer);
 
     std::vector<VkExtent2D> depth_images_resolution(lights.size());
-    for (int i=0; i<depth_images_resolution.size(); i++) {
+    for (uint32_t i=0; i<depth_images_resolution.size(); i++) {
         depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(1000).x, lights[i].get_resolution_from_ratio(1000).y};
     }
     vsm_context.create_resources(depth_images_resolution, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
@@ -624,7 +624,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
         lights.front().copy_data_to_ptr(nullptr) * lights.size()
     };
     std::vector<VkDescriptorImageInfo> light_descriptor_image_infos(lights.size());
-    for(int i=0; i<lights.size(); i++) {
+    for(uint32_t i=0; i<lights.size(); i++) {
         light_descriptor_image_infos[i] = {
                 max_aniso_linear_sampler,
                 vsm_context.get_image_view(i),
@@ -676,7 +676,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
         };
     }
 
-    for (int i=0; i<objects.size(); i++) {
+    for (uint32_t i=0; i<objects.size(); i++) {
         write_descriptor_set[2*i+3] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
@@ -1034,7 +1034,7 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         };
         vkCmdSetScissor(command_buffers[i], 0, 1, &scissor);
 
-        for (int j=0; j<objects.size(); j++) {
+        for (uint32_t j=0; j<objects.size(); j++) {
             std::array<VkDescriptorSet,3> to_bind = { object_descriptor_sets[j], descriptor_sets[1], descriptor_sets[0] };
             vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, to_bind.size(), to_bind.data(), 0, nullptr);
 
@@ -1124,7 +1124,8 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
                 &semaphores[1],
                 1,
                 &swapchain,
-                &image_index
+                &image_index,
+                nullptr
         };
         res = vkQueuePresentKHR(queue, &present_info);
         if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -1271,15 +1272,15 @@ void GraphicsModuleVulkanApp::create_image_view(VkImageView &image_view, VkImage
 
 void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(VkDeviceMemory &memory, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VkMemoryPropertyFlags flags) {
     std::vector<VkMemoryRequirements> memory_requirements(buffers.size() + images.size());
-    for (int i=0; i<buffers.size(); i++) {
+    for (uint32_t i=0; i<buffers.size(); i++) {
         vkGetBufferMemoryRequirements(device, buffers[i], &memory_requirements[i]);
     }
-    for (int i=0; i<images.size(); i++) {
+    for (uint32_t i=0; i<images.size(); i++) {
         vkGetImageMemoryRequirements(device, images[i], &memory_requirements[i+buffers.size()]);
     }
 
     uint64_t allocation_size = 0;
-    for (int i = 0; i < memory_requirements.size(); i++) {
+    for (uint32_t i = 0; i < memory_requirements.size(); i++) {
         allocation_size += memory_requirements[i].size;
         if ((i+1) < memory_requirements.size()) {
             allocation_size = vulkan_helper::get_aligned_memory_size(allocation_size, memory_requirements.at(i+1).alignment);
@@ -1295,9 +1296,9 @@ void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(VkDeviceMemory &memory
     vkFreeMemory(device, memory, nullptr);
     check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &memory), vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
 
-    auto sum_offsets = [&](int idx) {
+    auto sum_offsets = [&](uint32_t idx) {
         int sum = 0;
-        for (int i = 0; i < idx; i++) {
+        for (uint32_t i = 0; i < idx; i++) {
             sum += memory_requirements[i].size;
             if ((i+1) < memory_requirements.size()) {
                 sum = vulkan_helper::get_aligned_memory_size(sum, memory_requirements.at(i+1).alignment);
@@ -1306,10 +1307,10 @@ void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(VkDeviceMemory &memory
         return sum;
     };
 
-    for (int i=0; i<buffers.size(); i++) {
+    for (uint32_t i=0; i<buffers.size(); i++) {
         check_error(vkBindBufferMemory(device, buffers[i], memory, sum_offsets(i)), vulkan_helper::Error::BIND_BUFFER_MEMORY_FAILED);
     }
-    for (int i=0; i<images.size(); i++) {
+    for (uint32_t i=0; i<images.size(); i++) {
         check_error(vkBindImageMemory(device, images[i], memory, sum_offsets(i+buffers.size())), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
     }
 }

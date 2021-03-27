@@ -135,12 +135,12 @@ std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> HDRTonemapCo
 void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView input_ao_image_view, std::vector<VkImage> out_images, VkFormat image_format) {
     this->out_images = out_images;
 
-    for (int i=0; i<out_images_views.size(); i++) {
+    for (uint64_t i=0; i < out_images_views.size(); i++) {
         vkDestroyImageView(device, out_images_views[i], nullptr);
     }
     out_images_views.resize(out_images.size());
 
-    for (int i=0; i<out_images_views.size(); i++) {
+    for (uint64_t i=0; i<out_images_views.size(); i++) {
         VkImageViewCreateInfo image_view_create_info = {
                 VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                 nullptr,
@@ -166,18 +166,20 @@ void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_poo
     check_error(vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, hdr_tonemap_descriptor_sets.data()), vulkan_helper::Error::DESCRIPTOR_SET_ALLOCATION_FAILED);
 
     std::vector<VkDescriptorImageInfo> descriptor_image_infos(3*out_images_count);
-    for(int i=0; i<descriptor_image_infos.size(); i++) {
+    for(uint64_t i=0; i<descriptor_image_infos.size(); i++) {
         descriptor_image_infos[i] = {
                 device_render_target_sampler,
                 input_image_view,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
-        descriptor_image_infos[++i] = {
+        ++i;
+        descriptor_image_infos[i] = {
                 device_render_target_sampler,
                 input_ao_image_view,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
-        descriptor_image_infos[++i] = {
+        ++i;
+        descriptor_image_infos[i] = {
                 device_render_target_sampler,
                 out_images_views[i/3],
                 VK_IMAGE_LAYOUT_GENERAL
@@ -185,7 +187,7 @@ void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_poo
     }
 
     std::vector<VkWriteDescriptorSet> write_descriptor_set(3*out_images_count);
-    for(int i=0; i<write_descriptor_set.size(); i++) {
+    for(uint64_t i=0; i<write_descriptor_set.size(); i++) {
         write_descriptor_set[i] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
@@ -198,7 +200,8 @@ void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_poo
                 nullptr,
                 nullptr
         };
-        write_descriptor_set[++i] = {
+        ++i;
+        write_descriptor_set[i] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
                 hdr_tonemap_descriptor_sets[i/3],
@@ -210,7 +213,8 @@ void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_poo
                 nullptr,
                 nullptr
         };
-        write_descriptor_set[++i] = {
+        ++i;
+        write_descriptor_set[i] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
                 hdr_tonemap_descriptor_sets[i/3],

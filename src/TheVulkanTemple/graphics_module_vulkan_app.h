@@ -90,8 +90,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Device buffer that hold camera and lights information
         VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
         // Contexts for graphical effects
-        SmaaContext smaa_context;
         VSMContext vsm_context;
+        SmaaContext smaa_context;
         HDRTonemapContext hdr_tonemap_context;
         FfxCacaoVkContext *fx_cacao_context = nullptr;
         // Memory in which all attachment reside

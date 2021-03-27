@@ -55,14 +55,14 @@ GltfModel::GltfModel(std::string model_path, glm::mat4 model_matrix) {
     maps[2].index = model.materials[0].normalTexture.index;
     maps[3].index = model.materials[0].emissiveTexture.index;
 
-    for (int i = 0; i < maps.size(); i++) {
+    for (uint32_t i = 0; i < maps.size(); i++) {
         if (maps[i].index != -1) {
             maps[i].size.x = model.images[maps[i].index].width;
             maps[i].size.y = model.images[maps[i].index].height;
         }
     }
 
-    for (int i = 0; i < maps.size(); i++) {
+    for (uint32_t i = 0; i < maps.size(); i++) {
         if (maps[i].index != -1) {
             maps[i].size.x = model.images[maps[i].index].width;
             maps[i].size.y = model.images[maps[i].index].height;
@@ -134,8 +134,7 @@ GltfModel::copied_data_info GltfModel::copy_model_data_in_ptr(uint8_t v_attribut
         }
     }
 
-    copied_data_info boi;
-    return boi;
+    return last_copied_data_info;
 }
 
 uint64_t GltfModel::get_last_copy_total_size() const {

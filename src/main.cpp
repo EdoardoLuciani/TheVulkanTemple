@@ -1,7 +1,7 @@
 #include <iostream>
 #include <utility>
 #include <vector>
-#include "graphics_module_vulkan_app.h"
+#include "TheVulkanTemple/graphics_module_vulkan_app.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/transform.hpp>
@@ -18,7 +18,6 @@ void resize_callback(GraphicsModuleVulkanApp *app) {
 }
 
 void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
-    int key;
     GLFWwindow *window = app->get_glfw_window();
 
     glm::vec4 camera_pos_diff = glm::vec4(0.0f);
@@ -81,8 +80,9 @@ int main() {
 
     std::vector<const char*> desired_device_level_extensions = {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing", "VK_KHR_shader_float16_int8"};
 
-    VkPhysicalDeviceFeatures selected_device_features = { 0 };
+    VkPhysicalDeviceFeatures selected_device_features = {0};
     selected_device_features.samplerAnisotropy = VK_TRUE;
+    selected_device_features.shaderInt16 = VK_TRUE;
 
     VkPhysicalDeviceShaderFloat16Int8FeaturesKHR shader_float_16_int_8_features = {};
     shader_float_16_int_8_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR;
