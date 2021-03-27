@@ -65,9 +65,11 @@ add_library(engine OBJECT
 target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
 target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})
 
+target_include_directories(engine PUBLIC ${TINY_GLTF_INCLUDE_DIR})
+
 target_include_directories(engine PUBLIC ${GLM_INCLUDE_DIR})
 
-target_include_directories(engine PUBLIC ${VULKAN_SDK_DIR})
+target_include_directories(engine PUBLIC ${VULKAN_SDK_INCLUDE_DIR})
 
 if (WIN32)
     target_link_libraries(engine compiler_flags glfw3)
