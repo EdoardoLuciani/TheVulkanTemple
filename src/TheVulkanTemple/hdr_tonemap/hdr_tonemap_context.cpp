@@ -1,5 +1,6 @@
 #include "hdr_tonemap_context.h"
 #include <vector>
+#include <array>
 #include <utility>
 #include <unordered_map>
 #include "../vulkan_helper.h"

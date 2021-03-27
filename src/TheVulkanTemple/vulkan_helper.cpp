@@ -200,6 +200,24 @@ namespace vulkan_helper
         return (p_next_base == nullptr && p_next_requested == nullptr) ? VK_TRUE : VK_FALSE;
     }
 
+    void free_device_feature_struct_chain(void *pNext) {
+        void *p_next_tmp;
+        while (pNext != nullptr) {
+            switch(*reinterpret_cast<const int*>(pNext)) {
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT:
+                    p_next_tmp = pNext;
+                    pNext = reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(pNext)->pNext;
+                    delete reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(p_next_tmp);
+                    break;
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR:
+                    p_next_tmp = pNext;
+                    pNext = reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(pNext)->pNext;
+                    delete reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(p_next_tmp);
+                    break;
+            }
+        }
+    }
+
     void normalize_vectors(glm::vec3 *vectors, int number_of_elements) {
         float max_len = FLT_MIN;
         for (int i = 0; i < number_of_elements; i++) {

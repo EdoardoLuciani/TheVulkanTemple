@@ -555,7 +555,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lights.size() + objects.size()},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}
             },
-            1 + 1 + objects.size()
+            static_cast<uint32_t>(1 + 1 + objects.size())
     };
 
     vulkan_helper::insert_or_sum(sets_elements_required, vsm_context.get_required_descriptor_pool_size_and_sets());

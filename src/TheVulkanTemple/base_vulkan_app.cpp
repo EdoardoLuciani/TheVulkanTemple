@@ -86,7 +86,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 			GetModuleHandle(NULL),
 			glfwGetWin32Window(window)
 		};
-		check_error(vkCreateWin32SurfaceKHR(instance, &surface_create_info, nullptr, &surface) != VK_SUCCESS), Evulkan_helper::rror::SURFACE_CREATION_FAILED);
+		check_error(vkCreateWin32SurfaceKHR(instance, &surface_create_info, nullptr, &surface), vulkan_helper::Error::SURFACE_CREATION_FAILED);
 	#elif __linux__
 		VkXlibSurfaceCreateInfoKHR surface_create_info = {
     	    VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
@@ -117,10 +117,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 
         VkBool32 requested_features_are_available = vulkan_helper::compare_device_features_struct(&devices_features.features, &required_physical_device_features, sizeof(VkPhysicalDeviceFeatures));
         requested_features_are_available &= vulkan_helper::compare_device_feature_struct_chain(devices_features.pNext, additional_structure);
-
-        //
-        // FREE THE STRUCT CHAIN STRUCTURE!!
-        //
+        vulkan_helper::free_device_feature_struct_chain(devices_features.pNext);
 
 		if (requested_features_are_available) {
 			uint32_t families_count;

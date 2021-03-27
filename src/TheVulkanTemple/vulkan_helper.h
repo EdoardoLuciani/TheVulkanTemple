@@ -62,6 +62,7 @@ namespace vulkan_helper {
 
     void* create_device_feature_struct_chain(const std::vector<const char*> &device_extensions);
     VkBool32 compare_device_feature_struct_chain(const void *base, const void* requested);
+    void free_device_feature_struct_chain(void *pNext);
 
 	void normalize_vectors(glm::vec3* vectors, int number_of_elements);
 
