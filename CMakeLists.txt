@@ -29,11 +29,14 @@ set(SRC_DIR "${PROJECT_SOURCE_DIR}/src")
 set(ENGINE_SRC_DIR "${SRC_DIR}/TheVulkanTemple")
 
 # define location for external libraries
-set(GLFW_INCLUDE_DIR "" CACHE PATH "Directory of GLFW")
-set(GLFW_LIB_DIR "" CACHE PATH "Lib of GLFW")
+set(GLFW_INCLUDE_DIR "" CACHE PATH "Include directories of GLFW")
+set(GLFW_LIB_DIR "" CACHE PATH "Lib dir of GLFW")
 
 set(GLM_INCLUDE_DIR "" CACHE PATH "Include dir for GLM")
-set(VULKAN_SDK_DIR "" CACHE PATH "Path for the vulkan SDK")
+
+set(VULKAN_SDK_INCLUDE_DIR "" CACHE PATH "Include dir for the vulkan SDK")
+
+set(TINY_GLTF_INCLUDE_DIR "" CACHE PATH "Include dir for tiny_gltf")
 
 # Library for TheVulkanTemple engine
 add_library(engine OBJECT
@@ -65,11 +68,11 @@ add_library(engine OBJECT
 target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
 target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})
 
-target_include_directories(engine PUBLIC ${TINY_GLTF_INCLUDE_DIR})
-
 target_include_directories(engine PUBLIC ${GLM_INCLUDE_DIR})
 
 target_include_directories(engine PUBLIC ${VULKAN_SDK_INCLUDE_DIR})
+
+target_include_directories(engine PUBLIC ${TINY_GLTF_INCLUDE_DIR})
 
 if (WIN32)
     target_link_libraries(engine compiler_flags glfw3)
