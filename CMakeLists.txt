@@ -24,8 +24,16 @@ else()
 endif()
 # End compile definitions and options
 
+# define directories for source code location
 set(SRC_DIR "${PROJECT_SOURCE_DIR}/src")
 set(ENGINE_SRC_DIR "${SRC_DIR}/TheVulkanTemple")
+
+# define location for external libraries
+set(GLFW_INCLUDE_DIR "" CACHE PATH "Directory of GLFW")
+set(GLFW_LIB_DIR "" CACHE PATH "Lib of GLFW")
+
+set(GLM_INCLUDE_DIR "" CACHE PATH "Include dir for GLM")
+set(VULKAN_SDK_DIR "" CACHE PATH "Path for the vulkan SDK")
 
 # Library for TheVulkanTemple engine
 add_library(engine OBJECT
@@ -53,7 +61,19 @@ add_library(engine OBJECT
         ${ENGINE_SRC_DIR}/ffx_cacao/ffx_cacao.cpp
         ${ENGINE_SRC_DIR}/ffx_cacao/ffx_cacao_defines.h
         )
-target_link_libraries(engine compiler_flags glfw3 dl pthread stdc++fs X11)
+
+target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
+target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})
+
+target_include_directories(engine PUBLIC ${GLM_INCLUDE_DIR})
+
+target_include_directories(engine PUBLIC ${VULKAN_SDK_DIR})
+
+if (WIN32)
+    target_link_libraries(engine compiler_flags glfw3)
+elseif(UNIX)
+    target_link_libraries(engine compiler_flags glfw3 dl pthread)
+endif()
 
 # Library for the sample
 add_executable(sample
