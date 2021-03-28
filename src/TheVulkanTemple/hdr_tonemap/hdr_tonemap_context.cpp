@@ -6,7 +6,7 @@
 #include "../vulkan_helper.h"
 #include "../volk.h"
 
-HDRTonemapContext::HDRTonemapContext(VkDevice device) {
+HDRTonemapContext::HDRTonemapContext(VkDevice device, VkFormat input_image_format, VkFormat global_ao_image_format, VkFormat out_format) {
     this->device = device;
 
     VkSamplerCreateInfo sampler_create_info = {
@@ -30,23 +30,88 @@ HDRTonemapContext::HDRTonemapContext(VkDevice device) {
             VK_FALSE,
     };
     check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_render_target_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
-    std::array<VkSampler,2> descriptor_set_layout_binding_samplers = {device_render_target_sampler, device_render_target_sampler};
 
+    std::array<VkAttachmentDescription, 3> attachment_descriptions {{
+    {
+            0,
+            input_image_format,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_ATTACHMENT_LOAD_OP_LOAD,
+            VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    },
+    {
+            0,
+            global_ao_image_format,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_ATTACHMENT_LOAD_OP_LOAD,
+            VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    },
+    {
+            0,
+            out_format,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_ATTACHMENT_LOAD_OP_CLEAR,
+            VK_ATTACHMENT_STORE_OP_STORE,
+            VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+    }
+    }};
+    std::array<VkAttachmentReference,3> attachment_references {{
+        { 0, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+        { 1, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+        { 2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL }
+    }};
+    VkSubpassDescription subpass_description = {
+            0,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            2,
+            &attachment_references[0],
+            1,
+            &attachment_references[2],
+            nullptr,
+            nullptr,
+            0,
+            nullptr
+    };
+    VkRenderPassCreateInfo render_pass_create_info = {
+            VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            nullptr,
+            0,
+            attachment_descriptions.size(),
+            attachment_descriptions.data(),
+            1,
+            &subpass_description,
+            0,
+            nullptr
+    };
+    check_error(vkCreateRenderPass(device, &render_pass_create_info, nullptr, &hdr_tonemap_render_pass), vulkan_helper::Error::RENDER_PASS_CREATION_FAILED);
+
+    std::array<VkSampler,2> descriptor_set_layout_binding_samplers = {device_render_target_sampler, device_render_target_sampler};
     // We create the descriptor set layout for the compute shader
-    std::array<VkDescriptorSetLayoutBinding,2> descriptor_set_layout_binding;
+    std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
     descriptor_set_layout_binding[0] = {
             0,
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            2,
-            VK_SHADER_STAGE_COMPUTE_BIT,
-            descriptor_set_layout_binding_samplers.data()
+            VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+            1,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
     };
     descriptor_set_layout_binding[1] = {
             1,
-            VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
             1,
-            VK_SHADER_STAGE_COMPUTE_BIT,
-            &device_render_target_sampler
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -61,10 +126,15 @@ HDRTonemapContext::HDRTonemapContext(VkDevice device) {
 HDRTonemapContext::~HDRTonemapContext() {
     vkDeviceWaitIdle(device);
 
+    for(auto& framebuffer : hdr_tonemap_framebuffers) {
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+
     for (auto& out_image_view : out_images_views) {
         vkDestroyImageView(device, out_image_view, nullptr);
     }
 
+    vkDestroyRenderPass(device, hdr_tonemap_render_pass, nullptr);
     vkDestroyPipelineLayout(device, hdr_tonemap_pipeline_layout, nullptr);
     vkDestroyPipeline(device, hdr_tonemap_pipeline, nullptr);
 
@@ -72,13 +142,13 @@ HDRTonemapContext::~HDRTonemapContext() {
     vkDestroyDescriptorSetLayout(device, hdr_tonemap_set_layout, nullptr);
 }
 
-void HDRTonemapContext::create_resources(std::string shader_dir_path, uint32_t out_images_count) {
+void HDRTonemapContext::create_resources(VkExtent2D screen_res, std::string shader_dir_path, uint32_t out_images_count) {
     // We get the output images count in the resources method
     this->out_images_count = out_images_count;
+    this->out_image_res = screen_res;
 
-    // We create the pipeline and pipeline layout of the compute shader
     std::vector<uint8_t> shader_contents;
-    vulkan_helper::get_binary_file_content(shader_dir_path + "//tonemap.comp.spv", shader_contents);
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//tonemap.vert.spv", shader_contents);
     VkShaderModuleCreateInfo shader_module_create_info = {
             VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             nullptr,
@@ -86,51 +156,195 @@ void HDRTonemapContext::create_resources(std::string shader_dir_path, uint32_t o
             shader_contents.size(),
             reinterpret_cast<uint32_t*>(shader_contents.data())
     };
-    VkShaderModule compute_shader_module;
-    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &compute_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+    VkShaderModule vertex_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
 
-    VkPipelineShaderStageCreateInfo pipeline_shaders_stage_create_infos = {
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//tonemap.frag.spv", shader_contents);
+    shader_module_create_info.codeSize = shader_contents.size();
+    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+    VkShaderModule fragment_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
+    {
             VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             nullptr,
             0,
-            VK_SHADER_STAGE_COMPUTE_BIT,
-            compute_shader_module,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            vertex_shader_module,
             "main",
+            nullptr
+    },
+    {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            fragment_shader_module,
+            "main",
+            nullptr
+    }
+    }};
+
+    VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            0,
+            nullptr,
+            0,
             nullptr
     };
 
+    VkPipelineInputAssemblyStateCreateInfo pipeline_input_assembly_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            VK_FALSE
+    };
+
+    VkViewport viewport = {
+            0.0f,
+            0.0f,
+            static_cast<float>(screen_res.width),
+            static_cast<float>(screen_res.height),
+            0.0f,
+            1.0f
+    };
+    VkRect2D scissor = {
+            {0,0},
+            {screen_res.width, screen_res.height}
+    };
+    VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &viewport,
+            1,
+            &scissor
+    };
+
+    VkPipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_FALSE,
+            VK_POLYGON_MODE_FILL,
+            VK_CULL_MODE_NONE,
+            VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            VK_FALSE,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f
+    };
+
+    VkPipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_FALSE,
+            1.0f,
+            nullptr,
+            VK_FALSE,
+            VK_FALSE
+    };
+
+    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_FALSE,
+            VK_COMPARE_OP_NEVER,
+            VK_FALSE,
+            VK_FALSE,
+            {},
+            {},
+            0.0f,
+            1.0f
+    };
+
+    std::array<VkPipelineColorBlendAttachmentState, 1> pipeline_color_blend_attachment_state;
+    pipeline_color_blend_attachment_state[0] = {
+            VK_FALSE,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+    VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_LOGIC_OP_COPY,
+            pipeline_color_blend_attachment_state.size(),
+            pipeline_color_blend_attachment_state.data(),
+            {0.0f,0.0f,0.0f,0.0f}
+    };
+
+    std::array<VkDynamicState,2> dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT ,VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo pipeline_dynamic_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            dynamic_states.size(),
+            dynamic_states.data()
+    };
+
+    std::array<VkDescriptorSetLayout,1> descriptor_set_layouts = {hdr_tonemap_set_layout};
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             nullptr,
             0,
-            1,
-            &hdr_tonemap_set_layout,
+            descriptor_set_layouts.size(),
+            descriptor_set_layouts.data(),
             0,
             nullptr
     };
     vkDestroyPipelineLayout(device, hdr_tonemap_pipeline_layout, nullptr);
     vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &hdr_tonemap_pipeline_layout);
 
-    VkComputePipelineCreateInfo compute_pipeline_create_info = {
-            VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             nullptr,
             0,
-            pipeline_shaders_stage_create_infos,
+            pipeline_shaders_stage_create_info.size(),
+            pipeline_shaders_stage_create_info.data(),
+            &pipeline_vertex_input_state_create_info,
+            &pipeline_input_assembly_create_info,
+            nullptr,
+            &pipeline_viewport_state_create_info,
+            &pipeline_rasterization_state_create_info,
+            &pipeline_multisample_state_create_info,
+            &pipeline_depth_stencil_state_create_info,
+            &pipeline_color_blend_state_create_info,
+            &pipeline_dynamic_state_create_info,
             hdr_tonemap_pipeline_layout,
+            hdr_tonemap_render_pass,
+            0,
             VK_NULL_HANDLE,
             -1
     };
     vkDestroyPipeline(device, hdr_tonemap_pipeline, nullptr);
-    vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &compute_pipeline_create_info, nullptr, &hdr_tonemap_pipeline);
+    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &hdr_tonemap_pipeline);
 
-    vkDestroyShaderModule(device, compute_shader_module, nullptr);
+    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
+    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
 std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> HDRTonemapContext::get_required_descriptor_pool_size_and_sets() {
     return {
-            { {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, out_images_count*2},
-              {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, out_images_count}},
-            out_images_count};
+            { {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 2}},
+            1};
 }
 
 void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView input_ao_image_view, std::vector<VkImage> out_images, VkFormat image_format) {
@@ -155,112 +369,118 @@ void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_poo
         check_error(vkCreateImageView(device, &image_view_create_info, nullptr, &out_images_views[i]), vulkan_helper::Error::IMAGE_VIEW_CREATION_FAILED);
     }
 
-    std::vector<VkDescriptorSetLayout> layouts_of_sets(out_images_count, hdr_tonemap_set_layout);
-    hdr_tonemap_descriptor_sets.resize(out_images_count);
     VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             nullptr,
             descriptor_pool,
-            static_cast<uint32_t>(layouts_of_sets.size()),
-            layouts_of_sets.data()
+            1,
+            &hdr_tonemap_set_layout
     };
-    check_error(vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, hdr_tonemap_descriptor_sets.data()), vulkan_helper::Error::DESCRIPTOR_SET_ALLOCATION_FAILED);
+    check_error(vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, &hdr_tonemap_descriptor_set), vulkan_helper::Error::DESCRIPTOR_SET_ALLOCATION_FAILED);
 
-    std::vector<VkDescriptorImageInfo> descriptor_image_infos(3*out_images_count);
-    for(uint64_t i=0; i<descriptor_image_infos.size(); i++) {
-        descriptor_image_infos[i] = {
-                device_render_target_sampler,
-                input_image_view,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        };
-        ++i;
-        descriptor_image_infos[i] = {
-                device_render_target_sampler,
-                input_ao_image_view,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        };
-        ++i;
-        descriptor_image_infos[i] = {
-                device_render_target_sampler,
-                out_images_views[i/3],
-                VK_IMAGE_LAYOUT_GENERAL
-        };
-    }
+    std::array<VkDescriptorImageInfo, 2> descriptor_image_infos;
+    descriptor_image_infos[0] = {
+        VK_NULL_HANDLE,
+        input_image_view,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
+    descriptor_image_infos[1] = {
+        VK_NULL_HANDLE,
+        input_ao_image_view,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
 
-    std::vector<VkWriteDescriptorSet> write_descriptor_set(3*out_images_count);
-    for(uint64_t i=0; i<write_descriptor_set.size(); i++) {
-        write_descriptor_set[i] = {
-                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                nullptr,
-                hdr_tonemap_descriptor_sets[i/3],
-                0,
-                0,
-                1,
-                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                &descriptor_image_infos[i],
-                nullptr,
-                nullptr
-        };
-        ++i;
-        write_descriptor_set[i] = {
-                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                nullptr,
-                hdr_tonemap_descriptor_sets[i/3],
-                0,
-                1,
-                1,
-                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                &descriptor_image_infos[i],
-                nullptr,
-                nullptr
-        };
-        ++i;
-        write_descriptor_set[i] = {
-                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                nullptr,
-                hdr_tonemap_descriptor_sets[i/3],
-                1,
-                0,
-                1,
-                VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                &descriptor_image_infos[i],
-                nullptr,
-                nullptr
-        };
-    }
+    std::array<VkWriteDescriptorSet, 2> write_descriptor_set;
+    write_descriptor_set[0] = {
+        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        nullptr,
+        hdr_tonemap_descriptor_set,
+        0,
+        0,
+        1,
+        VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+        &descriptor_image_infos[0],
+        nullptr,
+        nullptr
+    };
+    write_descriptor_set[1] = {
+        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        nullptr,
+        hdr_tonemap_descriptor_set,
+        1,
+        0,
+        1,
+        VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+        &descriptor_image_infos[1],
+        nullptr,
+        nullptr
+    };
     vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
+
+    // Creation of the framebuffer
+    // Framebuffer creation
+    for(auto& framebuffer : hdr_tonemap_framebuffers) {
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+    hdr_tonemap_framebuffers.clear();
+    hdr_tonemap_framebuffers.resize(out_images_count);
+
+    for (int i = 0; i < hdr_tonemap_framebuffers.size(); i++) {
+        std::array<VkImageView, 3> attachments = {
+                input_image_view,
+                input_ao_image_view,
+                out_images_views[i]
+        };
+        VkFramebufferCreateInfo framebuffer_create_info = {
+                VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                nullptr,
+                0,
+                hdr_tonemap_render_pass,
+                attachments.size(),
+                attachments.data(),
+                out_image_res.width,
+                out_image_res.height,
+                1
+        };
+        vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &hdr_tonemap_framebuffers[i]);
+    }
 }
 
-void HDRTonemapContext::record_into_command_buffer(VkCommandBuffer command_buffer, uint32_t out_image_index, VkExtent2D out_image_size) {
-    VkImageMemoryBarrier image_memory_barrier = {
-            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            nullptr,
-            0,
-            VK_ACCESS_SHADER_WRITE_BIT,
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_GENERAL,
-            VK_QUEUE_FAMILY_IGNORED,
-            VK_QUEUE_FAMILY_IGNORED,
-            out_images[out_image_index],
-            { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+void HDRTonemapContext::record_into_command_buffer(VkCommandBuffer command_buffer, uint32_t out_image_index, VkExtent2D image_size) {
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, hdr_tonemap_pipeline);
+    VkViewport viewport = {
+            0.0f,
+            0.0f,
+            static_cast<float>(image_size.width),
+            static_cast<float>(image_size.height),
+            0.0f,
+            1.0f
     };
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
-    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdr_tonemap_pipeline);
-    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdr_tonemap_pipeline_layout, 0, 1, &hdr_tonemap_descriptor_sets[out_image_index], 0, nullptr);
-    vkCmdDispatch(command_buffer, std::ceil(out_image_size.width/32.0f), std::ceil(out_image_size.height/32.0f), 1);
-
-    image_memory_barrier = {
-            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            nullptr,
-            VK_ACCESS_SHADER_WRITE_BIT,
-            VK_ACCESS_MEMORY_READ_BIT,
-            VK_IMAGE_LAYOUT_GENERAL,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            VK_QUEUE_FAMILY_IGNORED,
-            VK_QUEUE_FAMILY_IGNORED,
-            out_images[out_image_index],
-            { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+    VkRect2D scissor = {
+            {0,0},
+            {image_size.width, image_size.height}
     };
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+    std::array<VkClearValue, 3> clear_values;
+    clear_values[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    clear_values[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    clear_values[2].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    VkRenderPassBeginInfo render_pass_begin_info = {
+            VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            nullptr,
+            hdr_tonemap_render_pass,
+            hdr_tonemap_framebuffers[out_image_index],
+            {{0,0},{image_size.width, image_size.height}},
+            clear_values.size(),
+            clear_values.data()
+    };
+    vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, hdr_tonemap_pipeline_layout, 0, 1, &hdr_tonemap_descriptor_set, 0, nullptr);
+    vkCmdDraw(command_buffer, 3, 1, 0, 0);
+
+    vkCmdEndRenderPass(command_buffer);
 }

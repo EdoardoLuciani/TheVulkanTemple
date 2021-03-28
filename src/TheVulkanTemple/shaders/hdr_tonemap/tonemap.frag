@@ -1,9 +1,11 @@
 #version 460
-layout (local_size_x = 32, local_size_y = 32) in;
 #include "ColorSpaces.inc.glsl"
+//#extension GL_KHR_vulkan_glsl: enable
 
-layout(set = 0, binding = 0) uniform sampler2D render_target[2];
-layout(set = 0, binding = 1, r11f_g11f_b10f) uniform image2D out_image;
+layout (input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput input_color;
+layout (input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput global_ao;
+
+layout (location = 0) out vec4 out_color;
 
 float Tonemap_Lottes(float x) {
     // Lottes 2016, "Advanced Techniques and Optimization of HDR Color Pipelines"
@@ -90,8 +92,8 @@ float ACESFilm(float x) {
 }
 
 void main() {
-    float ao = texelFetch(render_target[1], ivec2(gl_GlobalInvocationID.xy), 0).r;
-    vec3 color = texelFetch(render_target[0], ivec2(gl_GlobalInvocationID.xy), 0).rgb * ao;
+    vec3 color = vec3(subpassLoad(input_color) * subpassLoad(global_ao).r);
+
     vec3 xyY = rgb_to_xyY(color);
 
     //xyY.z = ACESFilm(xyY.z);
@@ -100,10 +102,8 @@ void main() {
     //xyY.z =  Tonemap_Lottes(xyY.z);
 
     // Using the new luminance, convert back to RGB and to sRGB
-    vec3 out_color = rgb_to_srgb_approx(xyY_to_rgb(xyY));
+    out_color = vec4(rgb_to_srgb_approx(xyY_to_rgb(xyY)), 1.0f);
 
     // debug mode!!!
-    //out_color = vec3(ao);
-
-    imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(out_color, 1.0f));
+    //out_color = subpassLoad(input_color);
 }

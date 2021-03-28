@@ -9,10 +9,10 @@
 
 class HDRTonemapContext {
     public:
-        HDRTonemapContext(VkDevice device);
+        HDRTonemapContext(VkDevice device, VkFormat input_image_format, VkFormat global_ao_image_format, VkFormat out_format);
         ~HDRTonemapContext();
 
-        void create_resources(std::string shader_dir_path, uint32_t out_images_count);
+        void create_resources(VkExtent2D screen_res, std::string shader_dir_path, uint32_t out_images_count);
 
         std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();
 
@@ -26,10 +26,13 @@ class HDRTonemapContext {
         std::vector<VkImage> out_images;
         std::vector<VkImageView> out_images_views;
 
-        std::vector<VkDescriptorSet> hdr_tonemap_descriptor_sets;
+        VkDescriptorSet hdr_tonemap_descriptor_set = VK_NULL_HANDLE;
+        std::vector<VkFramebuffer> hdr_tonemap_framebuffers;
 
         uint32_t out_images_count;
+        VkExtent2D out_image_res;
 
+        VkRenderPass hdr_tonemap_render_pass = VK_NULL_HANDLE;
         VkPipelineLayout hdr_tonemap_pipeline_layout = VK_NULL_HANDLE;
         VkPipeline hdr_tonemap_pipeline = VK_NULL_HANDLE;
 };

@@ -29,7 +29,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        additional_structure),
                          vsm_context(device),
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
-                         hdr_tonemap_context(device) {
+                         hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R16_SFLOAT, swapchain_create_info.imageFormat) {
 
     // We create the context for fx-cacao
     size_t ffx_cacao_context_size = ffxCacaoVkGetContextSize();
@@ -482,7 +482,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     }
     vsm_context.create_resources(depth_images_resolution, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
     smaa_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders");
-    hdr_tonemap_context.create_resources("resources//shaders", swapchain_images.size());
+    hdr_tonemap_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders", swapchain_images.size());
 
     // We create some attachments useful during rendering
     create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
@@ -490,7 +490,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     device_images_to_allocate.push_back(device_depth_image);
 
     create_image(device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
-                 2, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
+                 2, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_render_target);
 
     create_image(device_normal_g_image, VK_FORMAT_R16G16B16A16_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
@@ -498,7 +498,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     device_images_to_allocate.push_back(device_normal_g_image);
 
     create_image(device_global_ao_image, VK_FORMAT_R16_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
-                 1, 1, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+                 1, 1, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_global_ao_image);
 
     // We request information about the buffer and images we need from vsm_context and store them in a vector
@@ -543,7 +543,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
     create_framebuffers();
-    create_pbr_pipeline();
+    create_pbr_pipeline(); // remove?
     record_command_buffers();
 }
 

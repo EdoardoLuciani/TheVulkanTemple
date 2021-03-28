@@ -229,7 +229,7 @@ void BaseVulkanApp::create_swapchain() {
     glfwGetWindowSize(window, &width, &height);
 	VkExtent2D size_of_images = vulkan_helper::select_size_of_images(surface_capabilities, { static_cast<uint32_t>(width),static_cast<uint32_t>(height) });
 
-	VkImageUsageFlags image_usage = vulkan_helper::select_image_usage(surface_capabilities, VK_IMAGE_USAGE_STORAGE_BIT);
+	VkImageUsageFlags image_usage = vulkan_helper::select_image_usage(surface_capabilities, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
 	VkSurfaceTransformFlagBitsKHR surface_transform = vulkan_helper::select_surface_transform(surface_capabilities, VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR);
 
 	uint32_t formats_count = 0;
