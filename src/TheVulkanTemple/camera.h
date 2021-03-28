@@ -14,7 +14,6 @@ class Camera {
         glm::uvec2 get_resolution_from_ratio(int size);
         glm::mat4 get_proj_matrix();
         glm::mat4 get_view_matrix();
-        glm::mat4 get_view_matrix2();
 
         glm::dvec2 get_ex_pos() { return this->ex_pos; };
         float get_distance() { return distance; };

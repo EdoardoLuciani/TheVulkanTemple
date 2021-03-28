@@ -28,10 +28,6 @@ glm::mat4 Camera::get_view_matrix() {
     return glm::lookAt(glm::vec3(pos), dir, glm::vec3(0.0f, -1.0f, 0.0f));
 }
 
-glm::mat4 Camera::get_view_matrix2() {
-    return glm::lookAt(glm::vec3(pos), dir, glm::vec3(0.0f, 1.0f, 0.0f));
-}
-
 uint32_t Camera::copy_data_to_ptr(uint8_t *ptr) {
     if (ptr != nullptr) {
         memcpy(ptr, glm::value_ptr(this->get_view_matrix()), sizeof(glm::mat4));
