@@ -20,7 +20,6 @@ class HDRTonemapContext {
         void record_into_command_buffer(VkCommandBuffer command_buffer, uint32_t out_image_index, VkExtent2D out_image_size);
     private:
         VkDevice device;
-        VkSampler device_render_target_sampler;
         VkDescriptorSetLayout hdr_tonemap_set_layout;
 
         std::vector<VkImage> out_images;

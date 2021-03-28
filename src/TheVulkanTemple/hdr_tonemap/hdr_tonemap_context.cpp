@@ -9,28 +9,6 @@
 HDRTonemapContext::HDRTonemapContext(VkDevice device, VkFormat input_image_format, VkFormat global_ao_image_format, VkFormat out_format) {
     this->device = device;
 
-    VkSamplerCreateInfo sampler_create_info = {
-            VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FILTER_LINEAR,
-            VK_FILTER_LINEAR,
-            VK_SAMPLER_MIPMAP_MODE_LINEAR,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            0.0f,
-            VK_FALSE,
-            0.0f,
-            VK_FALSE,
-            VK_COMPARE_OP_ALWAYS,
-            0.0f,
-            1.0f,
-            VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
-            VK_FALSE,
-    };
-    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_render_target_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
-
     std::array<VkAttachmentDescription, 3> attachment_descriptions {{
     {
             0,
@@ -96,7 +74,6 @@ HDRTonemapContext::HDRTonemapContext(VkDevice device, VkFormat input_image_forma
     };
     check_error(vkCreateRenderPass(device, &render_pass_create_info, nullptr, &hdr_tonemap_render_pass), vulkan_helper::Error::RENDER_PASS_CREATION_FAILED);
 
-    std::array<VkSampler,2> descriptor_set_layout_binding_samplers = {device_render_target_sampler, device_render_target_sampler};
     // We create the descriptor set layout for the compute shader
     std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
     descriptor_set_layout_binding[0] = {
@@ -138,7 +115,6 @@ HDRTonemapContext::~HDRTonemapContext() {
     vkDestroyPipelineLayout(device, hdr_tonemap_pipeline_layout, nullptr);
     vkDestroyPipeline(device, hdr_tonemap_pipeline, nullptr);
 
-    vkDestroySampler(device, device_render_target_sampler, nullptr);
     vkDestroyDescriptorSetLayout(device, hdr_tonemap_set_layout, nullptr);
 }
 
