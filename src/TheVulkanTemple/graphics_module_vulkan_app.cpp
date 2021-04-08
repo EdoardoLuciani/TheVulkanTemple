@@ -5,8 +5,8 @@
 #include <iostream>
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
+#include "hbao/hbao_context.h"
 #include "hdr_tonemap/hdr_tonemap_context.h"
-#include "ffx_cacao/ffx_cacao.h"
 #include "vulkan_helper.h"
 #include <unordered_map>
 
@@ -29,21 +29,8 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        additional_structure),
                          vsm_context(device),
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
+                         hbao_context(device, window_size, VK_FORMAT_D32_SFLOAT, "resources//shaders"),
                          hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R16_SFLOAT, swapchain_create_info.imageFormat) {
-
-    // We create the context for fx-cacao
-    size_t ffx_cacao_context_size = ffxCacaoVkGetContextSize();
-    fx_cacao_context = reinterpret_cast<FfxCacaoVkContext*>(new uint8_t[ffx_cacao_context_size]);
-    FfxCacaoVkCreateInfo info = {};
-    info.physicalDevice = selected_physical_device;
-    info.device = device;
-    info.flags = FFX_CACAO_VK_CREATE_USE_16_BIT;
-#ifndef NDEBUG
-    info.flags = info.flags | FFX_CACAO_VK_CREATE_USE_DEBUG_MARKERS | FFX_CACAO_VK_CREATE_NAME_OBJECTS;
-#endif
-    if (ffxCacaoVkInitContext(fx_cacao_context, &info)) {
-        throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
-    }
 
     VkSamplerCreateInfo sampler_create_info = {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -482,11 +469,12 @@ void GraphicsModuleVulkanApp::init_renderer() {
     }
     vsm_context.create_resources(depth_images_resolution, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
     smaa_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders");
+    hbao_context.create_resources(swapchain_create_info.imageExtent);
     hdr_tonemap_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders", swapchain_images.size());
 
     // We create some attachments useful during rendering
     create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
-                 1, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+                 1, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_depth_image);
 
     create_image(device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
@@ -509,6 +497,10 @@ void GraphicsModuleVulkanApp::init_renderer() {
     auto smaa_array_images = smaa_context.get_device_images();
     device_images_to_allocate.insert(device_images_to_allocate.end(), smaa_array_images.begin(), smaa_array_images.end());
 
+    // We request information about the images and buffer we need from hbao_contex and store them in a vector
+    auto hbao_array_images = hbao_context.get_device_images();
+    device_images_to_allocate.insert(device_images_to_allocate.end(), hbao_array_images.begin(), hbao_array_images.end());
+
     // We then allocate all needed images and buffers in a single allocation
     allocate_and_bind_to_memory(device_attachments_memory, device_buffers_to_allocate, device_images_to_allocate,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
@@ -521,24 +513,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
 
     vsm_context.init_resources();
     smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
-
-    ffxCacaoVkDestroyScreenSizeDependentResources(fx_cacao_context);
-    FfxCacaoVkScreenSizeInfo screenSizeInfo = {};
-    screenSizeInfo.width = swapchain_create_info.imageExtent.width;
-    screenSizeInfo.height = swapchain_create_info.imageExtent.height;
-    screenSizeInfo.depthView = device_depth_image_view;
-    screenSizeInfo.normalsView = device_normal_g_image_view;
-    screenSizeInfo.output = device_global_ao_image;
-    screenSizeInfo.outputView = device_global_ao_image_view;
-    if (ffxCacaoVkInitScreenSizeDependentResources(fx_cacao_context, &screenSizeInfo)) {
-        throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
-    }
-
-    FfxCacaoSettings settings = FFX_CACAO_DEFAULT_SETTINGS;
-    settings.generateNormals = FFX_CACAO_TRUE;
-    if (ffxCacaoVkUpdateSettings(fx_cacao_context, &settings)) {
-        throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
-    }
+    hbao_context.init_resources();
 
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
@@ -560,6 +535,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
 
     vulkan_helper::insert_or_sum(sets_elements_required, vsm_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, smaa_context.get_required_descriptor_pool_size_and_sets());
+    vulkan_helper::insert_or_sum(sets_elements_required, hbao_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, hdr_tonemap_context.get_required_descriptor_pool_size_and_sets());
     std::vector<VkDescriptorPoolSize> descriptor_pool_size = vulkan_helper::convert_map_to_vector(sets_elements_required.first);
 
@@ -577,6 +553,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     // Next we allocate the vsm descriptors in the pool
     vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
     smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0]);
+    hbao_context.allocate_descriptor_sets(attachments_descriptor_pool, device_depth_image_view);
     hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[1], device_global_ao_image_view, swapchain_images, swapchain_create_info.imageFormat);
 
     // then we allocate descriptor sets for camera, lights and objects
@@ -1045,19 +1022,22 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         vkCmdEndRenderPass(command_buffers[i]);
 
         smaa_context.record_into_command_buffer(command_buffers[i]);
+        hbao_context.record_into_command_buffer(command_buffers[i], swapchain_create_info.imageExtent, camera.znear, camera.zfar, static_cast<bool>(camera.pos[3]));
 
-        glm::mat4 glm_norm_world_to_view = glm::mat4(1, 0, 0, 0,
-                                                     0, 1, 0, 0,
-                                                     0, 0, -1, 0,
-                                                     0, 0, 0, 1) * glm::inverse(camera.get_view_matrix());
-
-        FfxCacaoMatrix4x4 norm_world_to_view;
-        memcpy(&norm_world_to_view, glm::value_ptr(glm_norm_world_to_view), sizeof(glm::mat4));
-
-        FfxCacaoMatrix4x4 proj;
-        memcpy(&proj, glm::value_ptr(camera.get_proj_matrix()), sizeof(glm::mat4));
-
-        ffxCacaoVkDraw(fx_cacao_context, command_buffers[i], &proj, &norm_world_to_view);
+        // This barrier is temporary! TODO: remove this barrier
+        VkImageMemoryBarrier image_memory_barrier = {
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                nullptr,
+                VK_ACCESS_MEMORY_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                device_global_ao_image,
+                {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+        };
+        vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
 
         hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height});
 
@@ -1155,10 +1135,6 @@ void GraphicsModuleVulkanApp::on_window_resize(std::function<void(GraphicsModule
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDeviceWaitIdle(device);
-
-    ffxCacaoVkDestroyScreenSizeDependentResources(fx_cacao_context);
-    ffxCacaoVkDestroyContext(fx_cacao_context);
-    delete[] reinterpret_cast<uint8_t*>(fx_cacao_context);
 
     for (auto& semaphore : semaphores) {
         vkDestroySemaphore(device, semaphore, nullptr);

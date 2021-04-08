@@ -60,10 +60,8 @@ add_library(engine OBJECT
         ${ENGINE_SRC_DIR}/hdr_tonemap/hdr_tonemap_context.h
         ${ENGINE_SRC_DIR}/gltf_model.cpp
         ${ENGINE_SRC_DIR}/gltf_model.h
-        ${ENGINE_SRC_DIR}/ffx_cacao/ffx_cacao.h
-        ${ENGINE_SRC_DIR}/ffx_cacao/ffx_cacao.cpp
-        ${ENGINE_SRC_DIR}/ffx_cacao/ffx_cacao_defines.h
-        )
+        ${ENGINE_SRC_DIR}/hbao/hbao_context.cpp
+        ${ENGINE_SRC_DIR}/hbao/hbao_context.h)
 
 target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
 target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})

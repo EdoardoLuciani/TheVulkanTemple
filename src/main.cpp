@@ -102,8 +102,8 @@ int main() {
     options.HDR = 0;
   
 	try {
-	    VkExtent2D screen_size = {2560,1440};
-		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, true,
+	    VkExtent2D screen_size = {800,800};
+		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, false,
                                     desired_device_level_extensions, selected_device_features, VK_TRUE, options, &required_physical_device_indexing_features);
 
         glm::mat4 water_bottle_m_matrix = glm::translate(glm::vec3(-1.0f, 0.02f, -0.5f))*glm::scale(glm::vec3(0.4f,0.4f,0.4f));
