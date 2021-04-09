@@ -12,7 +12,7 @@ class HbaoContext {
         HbaoContext(VkDevice device, VkExtent2D screen_res, VkFormat depth_image_format, std::string shader_dir_path);
         ~HbaoContext();
 
-        std::array<VkImage, 1> get_device_images();
+        std::array<VkImage, 2> get_device_images();
         std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();
 
         void create_resources(VkExtent2D screen_res);
@@ -25,10 +25,15 @@ class HbaoContext {
         VkDevice device;
         VkExtent2D screen_extent;
 
-        // depth_linearize, hbao_
+        VkSampler do_nothing_sampler = VK_NULL_HANDLE;
+
         VkImage device_linearized_depth_image = VK_NULL_HANDLE;
         VkImageView device_linearized_depth_image_view = VK_NULL_HANDLE;
 
+        VkImage device_deinterleaved_depth_image = VK_NULL_HANDLE;
+        std::array<VkImageView, 16> device_deinterleaved_depth_image_views = {};
+
+        // depth_linearize, deinterleave
         std::array<VkRenderPass, 3> hbao_render_passes = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
         std::array<VkDescriptorSetLayout, 3> hbao_descriptor_set_layouts = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
 
@@ -39,6 +44,7 @@ class HbaoContext {
         std::array<VkDescriptorSet, 3> hbao_descriptor_sets = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
 
         void create_linearize_depth_pipeline(VkShaderModule vertex_shader_module, VkExtent2D render_target_extent, std::string shader_dir_path);
+        void create_deinterleave_pipeline(VkShaderModule vertex_shader_module, VkExtent2D render_target_extent, std::string shader_dir_path);
 
         void create_image_views();
         void create_framebuffers(VkImageView depth_image_view);

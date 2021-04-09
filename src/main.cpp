@@ -124,7 +124,7 @@ int main() {
 		});
 		app.set_camera({{0.0f, 1.0f, 5.0f, 0.0f}, {0.0f, 0.0f, -10.0f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.1f, 1000.0f});
 
-        glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        //glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         app.init_renderer();
 
