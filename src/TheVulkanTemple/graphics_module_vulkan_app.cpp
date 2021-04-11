@@ -29,7 +29,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        additional_structure),
                          vsm_context(device),
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
-                         hbao_context(device, window_size, VK_FORMAT_D32_SFLOAT, "resources//shaders"),
+                         hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, "resources//shaders"),
                          hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R16_SFLOAT, swapchain_create_info.imageFormat) {
 
     VkSamplerCreateInfo sampler_create_info = {
@@ -174,7 +174,6 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     // Get the total size of the models to allocate a buffer for it and copy them to host memory
     uint64_t models_total_size = 0;
     for (uint32_t i = 0; i < gltf_models.size(); i++) {
-        //objects[i].model = std::move(gltf_models[i]);
         objects[i].model = gltf_models[i];
         objects[i].model.copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true,true,
                                               GltfModel::t_model_attributes::T_ALL, nullptr  );
@@ -514,6 +513,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     vsm_context.init_resources();
     smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
     hbao_context.init_resources();
+    hbao_context.update_constants(camera.get_proj_matrix());
 
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
@@ -553,7 +553,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     // Next we allocate the vsm descriptors in the pool
     vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
     smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0]);
-    hbao_context.allocate_descriptor_sets(attachments_descriptor_pool, device_depth_image_view);
+    hbao_context.allocate_descriptor_sets(attachments_descriptor_pool, device_depth_image_view, device_normal_g_image_view);
     hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[1], device_global_ao_image_view, swapchain_images, swapchain_create_info.imageFormat);
 
     // then we allocate descriptor sets for camera, lights and objects
