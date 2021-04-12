@@ -29,7 +29,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        additional_structure),
                          vsm_context(device),
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
-                         hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, "resources//shaders"),
+                         hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, "resources//shaders", false),
                          hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R16_SFLOAT, swapchain_create_info.imageFormat) {
 
     VkSamplerCreateInfo sampler_create_info = {
