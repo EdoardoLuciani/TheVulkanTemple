@@ -19,7 +19,6 @@ glm::mat4 Camera::get_proj_matrix() {
     else {
         perspective_matrix = glm::perspective(fov, aspect, znear, zfar);
     }
-    //perspective_matrix[1][1] *= -1;
 
     return perspective_matrix;
 }
@@ -31,8 +30,9 @@ glm::mat4 Camera::get_view_matrix() {
 uint32_t Camera::copy_data_to_ptr(uint8_t *ptr) {
     if (ptr != nullptr) {
         memcpy(ptr, glm::value_ptr(this->get_view_matrix()), sizeof(glm::mat4));
-        memcpy(ptr+sizeof(glm::mat4), glm::value_ptr(this->get_proj_matrix()), sizeof(glm::mat4));
-        memcpy(ptr+sizeof(glm::mat4)*2, glm::value_ptr(pos), sizeof(glm::vec4));
+        memcpy(ptr+sizeof(glm::mat4), glm::value_ptr(glm::transpose(glm::inverse(this->get_view_matrix()))), sizeof(glm::mat4));
+        memcpy(ptr+sizeof(glm::mat4)*2, glm::value_ptr(this->get_proj_matrix()), sizeof(glm::mat4));
+        memcpy(ptr+sizeof(glm::mat4)*3, glm::value_ptr(pos), sizeof(glm::vec4));
     }
-    return sizeof(glm::mat4)*2+sizeof(glm::vec4);
+    return sizeof(glm::mat4)*3+sizeof(glm::vec4);
 }

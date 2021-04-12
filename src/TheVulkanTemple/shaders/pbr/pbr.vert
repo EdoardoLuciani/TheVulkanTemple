@@ -23,6 +23,7 @@ layout (set = 1, binding = 0) readonly buffer uniform_buffer2 {
 
 layout (set = 2, binding = 0) uniform uniform_buffer3 {
     mat4 view;
+	mat4 normal_view;
     mat4 projection;
 	vec4 camera_pos;
 };
@@ -68,7 +69,8 @@ void main() {
     vs_out.V = tbn * (vec3(camera_pos) - vs_out.position);
 	//vs_out.N_g = mat3(normal_model) * normal;
 	//vs_out.N_g = transpose(inverse(mat3(view)*mat3(model))) * normal;
-	vs_out.N_g = transpose(inverse(mat3(view))) * mat3(normal_model) * normal;
+	//vs_out.N_g = transpose(inverse(mat3(view))) * mat3(normal_model) * normal;
+	vs_out.N_g = mat3(normal_view) * mat3(normal_model) * normal;
 
 	vs_out.tbn = transpose(tbn);
 

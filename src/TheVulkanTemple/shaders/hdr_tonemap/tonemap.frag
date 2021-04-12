@@ -94,7 +94,7 @@ float ACESFilm(float x) {
 void main() {
     // TODO: reactivate ao
     float ao = subpassLoad(global_ao).r;
-    vec3 color = vec3(subpassLoad(input_color));
+    vec3 color = vec3(subpassLoad(input_color)) * ao;
 
     vec3 xyY = rgb_to_xyY(color);
 

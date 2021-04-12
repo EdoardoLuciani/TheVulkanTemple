@@ -10,7 +10,8 @@
 
 class HbaoContext {
     public:
-        HbaoContext(VkDevice device, VkPhysicalDeviceMemoryProperties memory_properties, VkExtent2D screen_res, VkFormat depth_image_format, std::string shader_dir_path, bool generate_normals);
+        HbaoContext(VkDevice device, VkPhysicalDeviceMemoryProperties memory_properties, VkExtent2D screen_res,
+                    VkFormat depth_image_format,VkFormat out_ao_image_format, std::string shader_dir_path, bool generate_normals);
         ~HbaoContext();
 
         std::vector<VkImage> get_device_images();
@@ -21,7 +22,7 @@ class HbaoContext {
 
         void update_constants(glm::mat4 proj);
 
-        void allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView depth_image_view, VkImageView normal_g_buffer_image_view);
+        void allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView depth_image_view, VkImageView normal_g_buffer_image_view, VkImageView out_ao_image_view);
         void record_into_command_buffer(VkCommandBuffer command_buffer, VkExtent2D out_image_size, float znear, float zfar, bool is_perspective);
 
     private:
@@ -100,7 +101,8 @@ class HbaoContext {
             DEPTH_DEINTERLEAVE = 2,
             HBAO_CALC = 3,
             HBAO_REINTERLEAVE = 4,
-            HBAO_BLUR = 5
+            HBAO_BLUR = 5,
+            HBAO_BLUR_2 = 6
         };
 
         struct stage_data {
@@ -110,7 +112,7 @@ class HbaoContext {
             VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
             VkPipeline pipeline = VK_NULL_HANDLE;
         };
-        std::array<stage_data, 6> stages;
+        std::array<stage_data, 7> stages;
 
         std::array<VkDescriptorSetLayout, 4> hbao_descriptor_set_layouts = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
 
@@ -129,11 +131,12 @@ class HbaoContext {
         void create_hbao_calc_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
         void create_reinterleave_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
         void create_hbao_blur_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
+        void create_hbao_blur_2_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
 
         void create_hbao_data_buffers();
 
         void create_image_views();
-        void create_framebuffers(VkImageView depth_image_view);
+        void create_framebuffers(VkImageView depth_image_view, VkImageView out_ao_image_view);
 };
 
 
