@@ -118,10 +118,6 @@ void main() {
     frag_color = vec4(color, 1.0);
 
     //vec3 normal_to_write = (normalize(fs_in.N_g) + 1) / 2;
-    vec3 normal_to_write = (normalize(fs_in.N_g));
-    //normal_to_write.z *= -1;
-    normal_to_write = abs(normal_to_write);
-    normal_to_write = (normal_to_write + 1) / 2;
-    normal_g_image = vec4(normal_to_write.x, normal_to_write.y, normal_to_write.z, 0.0);
-    //normal_g_image = vec4((normalize(fs_in.tbn * (texture(images, vec3(fs_in.tex_coord, 2)).xyz * 2.0 - 1.0)) + 1) / 2, 0.0);
+    vec3 normal_to_write = (abs(normalize(fs_in.N_g)) + 1) / 2;
+    normal_g_image = vec4(normal_to_write, 0.0);
 }
