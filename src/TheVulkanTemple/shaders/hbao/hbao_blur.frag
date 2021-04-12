@@ -27,17 +27,51 @@
 
 #version 460
 
-layout(set = 0, binding = 0) uniform sampler2DArray texResultsArray;
+const float KERNEL_RADIUS = 3;
 
-layout(location = 0) out vec4 out_Color;
+layout (push_constant) uniform uniform_buffer {
+    vec2  g_InvResolutionDirection; // either set x to 1/width or y to 1/height
+    float g_Sharpness;
+};
 
-//----------------------------------------------------------------------------------
+layout(set = 0, binding = 0) uniform sampler2D texSource;
+
+layout(location = 0) out vec2 out_Color;
+
+float BlurFunction(vec2 uv, float r, float center_c, float center_d, inout float w_total) {
+    vec2  aoz = texture( texSource, uv ).xy;
+    float c = aoz.x;
+    float d = aoz.y;
+
+    const float BlurSigma = float(KERNEL_RADIUS) * 0.5;
+    const float BlurFalloff = 1.0 / (2.0*BlurSigma*BlurSigma);
+
+    float ddiff = (d - center_d) * g_Sharpness;
+    float w = exp2(-r*r*BlurFalloff - ddiff*ddiff);
+    w_total += w;
+
+    return c*w;
+}
 
 void main() {
-  ivec2 FullResPos = ivec2(gl_FragCoord.xy);
-  ivec2 Offset = FullResPos & 3;
-  int SliceId = Offset.y * 4 + Offset.x;
-  ivec2 QuarterResPos = FullResPos >> 2;
+    vec2 texCoord = gl_FragCoord.xy/textureSize(texSource, 0);
 
-  out_Color = vec4(texelFetch( texResultsArray, ivec3(QuarterResPos, SliceId), 0).xy,0,0);
+    vec2  aoz = texture( texSource, texCoord ).xy;
+    float center_c = aoz.x;
+    float center_d = aoz.y;
+
+    float c_total = center_c;
+    float w_total = 1.0;
+
+    for (float r = 1; r <= KERNEL_RADIUS; ++r) {
+        vec2 uv = texCoord + g_InvResolutionDirection * r;
+        c_total += BlurFunction(uv, r, center_c, center_d, w_total);
+    }
+
+    for (float r = 1; r <= KERNEL_RADIUS; ++r) {
+        vec2 uv = texCoord - g_InvResolutionDirection * r;
+        c_total += BlurFunction(uv, r, center_c, center_d, w_total);
+    }
+
+    out_Color = vec2(c_total/w_total, center_d);
 }

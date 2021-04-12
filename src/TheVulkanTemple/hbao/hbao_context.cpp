@@ -252,6 +252,45 @@ HbaoContext::HbaoContext(VkDevice device, VkPhysicalDeviceMemoryProperties memor
     };
     check_error(vkCreateRenderPass(device, &render_pass_create_info, nullptr, &stages[HBAO_REINTERLEAVE].render_pass), vulkan_helper::Error::RENDER_PASS_CREATION_FAILED);
 
+    // Renderpass for hbao_blur
+    // Output linearized depth image is of the format VK_FORMAT_R16G16_SFLOAT
+    attachment_descriptions[0] = {
+            0,
+            VK_FORMAT_R16G16_SFLOAT,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            VK_ATTACHMENT_STORE_OP_STORE,
+            VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
+    attachment_references[0] = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+    subpass_description = {
+            0,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            0,
+            nullptr,
+            1,
+            &attachment_references[0],
+            nullptr,
+            nullptr,
+            0,
+            nullptr
+    };
+    render_pass_create_info = {
+            VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            attachment_descriptions.data(),
+            1,
+            &subpass_description,
+            0,
+            nullptr
+    };
+    check_error(vkCreateRenderPass(device, &render_pass_create_info, nullptr, &stages[HBAO_BLUR].render_pass), vulkan_helper::Error::RENDER_PASS_CREATION_FAILED);
+
     std::array<VkDescriptorSetLayoutBinding, 3> descriptor_set_layout_binding;
     // We create the descriptor set layout for the depth linearize
     descriptor_set_layout_binding[0] = {
@@ -296,7 +335,7 @@ HbaoContext::HbaoContext(VkDevice device, VkPhysicalDeviceMemoryProperties memor
         check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &hbao_descriptor_set_layouts[1]), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
     }
 
-    // We create the descriptor set layout for the deinterleave and reinterleave
+    // We create the descriptor set layout for the deinterleave, reinterleave and hbao_blur
     descriptor_set_layout_binding[0] = {
             0,
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -349,6 +388,7 @@ HbaoContext::HbaoContext(VkDevice device, VkPhysicalDeviceMemoryProperties memor
     stages[DEPTH_DEINTERLEAVE].descriptor_set_layout = &hbao_descriptor_set_layouts[2];
     stages[HBAO_CALC].descriptor_set_layout = &hbao_descriptor_set_layouts[3];
     stages[HBAO_REINTERLEAVE].descriptor_set_layout = &hbao_descriptor_set_layouts[2];
+    stages[HBAO_BLUR].descriptor_set_layout = &hbao_descriptor_set_layouts[2];
 
     // Then we start creating the pipelines, by creating the structures that are common for all the pipelines
     pipeline_common_structures structures;
@@ -362,6 +402,7 @@ HbaoContext::HbaoContext(VkDevice device, VkPhysicalDeviceMemoryProperties memor
     create_deinterleave_pipeline(structures, screen_res, shader_dir_path + "//hbao_deinterleave.frag.spv");
     create_hbao_calc_pipeline(structures, screen_res, shader_dir_path + "//hbao_calc.frag.spv");
     create_reinterleave_pipeline(structures, screen_res, shader_dir_path  + "//hbao_reinterleave.frag.spv");
+    create_hbao_blur_pipeline(structures, screen_res, shader_dir_path  + "//hbao_blur.frag.spv");
 
     // We don't need the vertex shader module anymore
     vkDestroyShaderModule(device, structures.vertex_shader_stage.module, nullptr);
@@ -572,6 +613,110 @@ void HbaoContext::create_linearize_depth_pipeline(const pipeline_common_structur
             -1
     };
     vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &stages[DEPTH_LINEARIZE].pipeline);
+    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
+}
+
+void HbaoContext::create_view_normal_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path) {
+    std::vector<uint8_t> shader_contents;
+    vulkan_helper::get_binary_file_content(frag_shader_path, shader_contents);
+    VkShaderModuleCreateInfo shader_module_create_info = {
+            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            nullptr,
+            0,
+            shader_contents.size(),
+            reinterpret_cast<uint32_t*>(shader_contents.data())
+    };
+    VkShaderModule fragment_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED );
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info;
+    pipeline_shaders_stage_create_info[0] = structures.vertex_shader_stage;
+    pipeline_shaders_stage_create_info[1] = {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            fragment_shader_module,
+            "main",
+            nullptr
+    };
+
+    VkViewport viewport = {
+            0.0f,
+            0.0f,
+            static_cast<float>(render_target_extent.width),
+            static_cast<float>(render_target_extent.height),
+            0.0f,
+            1.0f
+    };
+    VkRect2D scissor = {
+            {0,0},
+            {render_target_extent.width, render_target_extent.height}
+    };
+    VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &viewport,
+            1,
+            &scissor
+    };
+
+    VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_LOGIC_OP_COPY,
+            1,
+            &structures.color_blend_attachment,
+            {0.0f,0.0f,0.0f,0.0f}
+    };
+
+    // We set the viewport and scissor dynamically
+    std::array<VkDynamicState,2> dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT ,VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo pipeline_dynamic_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            dynamic_states.size(),
+            dynamic_states.data()
+    };
+
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            stages[VIEW_NORMAL].descriptor_set_layout,
+            0,
+            nullptr
+    };
+    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &stages[VIEW_NORMAL].pipeline_layout);
+
+    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            nullptr,
+            0,
+            pipeline_shaders_stage_create_info.size(),
+            pipeline_shaders_stage_create_info.data(),
+            &structures.vertex_input,
+            &structures.input_assembly,
+            nullptr,
+            &pipeline_viewport_state_create_info,
+            &structures.rasterization,
+            &structures.multisample,
+            &structures.depth_stencil,
+            &pipeline_color_blend_state_create_info,
+            &pipeline_dynamic_state_create_info,
+            stages[VIEW_NORMAL].pipeline_layout,
+            stages[VIEW_NORMAL].render_pass,
+            0,
+            VK_NULL_HANDLE,
+            -1
+    };
+    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &stages[VIEW_NORMAL].pipeline);
     vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
@@ -895,7 +1040,7 @@ void HbaoContext::create_reinterleave_pipeline(const pipeline_common_structures 
     vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
-void HbaoContext::create_view_normal_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path) {
+void HbaoContext::create_hbao_blur_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path) {
     std::vector<uint8_t> shader_contents;
     vulkan_helper::get_binary_file_content(frag_shader_path, shader_contents);
     VkShaderModuleCreateInfo shader_module_create_info = {
@@ -963,16 +1108,22 @@ void HbaoContext::create_view_normal_pipeline(const pipeline_common_structures &
             dynamic_states.data()
     };
 
+    // We need to tell the pipeline we will use push constants to pass the info
+    VkPushConstantRange push_constant_range = {
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            0,
+            sizeof(glm::vec3)
+    };
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             nullptr,
             0,
             1,
-            stages[VIEW_NORMAL].descriptor_set_layout,
-            0,
-            nullptr
+            stages[HBAO_BLUR].descriptor_set_layout,
+            1,
+            &push_constant_range
     };
-    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &stages[VIEW_NORMAL].pipeline_layout);
+    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &stages[HBAO_BLUR].pipeline_layout);
 
     VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
             VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -989,13 +1140,13 @@ void HbaoContext::create_view_normal_pipeline(const pipeline_common_structures &
             &structures.depth_stencil,
             &pipeline_color_blend_state_create_info,
             &pipeline_dynamic_state_create_info,
-            stages[VIEW_NORMAL].pipeline_layout,
-            stages[VIEW_NORMAL].render_pass,
+            stages[HBAO_BLUR].pipeline_layout,
+            stages[HBAO_BLUR].render_pass,
             0,
             VK_NULL_HANDLE,
             -1
     };
-    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &stages[VIEW_NORMAL].pipeline);
+    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &stages[HBAO_BLUR].pipeline);
     vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
@@ -1068,6 +1219,9 @@ HbaoContext::~HbaoContext() {
     }
     vkDestroyFramebuffer(device, hbao_calc_framebuffer, nullptr);
     vkDestroyFramebuffer(device, reinterleave_framebuffer, nullptr);
+    for (auto& framebuffer : hbao_blur_framebuffers) {
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
 
     vkDestroyImage(device, device_linearized_depth_image, nullptr);
     vkDestroyImageView(device, device_linearized_depth_image_view, nullptr);
@@ -1085,7 +1239,9 @@ HbaoContext::~HbaoContext() {
     vkDestroyImageView(device, device_hbao_calc_16_layers_image_view, nullptr);
 
     vkDestroyImage(device, device_reinterleaved_hbao_image, nullptr);
-    vkDestroyImageView(device, device_reinterleaved_hbao_image_view, nullptr);
+    for (auto &image_view : device_reinterleaved_hbao_image_view) {
+        vkDestroyImageView(device, image_view, nullptr);
+    }
 
     vkDestroyBuffer(device, device_hbao_data_buffer, nullptr);
     vkFreeMemory(device, device_hbao_data_memory, nullptr);
@@ -1106,9 +1262,9 @@ std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> HbaoContext:
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> to_return {
             { {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1},
                 {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4},
-                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4}
+                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5}
             },
-            4};
+            5};
 
     if (generate_normals) {
         to_return.first[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] += 1;
@@ -1162,10 +1318,10 @@ void HbaoContext::create_resources(VkExtent2D screen_res) {
     vkDestroyImage(device, device_hbao_calc_image, nullptr);
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_hbao_calc_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 
-    // image for the reinterleaved output of the hbao_calc pass
+    // image for the reinterleaved output of the hbao_calc pass and second layer for hbao_blur
     image_create_info.format = VK_FORMAT_R16G16_SFLOAT;
     image_create_info.extent = {screen_extent.width, screen_extent.height, 1},
-    image_create_info.arrayLayers = 1;
+    image_create_info.arrayLayers = 2;
     vkDestroyImage(device, device_reinterleaved_hbao_image, nullptr);
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_reinterleaved_hbao_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 }
@@ -1220,13 +1376,16 @@ void HbaoContext::create_image_views() {
     vkDestroyImageView(device, device_hbao_calc_16_layers_image_view, nullptr);
     vkCreateImageView(device, &image_view_create_info, nullptr, &device_hbao_calc_16_layers_image_view);
 
-    // image view for the reinterleaved hbao calc image
+    // image view for the reinterleaved hbao calc image layer 0
     image_view_create_info.image = device_reinterleaved_hbao_image;
     image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
     image_view_create_info.format = VK_FORMAT_R16G16_SFLOAT;
-    image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    vkDestroyImageView(device, device_reinterleaved_hbao_image_view, nullptr);
-    vkCreateImageView(device, &image_view_create_info, nullptr, &device_reinterleaved_hbao_image_view);
+
+    for (uint32_t i = 0; i < device_reinterleaved_hbao_image_view.size(); i++) {
+        image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, i, 1};
+        vkDestroyImageView(device, device_reinterleaved_hbao_image_view[i], nullptr);
+        vkCreateImageView(device, &image_view_create_info, nullptr, &device_reinterleaved_hbao_image_view[i]);
+    }
 }
 
 void HbaoContext::create_framebuffers(VkImageView depth_image_view) {
@@ -1311,7 +1470,7 @@ void HbaoContext::create_framebuffers(VkImageView depth_image_view) {
     check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &hbao_calc_framebuffer), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
 
     // Framebuffer for hbao_reinterleave
-    input_image_views[0] = {device_reinterleaved_hbao_image_view};
+    input_image_views[0] = {device_reinterleaved_hbao_image_view[0]};
     framebuffer_create_info = {
             VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             nullptr,
@@ -1325,6 +1484,22 @@ void HbaoContext::create_framebuffers(VkImageView depth_image_view) {
     };
     vkDestroyFramebuffer(device, reinterleave_framebuffer, nullptr);
     check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &reinterleave_framebuffer), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
+
+    // Framebuffer for hbao_blur
+    input_image_views[0] = {device_reinterleaved_hbao_image_view[1]};
+    framebuffer_create_info = {
+            VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            nullptr,
+            0,
+            stages[HBAO_BLUR].render_pass,
+            1,
+            input_image_views.data(),
+            screen_extent.width,
+            screen_extent.height,
+            1
+    };
+    vkDestroyFramebuffer(device, hbao_blur_framebuffers[0], nullptr);
+    check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &hbao_blur_framebuffers[0]), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
 }
 
 void HbaoContext::update_constants(glm::mat4 proj) {
@@ -1358,6 +1533,7 @@ void HbaoContext::update_constants(glm::mat4 proj) {
     // radius
     float blur_intensity = 2.0f;
     float bias = 0.1f;
+    blur_sharpness = 40.0f;
 
     float meters2viewspace   = 1.0f;
     float R                  = blur_intensity * meters2viewspace;
@@ -1414,7 +1590,7 @@ void HbaoContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
     }
 
     // We create the infos for the descriptor writes
-    std::vector<VkDescriptorImageInfo> descriptor_image_infos(generate_normals ? 6 : 5);
+    std::vector<VkDescriptorImageInfo> descriptor_image_infos(generate_normals ? 7 : 6);
     // For the depth_linearize
     descriptor_image_infos[0] = {
             VK_NULL_HANDLE,
@@ -1435,7 +1611,7 @@ void HbaoContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
     };
     descriptor_image_infos[3] = {
             do_nothing_sampler,
-            generate_normals ? device_view_space_normal_image_view : normal_g_buffer_image_view, // put here normal_g_buffer_image_view!!!!!  device_view_space_normal_image_view
+            generate_normals ? device_view_space_normal_image_view : normal_g_buffer_image_view,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     };
     // For the reinterleave
@@ -1444,9 +1620,15 @@ void HbaoContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
             device_hbao_calc_16_layers_image_view,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     };
+    // for hbao_blur
+    descriptor_image_infos[5] = {
+            do_nothing_sampler,
+            device_reinterleaved_hbao_image_view[0],
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
     // For view_normal
     if (generate_normals) {
-        descriptor_image_infos[5] = {
+        descriptor_image_infos[6] = {
                 do_nothing_sampler,
                 device_linearized_depth_image_view,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -1460,7 +1642,7 @@ void HbaoContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
     };
 
     // Then we have to write the descriptor set
-    std::vector<VkWriteDescriptorSet> write_descriptor_sets(generate_normals ? 8 : 6);
+    std::vector<VkWriteDescriptorSet> write_descriptor_sets(generate_normals ? 9 : 7);
 
     // Update for depth_linearize
     write_descriptor_sets[0] = {
@@ -1538,9 +1720,22 @@ void HbaoContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
             nullptr,
             nullptr
     };
+    // updates for hbao_blur
+    write_descriptor_sets[6] = {
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            nullptr,
+            stages[HBAO_BLUR].descriptor_set,
+            0,
+            0,
+            1,
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            &descriptor_image_infos[5],
+            nullptr,
+            nullptr
+    };
     if (generate_normals) {
         // updates for view_normal
-        write_descriptor_sets[6] = {
+        write_descriptor_sets[7] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
                 stages[VIEW_NORMAL].descriptor_set,
@@ -1552,7 +1747,7 @@ void HbaoContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
                 &descriptor_buffer_info,
                 nullptr
         };
-        write_descriptor_sets[7] = {
+        write_descriptor_sets[8] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
                 stages[VIEW_NORMAL].descriptor_set,
@@ -1560,7 +1755,7 @@ void HbaoContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
                 0,
                 1,
                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                &descriptor_image_infos[5],
+                &descriptor_image_infos[6],
                 nullptr,
                 nullptr
         };
@@ -1750,6 +1945,44 @@ void HbaoContext::record_into_command_buffer(VkCommandBuffer command_buffer, VkE
     vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, stages[HBAO_REINTERLEAVE].pipeline_layout, 0, 1, &stages[HBAO_REINTERLEAVE].descriptor_set, 0, nullptr);
+
+    vkCmdDraw(command_buffer, 3, 1, 0, 0);
+
+    vkCmdEndRenderPass(command_buffer);
+
+    // hbao_blur
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, stages[HBAO_BLUR].pipeline);
+
+    viewport = {
+            0.0f,
+            0.0f,
+            static_cast<float>(out_image_size.width),
+            static_cast<float>(out_image_size.height),
+            0.0f,
+            1.0f
+    };
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+    scissor = {
+            {0,0},
+            {out_image_size.width, out_image_size.height}
+    };
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+    render_pass_begin_info = {
+            VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            nullptr,
+            stages[HBAO_BLUR].render_pass,
+            hbao_blur_framebuffers[0],
+            {{0,0},{out_image_size.width, out_image_size.height}},
+            1,
+            clear_values.data()
+    };
+    vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, stages[HBAO_BLUR].pipeline_layout, 0, 1, &stages[HBAO_BLUR].descriptor_set, 0, nullptr);
+
+    glm::vec3 hbao_blur_info(1.0f / screen_extent.width, 0.0f, blur_sharpness);
+    vkCmdPushConstants(command_buffer, stages[HBAO_BLUR].pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(glm::vec3), glm::value_ptr(hbao_blur_info));
 
     vkCmdDraw(command_buffer, 3, 1, 0, 0);
 

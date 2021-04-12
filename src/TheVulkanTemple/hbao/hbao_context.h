@@ -65,6 +65,7 @@ class HbaoContext {
         VkExtent2D screen_extent;
         VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
         bool generate_normals;
+        float blur_sharpness;
 
         VkSampler do_nothing_sampler = VK_NULL_HANDLE;
 
@@ -82,7 +83,7 @@ class HbaoContext {
         VkImageView device_hbao_calc_16_layers_image_view = VK_NULL_HANDLE;
 
         VkImage device_reinterleaved_hbao_image = VK_NULL_HANDLE;
-        VkImageView device_reinterleaved_hbao_image_view = VK_NULL_HANDLE;
+        std::array<VkImageView, 2> device_reinterleaved_hbao_image_view = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
         // Buffer that holds the HbaoData both in host and device memory
         VkBuffer host_hbao_data_buffer = VK_NULL_HANDLE;
@@ -98,7 +99,8 @@ class HbaoContext {
             VIEW_NORMAL = 1,
             DEPTH_DEINTERLEAVE = 2,
             HBAO_CALC = 3,
-            HBAO_REINTERLEAVE = 4
+            HBAO_REINTERLEAVE = 4,
+            HBAO_BLUR = 5
         };
 
         struct stage_data {
@@ -108,24 +110,25 @@ class HbaoContext {
             VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
             VkPipeline pipeline = VK_NULL_HANDLE;
         };
-        std::array<stage_data, 5> stages;
+        std::array<stage_data, 6> stages;
 
         std::array<VkDescriptorSetLayout, 4> hbao_descriptor_set_layouts = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
 
         VkFramebuffer depth_linearize_framebuffer = VK_NULL_HANDLE;
         VkFramebuffer view_normal_framebuffer = VK_NULL_HANDLE;
-        std::array<VkFramebuffer, 2> deinterleave_framebuffers = {};
+        std::array<VkFramebuffer, 2> deinterleave_framebuffers = {VK_NULL_HANDLE, VK_NULL_HANDLE};
         VkFramebuffer hbao_calc_framebuffer = VK_NULL_HANDLE;
         VkFramebuffer reinterleave_framebuffer = VK_NULL_HANDLE;
+        std::array<VkFramebuffer, 2> hbao_blur_framebuffers = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
         void fill_full_screen_pipeline_common_structures(std::string vertex_shader_path, pipeline_common_structures &structures);
 
         void create_linearize_depth_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
+        void create_view_normal_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
         void create_deinterleave_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
         void create_hbao_calc_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
         void create_reinterleave_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
-
-        void create_view_normal_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
+        void create_hbao_blur_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
 
         void create_hbao_data_buffers();
 
