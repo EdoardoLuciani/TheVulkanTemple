@@ -7,8 +7,8 @@
 #include "base_vulkan_app.h"
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
+#include "hbao/hbao_context.h"
 #include "hdr_tonemap/hdr_tonemap_context.h"
-#include "ffx_cacao/ffx_cacao.h"
 #include "vulkan_helper.h"
 #include <glm/glm.hpp>
 #include "camera.h"
@@ -84,7 +84,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Image for normal g-buffer
         VkImage device_normal_g_image = VK_NULL_HANDLE;
         VkImageView device_normal_g_image_view = VK_NULL_HANDLE;
-        // Image for fx-cacao output
+        // Image for hbao output
         VkImage device_global_ao_image = VK_NULL_HANDLE;
         VkImageView device_global_ao_image_view = VK_NULL_HANDLE;
         // Device buffer that hold camera and lights information
@@ -92,8 +92,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Contexts for graphical effects
         VSMContext vsm_context;
         SmaaContext smaa_context;
+        HbaoContext hbao_context;
         HDRTonemapContext hdr_tonemap_context;
-        FfxCacaoVkContext *fx_cacao_context = nullptr;
         // Memory in which all attachment reside
         VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
 

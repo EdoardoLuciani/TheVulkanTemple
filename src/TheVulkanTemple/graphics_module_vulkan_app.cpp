@@ -5,8 +5,8 @@
 #include <iostream>
 #include "smaa/smaa_context.h"
 #include "vsm/vsm_context.h"
+#include "hbao/hbao_context.h"
 #include "hdr_tonemap/hdr_tonemap_context.h"
-#include "ffx_cacao/ffx_cacao.h"
 #include "vulkan_helper.h"
 #include <unordered_map>
 
@@ -29,21 +29,8 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        additional_structure),
                          vsm_context(device),
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
-                         hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R16_SFLOAT, swapchain_create_info.imageFormat) {
-
-    // We create the context for fx-cacao
-    size_t ffx_cacao_context_size = ffxCacaoVkGetContextSize();
-    fx_cacao_context = reinterpret_cast<FfxCacaoVkContext*>(new uint8_t[ffx_cacao_context_size]);
-    FfxCacaoVkCreateInfo info = {};
-    info.physicalDevice = selected_physical_device;
-    info.device = device;
-    info.flags = FFX_CACAO_VK_CREATE_USE_16_BIT;
-#ifndef NDEBUG
-    info.flags = info.flags | FFX_CACAO_VK_CREATE_USE_DEBUG_MARKERS | FFX_CACAO_VK_CREATE_NAME_OBJECTS;
-#endif
-    if (ffxCacaoVkInitContext(fx_cacao_context, &info)) {
-        throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
-    }
+                         hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
+                         hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, swapchain_create_info.imageFormat) {
 
     VkSamplerCreateInfo sampler_create_info = {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -103,7 +90,7 @@ void GraphicsModuleVulkanApp::create_render_pass() {
         },
         {
                 0,
-                VK_FORMAT_R16G16B16A16_SFLOAT,
+                VK_FORMAT_R8G8B8A8_UNORM,
                 VK_SAMPLE_COUNT_1_BIT,
                 VK_ATTACHMENT_LOAD_OP_CLEAR,
                 VK_ATTACHMENT_STORE_OP_STORE,
@@ -187,7 +174,6 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     // Get the total size of the models to allocate a buffer for it and copy them to host memory
     uint64_t models_total_size = 0;
     for (uint32_t i = 0; i < gltf_models.size(); i++) {
-        //objects[i].model = std::move(gltf_models[i]);
         objects[i].model = gltf_models[i];
         objects[i].model.copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true,true,
                                               GltfModel::t_model_attributes::T_ALL, nullptr  );
@@ -482,23 +468,24 @@ void GraphicsModuleVulkanApp::init_renderer() {
     }
     vsm_context.create_resources(depth_images_resolution, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
     smaa_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders");
+    hbao_context.create_resources(swapchain_create_info.imageExtent);
     hdr_tonemap_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders", swapchain_images.size());
 
     // We create some attachments useful during rendering
     create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
-                 1, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+                 1, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_depth_image);
 
     create_image(device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
                  2, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_render_target);
 
-    create_image(device_normal_g_image, VK_FORMAT_R16G16B16A16_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+    create_image(device_normal_g_image, VK_FORMAT_R8G8B8A8_UNORM, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
                  1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_normal_g_image);
 
-    create_image(device_global_ao_image, VK_FORMAT_R16_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
-                 1, 1, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
+    create_image(device_global_ao_image, VK_FORMAT_R8_UNORM, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+                 1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_global_ao_image);
 
     // We request information about the buffer and images we need from vsm_context and store them in a vector
@@ -509,6 +496,10 @@ void GraphicsModuleVulkanApp::init_renderer() {
     auto smaa_array_images = smaa_context.get_device_images();
     device_images_to_allocate.insert(device_images_to_allocate.end(), smaa_array_images.begin(), smaa_array_images.end());
 
+    // We request information about the images and buffer we need from hbao_contex and store them in a vector
+    auto hbao_array_images = hbao_context.get_device_images();
+    device_images_to_allocate.insert(device_images_to_allocate.end(), hbao_array_images.begin(), hbao_array_images.end());
+
     // We then allocate all needed images and buffers in a single allocation
     allocate_and_bind_to_memory(device_attachments_memory, device_buffers_to_allocate, device_images_to_allocate,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
@@ -516,29 +507,13 @@ void GraphicsModuleVulkanApp::init_renderer() {
     create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0,1);
     create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
     create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
-    create_image_view(device_normal_g_image_view, device_normal_g_image, VK_FORMAT_R16G16B16A16_SFLOAT,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
-    create_image_view(device_global_ao_image_view, device_global_ao_image, VK_FORMAT_R16_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+    create_image_view(device_normal_g_image_view, device_normal_g_image, VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+    create_image_view(device_global_ao_image_view, device_global_ao_image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
 
     vsm_context.init_resources();
     smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
-
-    ffxCacaoVkDestroyScreenSizeDependentResources(fx_cacao_context);
-    FfxCacaoVkScreenSizeInfo screenSizeInfo = {};
-    screenSizeInfo.width = swapchain_create_info.imageExtent.width;
-    screenSizeInfo.height = swapchain_create_info.imageExtent.height;
-    screenSizeInfo.depthView = device_depth_image_view;
-    screenSizeInfo.normalsView = device_normal_g_image_view;
-    screenSizeInfo.output = device_global_ao_image;
-    screenSizeInfo.outputView = device_global_ao_image_view;
-    if (ffxCacaoVkInitScreenSizeDependentResources(fx_cacao_context, &screenSizeInfo)) {
-        throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
-    }
-
-    FfxCacaoSettings settings = FFX_CACAO_DEFAULT_SETTINGS;
-    settings.generateNormals = FFX_CACAO_TRUE;
-    if (ffxCacaoVkUpdateSettings(fx_cacao_context, &settings)) {
-        throw vulkan_helper::Error::FFX_CACAO_INIT_FAILED;
-    }
+    hbao_context.init_resources();
+    hbao_context.update_constants(camera.get_proj_matrix());
 
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
@@ -560,6 +535,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
 
     vulkan_helper::insert_or_sum(sets_elements_required, vsm_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, smaa_context.get_required_descriptor_pool_size_and_sets());
+    vulkan_helper::insert_or_sum(sets_elements_required, hbao_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, hdr_tonemap_context.get_required_descriptor_pool_size_and_sets());
     std::vector<VkDescriptorPoolSize> descriptor_pool_size = vulkan_helper::convert_map_to_vector(sets_elements_required.first);
 
@@ -577,6 +553,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     // Next we allocate the vsm descriptors in the pool
     vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
     smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0]);
+    hbao_context.allocate_descriptor_sets(attachments_descriptor_pool, device_depth_image_view, device_normal_g_image_view, device_global_ao_image_view);
     hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[1], device_global_ao_image_view, swapchain_images, swapchain_create_info.imageFormat);
 
     // then we allocate descriptor sets for camera, lights and objects
@@ -1045,20 +1022,7 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         vkCmdEndRenderPass(command_buffers[i]);
 
         smaa_context.record_into_command_buffer(command_buffers[i]);
-
-        glm::mat4 glm_norm_world_to_view = glm::mat4(1, 0, 0, 0,
-                                                     0, 1, 0, 0,
-                                                     0, 0, -1, 0,
-                                                     0, 0, 0, 1) * glm::inverse(camera.get_view_matrix());
-
-        FfxCacaoMatrix4x4 norm_world_to_view;
-        memcpy(&norm_world_to_view, glm::value_ptr(glm_norm_world_to_view), sizeof(glm::mat4));
-
-        FfxCacaoMatrix4x4 proj;
-        memcpy(&proj, glm::value_ptr(camera.get_proj_matrix()), sizeof(glm::mat4));
-
-        ffxCacaoVkDraw(fx_cacao_context, command_buffers[i], &proj, &norm_world_to_view);
-
+        hbao_context.record_into_command_buffer(command_buffers[i], swapchain_create_info.imageExtent, camera.znear, camera.zfar, static_cast<bool>(camera.pos[3]));
         hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height});
 
         vkEndCommandBuffer(command_buffers[i]);
@@ -1155,10 +1119,6 @@ void GraphicsModuleVulkanApp::on_window_resize(std::function<void(GraphicsModule
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDeviceWaitIdle(device);
-
-    ffxCacaoVkDestroyScreenSizeDependentResources(fx_cacao_context);
-    ffxCacaoVkDestroyContext(fx_cacao_context);
-    delete[] reinterpret_cast<uint8_t*>(fx_cacao_context);
 
     for (auto& semaphore : semaphores) {
         vkDestroySemaphore(device, semaphore, nullptr);

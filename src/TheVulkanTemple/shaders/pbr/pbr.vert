@@ -23,6 +23,7 @@ layout (set = 1, binding = 0) readonly buffer uniform_buffer2 {
 
 layout (set = 2, binding = 0) uniform uniform_buffer3 {
     mat4 view;
+	mat4 normal_view;
     mat4 projection;
 	vec4 camera_pos;
 };
@@ -35,7 +36,6 @@ layout (location = 0) out VS_OUT {
 	vec3 V;
 	vec3 L[MAX_LIGHT_DATA];
 	vec4 shadow_coord[MAX_LIGHT_DATA];
-	mat3 tbn;
 } vs_out;
 
 void main() {
@@ -66,8 +66,7 @@ void main() {
 						T.z, B.z, N.z);
 
     vs_out.V = tbn * (vec3(camera_pos) - vs_out.position);
-	vs_out.N_g = mat3(normal_model) * normal;
-	vs_out.tbn = transpose(tbn);
+	vs_out.N_g = mat3(normal_view) * mat3(normal_model) * normal;
 
 	for(int i=0; i<lights.length(); i++) {
 		if (lights[i].pos.w == 0.0) {

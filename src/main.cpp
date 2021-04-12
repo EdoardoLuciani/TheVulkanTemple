@@ -78,21 +78,14 @@ int main() {
 		#error "Unknown compiler or not supported OS"
     #endif
 
-    std::vector<const char*> desired_device_level_extensions = {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing", "VK_KHR_shader_float16_int8"};
+    std::vector<const char*> desired_device_level_extensions = {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing"};
 
     VkPhysicalDeviceFeatures selected_device_features = {0};
     selected_device_features.samplerAnisotropy = VK_TRUE;
-    selected_device_features.shaderInt16 = VK_TRUE;
-
-    VkPhysicalDeviceShaderFloat16Int8FeaturesKHR shader_float_16_int_8_features = {};
-    shader_float_16_int_8_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR;
-    shader_float_16_int_8_features.pNext = nullptr;
-    shader_float_16_int_8_features.shaderFloat16 = VK_TRUE;
-    shader_float_16_int_8_features.shaderInt8 = VK_TRUE;
 
     VkPhysicalDeviceDescriptorIndexingFeaturesEXT required_physical_device_indexing_features = {};
     required_physical_device_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
-    required_physical_device_indexing_features.pNext = &shader_float_16_int_8_features;
+    required_physical_device_indexing_features.pNext = nullptr;
     required_physical_device_indexing_features.runtimeDescriptorArray = VK_TRUE;
     required_physical_device_indexing_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 
@@ -102,7 +95,7 @@ int main() {
     options.HDR = 0;
   
 	try {
-	    VkExtent2D screen_size = {2560,1440};
+	    VkExtent2D screen_size = {800,800};
 		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, true,
                                     desired_device_level_extensions, selected_device_features, VK_TRUE, options, &required_physical_device_indexing_features);
 
@@ -124,7 +117,7 @@ int main() {
 		});
 		app.set_camera({{0.0f, 1.0f, 5.0f, 0.0f}, {0.0f, 0.0f, -10.0f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.1f, 1000.0f});
 
-        glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        //glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         app.init_renderer();
 
