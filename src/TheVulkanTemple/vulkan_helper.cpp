@@ -134,48 +134,50 @@ namespace vulkan_helper
         return VK_TRUE;
     }
 
-    void* create_device_feature_struct_chain(const std::vector<const char*> &device_extensions) {
-        void *first = nullptr;
-        void *last = nullptr;
+    VkPhysicalDeviceFeatures2 create_physical_device_feature_struct_chain_from_requested(const VkPhysicalDeviceFeatures2 &requested) {
+        const void *requested_chain_ptr = requested.pNext;
 
-        for (const auto &device_extension : device_extensions) {
-            if (!strcmp(device_extension,"VK_EXT_descriptor_indexing")) {
-                VkPhysicalDeviceDescriptorIndexingFeaturesEXT* str = new VkPhysicalDeviceDescriptorIndexingFeaturesEXT;
-                str->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
-                str->pNext = nullptr;
+        VkPhysicalDeviceFeatures2 new_physical_device_struct_chain = {};
+        new_physical_device_struct_chain.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        void *new_chain_ptr = &new_physical_device_struct_chain;
 
-                if (first == nullptr) {
-                    first = str;
+        void *new_node;
+        while (requested_chain_ptr) {
+            switch(*reinterpret_cast<const int*>(requested_chain_ptr)) {
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT: {
+                    new_node = new VkPhysicalDeviceDescriptorIndexingFeaturesEXT;
+                    reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(new_node)->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+                    reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(new_node)->pNext = nullptr;
+                    break;
                 }
-                else {
-                    // Even though the precendent type is not really this one we use it anyway
-                    reinterpret_cast<VkPhysicalDeviceFeatures2*>(last)->pNext = str;
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR: {
+                    new_node = new VkPhysicalDeviceShaderFloat16Int8FeaturesKHR;
+                    reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(new_node)->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR;
+                    reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(new_node)->pNext = nullptr;
+                    break;
                 }
-                last = str;
-
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
+                    new_node = new VkPhysicalDeviceVulkan11Features;
+                    reinterpret_cast<VkPhysicalDeviceVulkan11Features*>(new_node)->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+                    reinterpret_cast<VkPhysicalDeviceVulkan11Features*>(new_node)->pNext = nullptr;
+                    break;
+                }
             }
-            else if (!strcmp(device_extension,"VK_KHR_shader_float16_int8")) {
-                VkPhysicalDeviceShaderFloat16Int8FeaturesKHR* str = new VkPhysicalDeviceShaderFloat16Int8FeaturesKHR;
-                str->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR;
-                str->pNext = nullptr;
+            reinterpret_cast<VkPhysicalDeviceFeatures2*>(new_chain_ptr)->pNext = new_node;
+            new_chain_ptr = reinterpret_cast<const VkPhysicalDeviceFeatures2*>(new_chain_ptr)->pNext;
 
-                if (first == nullptr) {
-                    first = str;
-                }
-                else {
-                    // Even though the precendent type is not really this one we use it anyway
-                    reinterpret_cast<VkPhysicalDeviceFeatures2*>(last)->pNext = str;
-                }
-                last = str;
-
-            }
+            requested_chain_ptr = reinterpret_cast<const VkPhysicalDeviceFeatures2*>(requested_chain_ptr)->pNext;
         }
-        return first;
+        return new_physical_device_struct_chain;
     }
 
-    VkBool32 compare_device_feature_struct_chain(void const *base, void const *requested) {
-        void const *p_next_base = base;
-        void const *p_next_requested = requested;
+    VkBool32 compare_physical_device_feature2_struct_chain(const VkPhysicalDeviceFeatures2 &base, const VkPhysicalDeviceFeatures2 &requested) {
+        if (!compare_device_features_struct(&base.features, &requested.features, sizeof(VkPhysicalDeviceFeatures))) {
+            return VK_FALSE;
+        }
+
+        const void *p_next_base = base.pNext;
+        const void *p_next_requested = requested.pNext;
 
         while (p_next_base != nullptr && p_next_requested != nullptr) {
             switch(*reinterpret_cast<const int*>(p_next_base)) {
@@ -183,19 +185,20 @@ namespace vulkan_helper
                     if (!compare_device_features_struct(p_next_base, p_next_requested, sizeof(VkPhysicalDeviceDescriptorIndexingFeaturesEXT))) {
                         return VK_FALSE;
                     }
-
-                    p_next_base = reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT const*>(p_next_base)->pNext;
-                    p_next_requested = reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT const*>(p_next_requested)->pNext;
                     break;
                 case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR:
                     if (!compare_device_features_struct(p_next_base, p_next_requested, sizeof(VkPhysicalDeviceShaderFloat16Int8FeaturesKHR))) {
                         return VK_FALSE;
                     }
-
-                    p_next_base = reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR const*>(p_next_base)->pNext;
-                    p_next_requested = reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR const*>(p_next_requested)->pNext;
+                    break;
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
+                    if (!compare_device_features_struct(p_next_base, p_next_requested, sizeof(VkPhysicalDeviceVulkan11Features))) {
+                        return VK_FALSE;
+                    }
                     break;
             }
+            p_next_base = reinterpret_cast<const VkPhysicalDeviceFeatures2*>(p_next_base)->pNext;
+            p_next_requested = reinterpret_cast<const VkPhysicalDeviceFeatures2*>(p_next_requested)->pNext;
         }
         return (p_next_base == nullptr && p_next_requested == nullptr) ? VK_TRUE : VK_FALSE;
     }
@@ -213,6 +216,11 @@ namespace vulkan_helper
                     p_next_tmp = pNext;
                     pNext = reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(pNext)->pNext;
                     delete reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(p_next_tmp);
+                    break;
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
+                    p_next_tmp = pNext;
+                    pNext = reinterpret_cast<VkPhysicalDeviceVulkan11Features*>(pNext)->pNext;
+                    delete reinterpret_cast<VkPhysicalDeviceVulkan11Features*>(p_next_tmp);
                     break;
             }
         }

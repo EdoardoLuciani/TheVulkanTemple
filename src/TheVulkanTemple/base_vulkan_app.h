@@ -15,9 +15,8 @@ class BaseVulkanApp {
 					  VkExtent2D window_size,
 					  bool fullscreen,
 					  const std::vector<const char*> &desired_device_level_extensions,
-					  const VkPhysicalDeviceFeatures &required_physical_device_features,
-					  VkBool32 surface_support,
-					  void* additional_structure);
+					  const VkPhysicalDeviceFeatures2 &desired_physical_device_features2,
+					  VkBool32 surface_support);
 		virtual ~BaseVulkanApp();
 		GLFWwindow* get_glfw_window();
 

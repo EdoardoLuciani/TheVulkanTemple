@@ -80,14 +80,20 @@ int main() {
 
     std::vector<const char*> desired_device_level_extensions = {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing"};
 
-    VkPhysicalDeviceFeatures selected_device_features = {0};
-    selected_device_features.samplerAnisotropy = VK_TRUE;
+    VkPhysicalDeviceVulkan11Features required_physical_device_vulkan_11_features = {};
+    required_physical_device_vulkan_11_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    required_physical_device_vulkan_11_features.multiview = VK_TRUE;
 
     VkPhysicalDeviceDescriptorIndexingFeaturesEXT required_physical_device_indexing_features = {};
     required_physical_device_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
-    required_physical_device_indexing_features.pNext = nullptr;
+    required_physical_device_indexing_features.pNext = &required_physical_device_vulkan_11_features;
     required_physical_device_indexing_features.runtimeDescriptorArray = VK_TRUE;
     required_physical_device_indexing_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+
+    VkPhysicalDeviceFeatures2 required_device_features2 = {};
+    required_device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    required_device_features2.pNext = &required_physical_device_indexing_features;
+    required_device_features2.features.samplerAnisotropy = VK_TRUE;
 
     EngineOptions options;
     options.anti_aliasing = 0;
@@ -96,8 +102,8 @@ int main() {
   
 	try {
 	    VkExtent2D screen_size = {800,800};
-		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, true,
-                                    desired_device_level_extensions, selected_device_features, VK_TRUE, options, &required_physical_device_indexing_features);
+		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, false,
+                                    desired_device_level_extensions, required_device_features2, VK_TRUE, options);
 
         glm::mat4 water_bottle_m_matrix = glm::translate(glm::vec3(-1.0f, 0.02f, -0.5f))*glm::scale(glm::vec3(0.4f,0.4f,0.4f));
         glm::mat4 table_m_matrix = glm::translate(glm::vec3(0.5f, -0.35f, 0.0f))*glm::rotate(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f))

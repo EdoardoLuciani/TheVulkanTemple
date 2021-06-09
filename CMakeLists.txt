@@ -34,7 +34,7 @@ set(GLFW_LIB_DIR "" CACHE PATH "Lib dir of GLFW")
 
 set(GLM_INCLUDE_DIR "" CACHE PATH "Include dir for GLM")
 
-set(VULKAN_SDK_INCLUDE_DIR "" CACHE PATH "Include dir for the vulkan SDK")
+set(VULKAN_SDK_INCLUDE_DIR "$ENV{VULKAN_SDK}/include" CACHE PATH "Include dir for the vulkan SDK")
 
 set(TINY_GLTF_INCLUDE_DIR "" CACHE PATH "Include dir for tiny_gltf")
 

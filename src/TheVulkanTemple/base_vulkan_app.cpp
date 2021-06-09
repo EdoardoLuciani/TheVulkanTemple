@@ -12,9 +12,8 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 					  		 VkExtent2D window_size,
 					  		 bool fullscreen,
 					  		 const std::vector<const char*> &desired_device_level_extensions,
-					  		 const VkPhysicalDeviceFeatures &required_physical_device_features,
-							 VkBool32 surface_support,
-							 void* additional_structure) {
+					  		 const VkPhysicalDeviceFeatures2 &desired_physical_device_features2,
+							 VkBool32 surface_support) {
 	
 	// Dynamic library loading inizialization
 	check_error(volkInitialize(), vulkan_helper::Error::VOLK_INITIALIZATION_FAILED);
@@ -109,15 +108,11 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 
 	std::vector<std::pair<size_t, size_t>> plausible_devices_d_index_qf_index;
 	for (uint32_t i = 0; i < devices.size(); i++) {
-	    VkPhysicalDeviceFeatures2 devices_features = {
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-            vulkan_helper::create_device_feature_struct_chain(desired_device_level_extensions),
-	    };
-        vkGetPhysicalDeviceFeatures2(devices[i], &devices_features);
+        VkPhysicalDeviceFeatures2 available_devices_features2 = vulkan_helper::create_physical_device_feature_struct_chain_from_requested(desired_physical_device_features2);
+        vkGetPhysicalDeviceFeatures2(devices[i], &available_devices_features2);
 
-        VkBool32 requested_features_are_available = vulkan_helper::compare_device_features_struct(&devices_features.features, &required_physical_device_features, sizeof(VkPhysicalDeviceFeatures));
-        requested_features_are_available &= vulkan_helper::compare_device_feature_struct_chain(devices_features.pNext, additional_structure);
-        vulkan_helper::free_device_feature_struct_chain(devices_features.pNext);
+        VkBool32 requested_features_are_available = vulkan_helper::compare_physical_device_feature2_struct_chain(available_devices_features2, desired_physical_device_features2);
+        vulkan_helper::free_device_feature_struct_chain(available_devices_features2.pNext);
 
 		if (requested_features_are_available) {
 			uint32_t families_count;
@@ -174,7 +169,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 
 	VkDeviceCreateInfo device_create_info = {
 		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-		additional_structure,
+		desired_physical_device_features2.pNext,
 		0,
 		static_cast<uint32_t>(queue_create_info.size()),
 		queue_create_info.data(),
@@ -182,7 +177,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		nullptr,
 		static_cast<uint32_t>(desired_device_level_extensions.size()),
 		desired_device_level_extensions.data(),
-		&required_physical_device_features
+		&desired_physical_device_features2.features
 	};
 
 	check_error(vkCreateDevice(selected_physical_device, &device_create_info, nullptr, &device), vulkan_helper::Error::DEVICE_CREATION_FAILED);
