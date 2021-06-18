@@ -45,7 +45,6 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     app->get_camera_ptr()->pos += glm::transpose(app->get_camera_ptr()->get_view_matrix()) * camera_pos_diff * static_cast<float>(delta_time);
 
     // CAMERA MOUSE CONTROL
-
     glm::dvec2 mouse_polar;
     glfwGetCursorPos(window, &mouse_polar[1], &mouse_polar[0]);
     mouse_polar *= glm::dvec2(0.001f, -0.001f);
@@ -54,18 +53,6 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     app->get_camera_ptr()->dir = app->get_camera_ptr()->pos - glm::vec4(dir, 0.0f);
     app->get_camera_ptr()->set_distance(glm::length(app->get_camera_ptr()->dir - glm::vec3(app->get_camera_ptr()->pos)));
 
-    // LIGHTS REGULATION
-    double time = glfwGetTime();
-    /*
-    app->get_light_ptr(0)->pos = glm::vec4(glm::cos(time)*4, 1.0f, glm::sin(time)*4, 1.0f);
-    app->get_light_ptr(1)->color = glm::vec3(glm::abs(glm::tan(time*2.0f)*2.0f), 0.0f, 0.0f);
-
-    app->get_gltf_model_ptr(0)->set_model_matrix(glm::translate(glm::vec3(-1.0f, 0.02f, -0.5f))*glm::rotate(static_cast<float>(time*5), glm::vec3(1.0f, 0.0f, 0.0f))*glm::scale(glm::vec3(0.4f,0.4f,0.4f)));
-    app->get_gltf_model_ptr(1)->set_model_matrix(glm::translate(glm::vec3(0.5f, -0.35f, 0.0f))*glm::rotate(static_cast<float>(time), glm::vec3(0.0f, 1.0f, 0.0f))
-    *glm::scale(glm::vec3(2.5f,2.5f,2.5f)));
-    app->get_gltf_model_ptr(3)->set_model_matrix(glm::translate(glm::vec3(-0.8f, -1.5f, 0.5f))*glm::rotate(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f))
-                                           *glm::scale(glm::vec3(0.2f,0.2f,0.2f))*glm::scale(glm::vec3(1.0f, 1.0f, glm::abs(glm::cos(time)))*10.0f+1.0f));
-    */
 }
 
 int main() {
@@ -101,7 +88,7 @@ int main() {
     options.HDR = 0;
   
 	try {
-	    VkExtent2D screen_size = {800,800};
+	    VkExtent2D screen_size = {1200,1200};
 		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, false,
                                     desired_device_level_extensions, required_device_features2, VK_TRUE, options);
 
@@ -118,12 +105,12 @@ int main() {
                              {"resources//models//SchoolChair//SchoolChair.glb", chair_m_matrix}
 		});
 		app.load_lights({
-		    {{1.0f, 1.0f, 2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 50.0f, 0.0f}, glm::radians(90.0f), 1.0f},
-            {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {50.0f, 10.0f, 25.0f}, glm::radians(90.0f), 1.0f}
+		    {{1.0f, 1.0f, 2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {10.0f, 10.0f, 0.0f}, glm::radians(90.0f), 1.0f},
+            {{1.0f, 1.0f, -2.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {12.5f, 2.5f, 6.0f}, glm::radians(90.0f), 1.0f}
 		});
-		app.set_camera({{0.0f, 1.0f, 5.0f, 0.0f}, {0.0f, 0.0f, -10.0f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.1f, 1000.0f});
+		app.set_camera({{-3.0f, 0.5f, 0.4f, 0.0f}, {-2.2f, -0.04f, 0.40f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.1f, 1000.0f});
 
-        //glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         app.init_renderer();
 
