@@ -90,6 +90,18 @@ float Burley_diffuse(float roughness, float NdotV, float NdotL, float LdotH) {
     return lightScatter * viewScatter * (1.0 / PI);
 }
 
+float Burley_diffuse_local_sss(float roughness, float NdotV, float nc_NdotV, float nc_NdotL, float LdotH, float local_sss_diffuse_ratio) {
+	// Burley 2012, "Physically-Based Shading at Disney"
+    float F_SS90 = roughness * LdotH * LdotH;
+    float F_SS = F_Schlick(1.0, F_SS90, nc_NdotL) * F_Schlick(1.0, F_SS90, nc_NdotV);
+    float f_ss = (1.0 / (nc_NdotV * nc_NdotL) - 0.5) * F_SS + 0.5;
+    float local_sss = 1.25 * local_sss_diffuse_ratio * f_ss;
+
+    float f90 = 0.5 + 2.0 * F_SS90;
+    float diffuse = (1.0 - local_sss_diffuse_ratio) * F_Schlick(1.0, f90, nc_NdotL) * F_Schlick(1.0, f90, nc_NdotV);
+    return NdotV * (diffuse + local_sss) * (1.0 / PI);
+}
+
 float Lambertian_diffuse() {
     return 1.0 / PI;
 }

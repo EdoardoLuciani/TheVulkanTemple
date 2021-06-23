@@ -1736,7 +1736,7 @@ void HbaoContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
     create_framebuffers(depth_image_view, out_ao_image_view);
 
     std::vector<VkDescriptorSetLayout> descriptor_sets_to_allocate;
-    for (int i = 0; i < stages.size(); i++) {
+    for (size_t i = 0; i < stages.size(); i++) {
         if (*stages[i].descriptor_set_layout != VK_NULL_HANDLE) {
             descriptor_sets_to_allocate.push_back(*stages[i].descriptor_set_layout);
         }

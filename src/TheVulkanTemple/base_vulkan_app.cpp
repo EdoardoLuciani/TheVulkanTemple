@@ -86,15 +86,26 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 			glfwGetWin32Window(window)
 		};
 		check_error(vkCreateWin32SurfaceKHR(instance, &surface_create_info, nullptr, &surface), vulkan_helper::Error::SURFACE_CREATION_FAILED);
-	#elif __linux__
-		VkXlibSurfaceCreateInfoKHR surface_create_info = {
-    	    VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
-        	nullptr,
-        	0,
-        	glfwGetX11Display(),
-    		glfwGetX11Window(window)
-    	};
-		check_error(vkCreateXlibSurfaceKHR(instance, &surface_create_info, nullptr, &surface), vulkan_helper::Error::SURFACE_CREATION_FAILED);
+    #elif __linux__
+        #ifdef VK_USE_PLATFORM_WAYLAND_KHR
+            VkWaylandSurfaceCreateInfoKHR surface_create_info = {
+                VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+                nullptr,
+                0,
+                glfwGetWaylandDisplay(),
+                glfwGetWaylandWindow(window)
+            };
+            check_error(vkCreateWaylandSurfaceKHR(instance, &surface_create_info, nullptr, &surface), vulkan_helper::Error::SURFACE_CREATION_FAILED);
+        #else
+		    VkXlibSurfaceCreateInfoKHR surface_create_info = {
+    	        VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+        	    nullptr,
+        	    0,
+        	    glfwGetX11Display(),
+    		    glfwGetX11Window(window)
+    	    };
+		    check_error(vkCreateXlibSurfaceKHR(instance, &surface_create_info, nullptr, &surface), vulkan_helper::Error::SURFACE_CREATION_FAILED);
+        #endif
 	#else
 		#error "Unknown compiler or not supported OS"
 	#endif

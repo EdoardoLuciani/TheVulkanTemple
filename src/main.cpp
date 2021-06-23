@@ -88,7 +88,7 @@ int main() {
     options.HDR = 0;
   
 	try {
-	    VkExtent2D screen_size = {1200,1200};
+	    VkExtent2D screen_size = {800,800};
 		GraphicsModuleVulkanApp app("TheVulkanTemple", desired_instance_level_extensions, screen_size, false,
                                     desired_device_level_extensions, required_device_features2, VK_TRUE, options);
 

@@ -401,7 +401,7 @@ void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_poo
     hdr_tonemap_framebuffers.clear();
     hdr_tonemap_framebuffers.resize(out_images_count);
 
-    for (int i = 0; i < hdr_tonemap_framebuffers.size(); i++) {
+    for (size_t i = 0; i < hdr_tonemap_framebuffers.size(); i++) {
         std::array<VkImageView, 3> attachments = {
                 input_image_view,
                 input_ao_image_view,

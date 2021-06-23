@@ -72,15 +72,11 @@ void main() {
     // For the normal incidence, if it is a diaelectric use a F0 of 0.04, otherwise use albedo
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    // Transforming normal incidence to index of reflectivity
-
-    // Formula to map roughness from [0.125,1],
-    // giving a less sharp look to reflection
-    //float mapped_roughness = 0.125 + roughness/1.14;
     float mapped_roughness = roughness * roughness;
 
     // NdotV does not depend on the light's position
-    float NdotV = abs(dot(N, V)) + 1e-5;
+    float nc_NdotV = dot(N,V);
+    float NdotV = abs(nc_NdotV) + 1e-5;
     
     // color without ambient
     vec3 rho = vec3(0.0);
@@ -91,7 +87,8 @@ void main() {
         vec3 L = normalize(fs_in.L[i]);
         vec3 H = normalize(V + L);
 
-        float NdotL = clamp(dot(N, L), 0.0, 1.0);
+        float nc_NdotL = dot(N, L);
+        float NdotL = clamp(nc_NdotL, 0.0, 1.0);
         float NdotH = clamp(dot(N, H), 0.0, 1.0);
         float LdotV = clamp(dot(L, V), 0.0, 1.0);
         float LdotH = clamp(dot(L, H), 0.0, 1.0);
@@ -100,11 +97,10 @@ void main() {
         vec3 Kd = (1.0 - metallic)*albedo;
 
         vec3 rho_s = CookTorrance_specular(NdotL, NdotV, NdotH, mapped_roughness, Ks);
-        vec3 rho_d = Kd * Burley_diffuse(mapped_roughness, NdotV, NdotL, LdotH);
+        vec3 rho_d = Kd * Burley_diffuse_local_sss(mapped_roughness, NdotV, nc_NdotV, nc_NdotL, LdotH, 0.4);
 
         // get the moments from the texture using the normalized xy coordinatex
         vec2 moments = texture(shadow_map[nonuniformEXT(i)], fs_in.shadow_coord[i].xy/fs_in.shadow_coord[i].w).rg;
-
         // apply the chebyshev variance equation to give a probability that the fragment is in shadow
 	    float p_max = ChebyshevUpperBound(moments, fs_in.shadow_coord[i].z);
         // We apply a fix to the light bleeding problem

@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.0)
 project(TheVulkanTemple)
 
+# Checkbox to use wayland
+set(USE_WAYLAND FALSE CACHE BOOL "Use Wayland instead of X11, matters only on linux")
+
 # Adding compile definitions and options
 add_library(compiler_flags INTERFACE)
 target_compile_features(compiler_flags INTERFACE cxx_std_17)
@@ -9,13 +12,19 @@ if (WIN32)
     target_compile_definitions(compiler_flags INTERFACE "GLFW_EXPOSE_NATIVE_WIN32")
     target_compile_definitions(compiler_flags INTERFACE "_CRT_SECURE_NO_WARNINGS")
 elseif(UNIX)
-    target_compile_definitions(compiler_flags INTERFACE "VK_USE_PLATFORM_XLIB_KHR")
-    target_compile_definitions(compiler_flags INTERFACE "GLFW_EXPOSE_NATIVE_X11")
+    if(DEFINED ENV{WAYLAND_DISPLAY} AND USE_WAYLAND)
+        target_compile_definitions(compiler_flags INTERFACE "VK_USE_PLATFORM_WAYLAND_KHR")
+        target_compile_definitions(compiler_flags INTERFACE "GLFW_EXPOSE_NATIVE_WAYLAND")
+    else()
+        target_compile_definitions(compiler_flags INTERFACE "VK_USE_PLATFORM_XLIB_KHR")
+        target_compile_definitions(compiler_flags INTERFACE "GLFW_EXPOSE_NATIVE_X11")
+    endif()
 endif()
 target_compile_definitions(compiler_flags INTERFACE "GLM_FORCE_DEPTH_ZERO_TO_ONE")
 target_compile_definitions(compiler_flags INTERFACE "GLM_FORCE_LEFT_HANDED")
 target_compile_definitions(compiler_flags INTERFACE "GLM_FORCE_SSE4")
 
+# Compiling with SSE4 support
 if(MSVC)
     target_compile_options(compiler_flags INTERFACE /arch:SSE4.1)
 else()
@@ -31,11 +40,8 @@ set(ENGINE_SRC_DIR "${SRC_DIR}/TheVulkanTemple")
 # define location for external libraries
 set(GLFW_INCLUDE_DIR "" CACHE PATH "Include directories of GLFW")
 set(GLFW_LIB_DIR "" CACHE PATH "Lib dir of GLFW")
-
 set(GLM_INCLUDE_DIR "" CACHE PATH "Include dir for GLM")
-
 set(VULKAN_SDK_INCLUDE_DIR "$ENV{VULKAN_SDK}/include" CACHE PATH "Include dir for the vulkan SDK")
-
 set(TINY_GLTF_INCLUDE_DIR "" CACHE PATH "Include dir for tiny_gltf")
 
 # Library for TheVulkanTemple engine
@@ -65,17 +71,18 @@ add_library(engine OBJECT
 
 target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
 target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})
-
 target_include_directories(engine PUBLIC ${GLM_INCLUDE_DIR})
-
 target_include_directories(engine PUBLIC ${VULKAN_SDK_INCLUDE_DIR})
-
 target_include_directories(engine PUBLIC ${TINY_GLTF_INCLUDE_DIR})
 
 if (WIN32)
     target_link_libraries(engine compiler_flags glfw3)
 elseif(UNIX)
-    target_link_libraries(engine compiler_flags glfw3 dl pthread)
+    if(DEFINED ENV{WAYLAND_DISPLAY} AND USE_WAYLAND)
+        target_link_libraries(engine compiler_flags glfw3 dl pthread wayland-client)
+    else()
+        target_link_libraries(engine compiler_flags glfw3 dl pthread X11)
+    endif()
 endif()
 
 # Library for the sample
