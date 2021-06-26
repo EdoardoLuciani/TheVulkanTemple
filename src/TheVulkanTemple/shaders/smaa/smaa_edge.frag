@@ -8,7 +8,7 @@
 layout (set = 0, binding = 0) uniform sampler2D color_tex;
 
 vec4 SMAA_RT_METRICS = vec4(1.0f/textureSize(color_tex, 0), textureSize(color_tex, 0));
-#include "SMAA.h"
+#include "../SMAA.h"
 
 layout (location = 0) in VS_OUT {
 	vec2 tex_coord;

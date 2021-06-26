@@ -772,12 +772,6 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
         vkDestroySemaphore(device, semaphore, nullptr);
     }
 
-    vkDestroyPipelineLayout(device, pbr_pipeline_layout, nullptr);
-    vkDestroyPipeline(device, pbr_pipeline, nullptr);
-
-    vkDestroyFramebuffer(device, pbr_framebuffer, nullptr);
-    vkDestroyRenderPass(device, pbr_render_pass, nullptr);
-
     vkDestroySampler(device, max_aniso_linear_sampler, nullptr);
 
     for(auto &model_image_sampler : model_image_samplers) {

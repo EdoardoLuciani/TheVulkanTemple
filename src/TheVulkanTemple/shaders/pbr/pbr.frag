@@ -1,6 +1,6 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
-#include "BRDF.inc.glsl"
+#include "../BRDF.inc.glsl"
 
 layout (set = 0, binding = 1) uniform sampler2DArray images;
 
