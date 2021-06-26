@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include "layers/smaa/smaa_context.h"
+#include "layers/pbr/pbr_context.h"
 #include "layers/vsm/vsm_context.h"
 #include "layers/hbao/hbao_context.h"
 #include "layers/hdr_tonemap/hdr_tonemap_context.h"
@@ -27,6 +28,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        surface_support),
                          vsm_context(device),
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
+                         pbr_context(device, physical_device_memory_properties, VK_FORMAT_D32_SFLOAT, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8G8B8A8_UNORM),
                          hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
                          hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, swapchain_create_info.imageFormat) {
 
@@ -58,75 +60,8 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
         vkCreateSemaphore(device, &semaphore_create_info, nullptr, &semaphores[i]);
     }
 
-    create_render_pass();
     create_sets_layouts();
-}
-
-void GraphicsModuleVulkanApp::create_render_pass() {
-    std::array<VkAttachmentDescription, 3> attachment_descriptions {{
-    {
-                0,
-                VK_FORMAT_D32_SFLOAT,
-                VK_SAMPLE_COUNT_1_BIT,
-                VK_ATTACHMENT_LOAD_OP_CLEAR,
-                VK_ATTACHMENT_STORE_OP_STORE,
-                VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                VK_IMAGE_LAYOUT_UNDEFINED,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        },
-        {
-                0,
-                VK_FORMAT_B10G11R11_UFLOAT_PACK32,
-                VK_SAMPLE_COUNT_1_BIT,
-                VK_ATTACHMENT_LOAD_OP_CLEAR,
-                VK_ATTACHMENT_STORE_OP_STORE,
-                VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                VK_IMAGE_LAYOUT_UNDEFINED,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        },
-        {
-                0,
-                VK_FORMAT_R8G8B8A8_UNORM,
-                VK_SAMPLE_COUNT_1_BIT,
-                VK_ATTACHMENT_LOAD_OP_CLEAR,
-                VK_ATTACHMENT_STORE_OP_STORE,
-                VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                VK_IMAGE_LAYOUT_UNDEFINED,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        }
-    }};
-    std::array<VkAttachmentReference,3> attachment_references {{
-        { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL },
-        {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL },
-        {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL }
-    }};
-    VkSubpassDescription subpass_description = {
-            0,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            0,
-            nullptr,
-            2,
-            &attachment_references[1],
-            nullptr,
-            &attachment_references[0],
-            0,
-            nullptr
-    };
-    VkRenderPassCreateInfo render_pass_create_info = {
-            VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-            nullptr,
-            0,
-            attachment_descriptions.size(),
-            attachment_descriptions.data(),
-            1,
-            &subpass_description,
-            0,
-            nullptr
-    };
-    check_error(vkCreateRenderPass(device, &render_pass_create_info, nullptr, &pbr_render_pass), vulkan_helper::Error::RENDER_PASS_CREATION_FAILED);
+    pbr_context.create_pipeline("resources//shaders", pbr_model_data_set_layout, camera_data_set_layout, light_data_set_layout);
 }
 
 void GraphicsModuleVulkanApp::create_sets_layouts() {
@@ -522,13 +457,12 @@ void GraphicsModuleVulkanApp::init_renderer() {
 
     vsm_context.init_resources();
     smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
+    pbr_context.set_output_images(swapchain_create_info.imageExtent, device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view);
     hbao_context.init_resources();
     hbao_context.update_constants(camera.get_proj_matrix());
 
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
-    create_framebuffers();
-    create_pbr_pipeline(); // remove?
     record_command_buffers();
 }
 
@@ -692,259 +626,6 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
 }
 
-void GraphicsModuleVulkanApp::create_framebuffers() {
-    std::array<VkImageView, 3> attachments {device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view};
-    VkFramebufferCreateInfo framebuffer_create_info = {
-            VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            nullptr,
-            0,
-            pbr_render_pass,
-            attachments.size(),
-            attachments.data(),
-            this->swapchain_create_info.imageExtent.width,
-            this->swapchain_create_info.imageExtent.height,
-            1
-    };
-    vkDestroyFramebuffer(device, pbr_framebuffer, nullptr);
-    check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &pbr_framebuffer), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
-}
-
-void GraphicsModuleVulkanApp::create_pbr_pipeline() {
-    std::vector<uint8_t> shader_contents;
-    vulkan_helper::get_binary_file_content("resources//shaders//pbr.vert.spv", shader_contents);
-    VkShaderModuleCreateInfo shader_module_create_info = {
-            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            nullptr,
-            0,
-            shader_contents.size(),
-            reinterpret_cast<uint32_t*>(shader_contents.data())
-    };
-    VkShaderModule vertex_shader_module;
-    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
-
-    vulkan_helper::get_binary_file_content("resources//shaders//pbr.frag.spv", shader_contents);
-    shader_module_create_info.codeSize = shader_contents.size();
-    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
-    VkShaderModule fragment_shader_module;
-    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
-
-    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
-        {
-                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                nullptr,
-                0,
-                VK_SHADER_STAGE_VERTEX_BIT,
-                vertex_shader_module,
-                "main",
-                nullptr
-        },
-        {
-                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                nullptr,
-                0,
-                VK_SHADER_STAGE_FRAGMENT_BIT,
-                fragment_shader_module,
-                "main",
-                nullptr
-        }
-    }};
-
-    VkVertexInputBindingDescription vertex_input_binding_description = {
-            0,
-            12 * sizeof(float),
-            VK_VERTEX_INPUT_RATE_VERTEX
-    };
-    std::array<VkVertexInputAttributeDescription,4> vertex_input_attribute_description  {{
-        {
-                0,
-                0,
-                VK_FORMAT_R32G32B32_SFLOAT,
-                0
-        },
-        {
-                1,
-                0,
-                VK_FORMAT_R32G32_SFLOAT,
-                3 * sizeof(float)
-        },
-        {
-                2,
-                0,
-                VK_FORMAT_R32G32B32_SFLOAT,
-                5 * sizeof(float)
-        },
-        {
-                3,
-                0,
-                VK_FORMAT_R32G32B32A32_SFLOAT,
-                8 * sizeof(float)
-        }
-    }};
-    VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            1,
-            &vertex_input_binding_description,
-            vertex_input_attribute_description.size(),
-            vertex_input_attribute_description.data()
-    };
-
-    VkPipelineInputAssemblyStateCreateInfo pipeline_input_assembly_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-            VK_FALSE
-    };
-
-    VkViewport viewport = {
-            0.0f,
-            0.0f,
-            static_cast<float>(swapchain_create_info.imageExtent.width),
-            static_cast<float>(swapchain_create_info.imageExtent.height),
-            0.0f,
-            1.0f
-    };
-    VkRect2D scissor = {
-            {0,0},
-            {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height}
-    };
-    VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            1,
-            &viewport,
-            1,
-            &scissor
-    };
-
-    VkPipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_FALSE,
-            VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_BACK_BIT,
-            VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            VK_FALSE,
-            0.0f,
-            0.0f,
-            0.0f,
-            1.0f
-    };
-
-    VkPipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SAMPLE_COUNT_1_BIT,
-            VK_FALSE,
-            1.0f,
-            nullptr,
-            VK_FALSE,
-            VK_FALSE
-    };
-
-    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_TRUE,
-            VK_TRUE,
-            VK_COMPARE_OP_LESS,
-            VK_FALSE,
-            VK_FALSE,
-            {},
-            {},
-            0.0f,
-            1.0f
-    };
-
-    std::array<VkPipelineColorBlendAttachmentState, 2> pipeline_color_blend_attachment_state;
-    pipeline_color_blend_attachment_state[0] = {
-            VK_FALSE,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-    };
-    pipeline_color_blend_attachment_state[1] = {
-            VK_FALSE,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-    };
-    VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_LOGIC_OP_COPY,
-            pipeline_color_blend_attachment_state.size(),
-            pipeline_color_blend_attachment_state.data(),
-            {0.0f,0.0f,0.0f,0.0f}
-    };
-
-    std::array<VkDynamicState,2> dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT ,VK_DYNAMIC_STATE_SCISSOR };
-    VkPipelineDynamicStateCreateInfo pipeline_dynamic_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            dynamic_states.size(),
-            dynamic_states.data()
-    };
-
-    std::array<VkDescriptorSetLayout,3> descriptor_set_layouts = {pbr_model_data_set_layout, light_data_set_layout, camera_data_set_layout};
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            nullptr,
-            0,
-            descriptor_set_layouts.size(),
-            descriptor_set_layouts.data(),
-            0,
-            nullptr
-    };
-    vkDestroyPipelineLayout(device, pbr_pipeline_layout, nullptr);
-    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &pbr_pipeline_layout);
-
-    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
-            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-            nullptr,
-            0,
-            pipeline_shaders_stage_create_info.size(),
-            pipeline_shaders_stage_create_info.data(),
-            &pipeline_vertex_input_state_create_info,
-            &pipeline_input_assembly_create_info,
-            nullptr,
-            &pipeline_viewport_state_create_info,
-            &pipeline_rasterization_state_create_info,
-            &pipeline_multisample_state_create_info,
-            &pipeline_depth_stencil_state_create_info,
-            &pipeline_color_blend_state_create_info,
-            &pipeline_dynamic_state_create_info,
-            pbr_pipeline_layout,
-            pbr_render_pass,
-            0,
-            VK_NULL_HANDLE,
-            -1
-    };
-    vkDestroyPipeline(device, pbr_pipeline, nullptr);
-    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &pbr_pipeline);
-
-    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
-    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
-}
-
 void GraphicsModuleVulkanApp::record_command_buffers() {
     vkResetCommandPool(device, command_pool, 0);
 
@@ -987,50 +668,7 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
 
         std::vector<VkDescriptorSet> object_descriptor_sets(descriptor_sets.begin() + 2, descriptor_sets.end());
         vsm_context.record_into_command_buffer(command_buffers[i], object_descriptor_sets, descriptor_sets[1], objects);
-
-        std::array<VkClearValue,3> clear_values;
-        clear_values[0].depthStencil = {1.0f, 0};
-        clear_values[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
-        clear_values[2].color = {0.0f, 0.0f, 0.0f, 0.0f};
-
-        VkRenderPassBeginInfo render_pass_begin_info = {
-                VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-                nullptr,
-                pbr_render_pass,
-                pbr_framebuffer,
-                {{0,0},{swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height}},
-                clear_values.size(),
-                clear_values.data()
-        };
-        vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-
-        vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline);
-        VkViewport viewport = {
-                0.0f,
-                0.0f,
-                static_cast<float>(swapchain_create_info.imageExtent.width),
-                static_cast<float>(swapchain_create_info.imageExtent.height),
-                0.0f,
-                1.0f
-        };
-        vkCmdSetViewport(command_buffers[i], 0, 1, &viewport);
-
-        VkRect2D scissor = {
-                {0,0},
-                {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height}
-        };
-        vkCmdSetScissor(command_buffers[i], 0, 1, &scissor);
-
-        for (uint32_t j=0; j<objects.size(); j++) {
-            std::array<VkDescriptorSet,3> to_bind = { object_descriptor_sets[j], descriptor_sets[1], descriptor_sets[0] };
-            vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, to_bind.size(), to_bind.data(), 0, nullptr);
-
-            vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &objects[j].data_buffer, &objects[j].mesh_data_offset);
-            vkCmdBindIndexBuffer(command_buffers[i], objects[j].data_buffer, objects[j].index_data_offset, objects[j].model.get_last_copy_index_type());
-            vkCmdDrawIndexed(command_buffers[i], objects[j].model.get_last_copy_indices(), 1, 0, 0, 0);
-        }
-        vkCmdEndRenderPass(command_buffers[i]);
-
+        pbr_context.record_into_command_buffer(command_buffers[i], descriptor_sets[0], descriptor_sets[1], object_descriptor_sets, objects);
         smaa_context.record_into_command_buffer(command_buffers[i]);
         hbao_context.record_into_command_buffer(command_buffers[i], swapchain_create_info.imageExtent, camera.znear, camera.zfar, static_cast<bool>(camera.pos[3]));
         hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height});

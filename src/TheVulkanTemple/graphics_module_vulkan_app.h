@@ -8,6 +8,7 @@
 #include "layers/smaa/smaa_context.h"
 #include "layers/vsm/vsm_context.h"
 #include "layers/hbao/hbao_context.h"
+#include "layers/pbr/pbr_context.h"
 #include "layers/hdr_tonemap/hdr_tonemap_context.h"
 #include "vulkan_helper.h"
 #include <glm/glm.hpp>
@@ -89,6 +90,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Contexts for graphical effects
         VSMContext vsm_context;
         SmaaContext smaa_context;
+        PbrContext pbr_context;
         HbaoContext hbao_context;
         HDRTonemapContext hdr_tonemap_context;
         // Memory in which all attachment reside
