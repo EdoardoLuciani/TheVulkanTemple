@@ -5,10 +5,10 @@
 #include <array>
 #include <functional>
 #include "base_vulkan_app.h"
-#include "smaa/smaa_context.h"
-#include "vsm/vsm_context.h"
-#include "hbao/hbao_context.h"
-#include "hdr_tonemap/hdr_tonemap_context.h"
+#include "layers/smaa/smaa_context.h"
+#include "layers/vsm/vsm_context.h"
+#include "layers/hbao/hbao_context.h"
+#include "layers/hdr_tonemap/hdr_tonemap_context.h"
 #include "vulkan_helper.h"
 #include <glm/glm.hpp>
 #include "camera.h"
@@ -49,30 +49,29 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         GltfModel* get_gltf_model_ptr(uint32_t idx) { return &objects.at(idx).model; };
     private:
         EngineOptions engine_options;
-
         VkSampler max_aniso_linear_sampler;
-        std::vector<VkSampler> model_image_samplers;
 
+        std::vector<vk_object_render_info> objects;
         // Model uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
         VkDeviceMemory host_model_uniform_memory = VK_NULL_HANDLE;
         void *host_model_uniform_buffer_ptr;
         VkBuffer device_model_uniform_buffer = VK_NULL_HANDLE;
-
         // Models data
         VkBuffer device_mesh_data_buffer = VK_NULL_HANDLE;
         std::vector<VkImage> device_model_images;
         std::vector<VkImageView> device_model_images_views;
+        std::vector<VkSampler> model_image_samplers;
         VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
 
-        std::vector<vk_object_render_info> objects;
         std::vector<Light> lights;
+        const uint32_t MAX_SHADOWED_LIGHTS = 8;
         Camera camera;
-
         // Host buffer and memory for the camera and lights data
         VkBuffer host_camera_lights_uniform_buffer = VK_NULL_HANDLE;
         VkDeviceMemory host_camera_lights_memory = VK_NULL_HANDLE;
         void *host_camera_lights_data;
+        VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
 
         // Image for depth comparison
         VkImage device_depth_image = VK_NULL_HANDLE;
@@ -86,8 +85,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Image for hbao output
         VkImage device_global_ao_image = VK_NULL_HANDLE;
         VkImageView device_global_ao_image_view = VK_NULL_HANDLE;
-        // Device buffer that hold camera and lights information
-        VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
+
         // Contexts for graphical effects
         VSMContext vsm_context;
         SmaaContext smaa_context;

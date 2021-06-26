@@ -1,6 +1,6 @@
 #ifndef BASE_VULKAN_APP_SMAA_CONTEXT_H
 #define BASE_VULKAN_APP_SMAA_CONTEXT_H
-#include "../volk.h"
+#include "../../volk.h"
 #include <array>
 #include <string>
 #include <unordered_map>

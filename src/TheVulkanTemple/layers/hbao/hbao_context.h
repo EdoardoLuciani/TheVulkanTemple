@@ -1,7 +1,7 @@
 #ifndef THEVULKANTEMPLE_HBAO_CONTEXT_H
 #define THEVULKANTEMPLE_HBAO_CONTEXT_H
-#include "../volk.h"
-#include "../vulkan_helper.h"
+#include "../../volk.h"
+#include "../../vulkan_helper.h"
 #include <string>
 #include <array>
 #include <utility>
@@ -11,7 +11,7 @@
 class HbaoContext {
     public:
         HbaoContext(VkDevice device, VkPhysicalDeviceMemoryProperties memory_properties, VkExtent2D screen_res,
-                    VkFormat depth_image_format,VkFormat out_ao_image_format, std::string shader_dir_path, bool generate_normals);
+                    VkFormat depth_image_format, VkFormat out_ao_image_format, std::string shader_dir_path, bool generate_normals);
         ~HbaoContext();
 
         std::vector<VkImage> get_device_images();

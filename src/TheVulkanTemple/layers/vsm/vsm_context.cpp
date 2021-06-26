@@ -1,6 +1,6 @@
 #include "vsm_context.h"
-#include "../vulkan_helper.h"
-#include "../gltf_model.h"
+#include "../../vulkan_helper.h"
+#include "../../gltf_model.h"
 #include <unordered_map>
 #include <utility>
 #include <iostream>

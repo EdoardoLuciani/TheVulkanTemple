@@ -1,7 +1,7 @@
 #include "smaa_context.h"
 #include <string>
-#include "../volk.h"
-#include "../vulkan_helper.h"
+#include "../../volk.h"
+#include "../../vulkan_helper.h"
 
 SmaaContext::SmaaContext(VkDevice device, VkFormat out_image_format) {
     this->device = device;

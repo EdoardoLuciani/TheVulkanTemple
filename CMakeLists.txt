@@ -52,22 +52,25 @@ add_library(engine OBJECT
         ${ENGINE_SRC_DIR}/vulkan_helper.h
         ${ENGINE_SRC_DIR}/graphics_module_vulkan_app.cpp
         ${ENGINE_SRC_DIR}/graphics_module_vulkan_app.h
-        ${ENGINE_SRC_DIR}/smaa/smaa_context.cpp
-        ${ENGINE_SRC_DIR}/smaa/smaa_context.h
+        ${ENGINE_SRC_DIR}/layers/smaa/smaa_context.cpp
+        ${ENGINE_SRC_DIR}/layers/smaa/smaa_context.h
+        ${ENGINE_SRC_DIR}/layers/vsm/vsm_context.cpp
+        ${ENGINE_SRC_DIR}/layers/vsm/vsm_context.h
+        ${ENGINE_SRC_DIR}/layers/hdr_tonemap/hdr_tonemap_context.cpp
+        ${ENGINE_SRC_DIR}/layers/hdr_tonemap/hdr_tonemap_context.h
+        ${ENGINE_SRC_DIR}/layers/hbao/hbao_context.cpp
+        ${ENGINE_SRC_DIR}/layers/hbao/hbao_context.h
+        ${ENGINE_SRC_DIR}/layers/pbr/pbr_context.cpp
+        ${ENGINE_SRC_DIR}/layers/pbr/pbr_context.h
         ${ENGINE_SRC_DIR}/volk.c
         ${ENGINE_SRC_DIR}/volk.h
-        ${ENGINE_SRC_DIR}/vsm/vsm_context.cpp
-        ${ENGINE_SRC_DIR}/vsm/vsm_context.h
         ${ENGINE_SRC_DIR}/camera.cpp
         ${ENGINE_SRC_DIR}/camera.h
         ${ENGINE_SRC_DIR}/light.cpp
         ${ENGINE_SRC_DIR}/light.h
-        ${ENGINE_SRC_DIR}/hdr_tonemap/hdr_tonemap_context.cpp
-        ${ENGINE_SRC_DIR}/hdr_tonemap/hdr_tonemap_context.h
         ${ENGINE_SRC_DIR}/gltf_model.cpp
         ${ENGINE_SRC_DIR}/gltf_model.h
-        ${ENGINE_SRC_DIR}/hbao/hbao_context.cpp
-        ${ENGINE_SRC_DIR}/hbao/hbao_context.h)
+)
 
 target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
 target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})

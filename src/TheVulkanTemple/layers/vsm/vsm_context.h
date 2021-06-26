@@ -1,13 +1,13 @@
 #ifndef BASE_VULKAN_APP_VSM_CONTEXT_H
 #define BASE_VULKAN_APP_VSM_CONTEXT_H
-#include "../volk.h"
+#include "../../volk.h"
 #include <array>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 #include <string>
-#include "../vulkan_helper.h"
-#include "../gltf_model.h"
+#include "../../vulkan_helper.h"
+#include "../../gltf_model.h"
 
 /* To use this class, it is required to call the correct sequence of calls, first the
  * constructor VSMContext, then you need to allocate a VkDevice memory big enough for

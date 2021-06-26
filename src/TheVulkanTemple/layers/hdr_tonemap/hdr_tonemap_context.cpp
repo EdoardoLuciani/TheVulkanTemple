@@ -3,8 +3,8 @@
 #include <array>
 #include <utility>
 #include <unordered_map>
-#include "../vulkan_helper.h"
-#include "../volk.h"
+#include "../../vulkan_helper.h"
+#include "../../volk.h"
 
 HDRTonemapContext::HDRTonemapContext(VkDevice device, VkFormat input_image_format, VkFormat global_ao_image_format, VkFormat out_format) {
     this->device = device;

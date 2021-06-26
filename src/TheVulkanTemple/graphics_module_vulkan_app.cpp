@@ -3,10 +3,10 @@
 #include <string>
 #include <chrono>
 #include <iostream>
-#include "smaa/smaa_context.h"
-#include "vsm/vsm_context.h"
-#include "hbao/hbao_context.h"
-#include "hdr_tonemap/hdr_tonemap_context.h"
+#include "layers/smaa/smaa_context.h"
+#include "layers/vsm/vsm_context.h"
+#include "layers/hbao/hbao_context.h"
+#include "layers/hdr_tonemap/hdr_tonemap_context.h"
 #include "vulkan_helper.h"
 #include <unordered_map>
 
@@ -130,6 +130,7 @@ void GraphicsModuleVulkanApp::create_render_pass() {
 }
 
 void GraphicsModuleVulkanApp::create_sets_layouts() {
+    // Creating the descriptor set layout for the model data
     std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_binding;
     descriptor_set_layout_binding[0] = {
             0,
@@ -154,6 +155,7 @@ void GraphicsModuleVulkanApp::create_sets_layouts() {
     };
     vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &pbr_model_data_set_layout);
 
+    // Creating the descriptor set layout for the light
     descriptor_set_layout_binding[0] = {
             0,
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -164,6 +166,40 @@ void GraphicsModuleVulkanApp::create_sets_layouts() {
     descriptor_set_layout_create_info.bindingCount = 1;
     descriptor_set_layout_create_info.pBindings = descriptor_set_layout_binding.data();
     vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &camera_data_set_layout);
+
+    // Creating the descriptor set layout for the light
+    descriptor_set_layout_binding[0] = {
+            0,
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            1,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    descriptor_set_layout_binding[1] = {
+            1,
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            MAX_SHADOWED_LIGHTS,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            nullptr
+    };
+    // Here we indicate that the first and second descriptor contents can be updated after they have been binded
+    std::array<VkDescriptorBindingFlagsEXT,2> descriptor_binding_flags = {
+            VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+            VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT};
+    VkDescriptorSetLayoutBindingFlagsCreateInfoEXT descriptor_set_layout_binding_flags_create_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT,
+            nullptr,
+            descriptor_binding_flags.size(),
+            descriptor_binding_flags.data()
+    };
+    descriptor_set_layout_create_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            &descriptor_set_layout_binding_flags_create_info,
+            VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+            descriptor_set_layout_binding.size(),
+            descriptor_set_layout_binding.data()
+    };
+    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &light_data_set_layout);
 }
 
 void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models) {
@@ -413,30 +449,6 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
 
 void GraphicsModuleVulkanApp::load_lights(const std::vector<Light> &lights) {
     this->lights = lights;
-
-    std::array<VkDescriptorSetLayoutBinding,2> descriptor_set_layout_binding;
-    descriptor_set_layout_binding[0] = {
-            0,
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            1,
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
-    };
-    descriptor_set_layout_binding[1] = {
-            1,
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            static_cast<uint32_t>(lights.size()),
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            nullptr
-    };
-    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            nullptr,
-            0,
-            descriptor_set_layout_binding.size(),
-            descriptor_set_layout_binding.data()
-    };
-    vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &light_data_set_layout);
 }
 
 void GraphicsModuleVulkanApp::set_camera(Camera camera) {
@@ -525,7 +537,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> sets_elements_required = {
             {
                     {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 + objects.size()},
-                    {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lights.size() + objects.size()},
+                    {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_SHADOWED_LIGHTS + objects.size()},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}
             },
             static_cast<uint32_t>(1 + 1 + objects.size())
@@ -540,7 +552,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             nullptr,
-            VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+            VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
             sets_elements_required.second,
             static_cast<uint32_t>(descriptor_pool_size.size()),
             descriptor_pool_size.data()
@@ -548,7 +560,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
     vkCreateDescriptorPool(device, &descriptor_pool_create_info, nullptr, &attachments_descriptor_pool);
 
-    // Next we allocate the vsm descriptors in the pool
+    // Next we allocate the descriptors of all the contextes
     vsm_context.allocate_descriptor_sets(attachments_descriptor_pool);
     smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0]);
     hbao_context.allocate_descriptor_sets(attachments_descriptor_pool, device_depth_image_view, device_normal_g_image_view, device_global_ao_image_view);
