@@ -26,13 +26,11 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
     public:
         // Inheriting BaseVulkanApp constructor
         GraphicsModuleVulkanApp(const std::string &application_name,
-                      std::vector<const char*> &desired_instance_level_extensions,
                       VkExtent2D window_size,
                       bool fullscreen,
-                      const std::vector<const char*> &desired_device_level_extensions,
-                      const VkPhysicalDeviceFeatures2 &required_physical_device_features,
                       VkBool32 surface_support,
                       EngineOptions options);
+
         ~GraphicsModuleVulkanApp();
 
 		// Directly copy data from disk to VRAM
@@ -89,8 +87,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
 
         // Contexts for graphical effects
         VSMContext vsm_context;
-        SmaaContext smaa_context;
         PbrContext pbr_context;
+        SmaaContext smaa_context;
         HbaoContext hbao_context;
         HDRTonemapContext hdr_tonemap_context;
         // Memory in which all attachment reside
@@ -119,6 +117,11 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void allocate_and_bind_to_memory(VkDeviceMemory &memory, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VkMemoryPropertyFlags flags);
         void submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags stage_flags,
                                     std::vector<VkSemaphore> wait_semaphores, std::vector<VkSemaphore> signal_semaphores, VkFence fence = VK_NULL_HANDLE);
+
+        // Static methods used for filling the BaseVulkanApp structure
+        static std::vector<const char*> get_instance_extensions();
+        static std::vector<const char*> get_device_extensions();
+        static VkPhysicalDeviceFeatures2* get_required_physical_device_features(bool delete_static_structure);
 };
 
 #endif //BASE_VULKAN_APP_GRAPHICS_MODULE_VULKAN_APP_H

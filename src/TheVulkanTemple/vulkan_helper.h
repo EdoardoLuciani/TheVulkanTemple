@@ -60,9 +60,9 @@ namespace vulkan_helper {
 
     VkBool32 compare_device_features_struct(const void* base, const void* requested, uint32_t size);
 
-    VkPhysicalDeviceFeatures2 create_physical_device_feature_struct_chain_from_requested(const VkPhysicalDeviceFeatures2 &requested);
+    VkPhysicalDeviceFeatures2* create_physical_device_feature_struct_chain_from_requested(const VkPhysicalDeviceFeatures2 &requested);
     VkBool32 compare_physical_device_feature2_struct_chain(const VkPhysicalDeviceFeatures2 &base, const VkPhysicalDeviceFeatures2 &requested);
-    void free_device_feature_struct_chain(void *pNext);
+    void free_physical_device_feature_struct_chain(VkPhysicalDeviceFeatures2 *ptr);
 
 	void normalize_vectors(glm::vec3* vectors, int number_of_elements);
 

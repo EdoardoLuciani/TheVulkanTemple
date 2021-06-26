@@ -12,25 +12,24 @@
 #include <unordered_map>
 
 GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name,
-                                                 std::vector<const char *> &desired_instance_level_extensions,
                                                  VkExtent2D window_size,
                                                  bool fullscreen,
-                                                 const std::vector<const char *> &desired_device_level_extensions,
-                                                 const VkPhysicalDeviceFeatures2 &required_physical_device_features,
                                                  VkBool32 surface_support,
                                                  EngineOptions options) :
                          BaseVulkanApp(application_name,
-                                       desired_instance_level_extensions,
+                                       get_instance_extensions(),
                                        window_size,
                                        fullscreen,
-                                       desired_device_level_extensions,
-                                       required_physical_device_features,
+                                       get_device_extensions(),
+                                       get_required_physical_device_features(false),
                                        surface_support),
                          vsm_context(device),
-                         smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
                          pbr_context(device, physical_device_memory_properties, VK_FORMAT_D32_SFLOAT, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8G8B8A8_UNORM),
+                         smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
                          hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
                          hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, swapchain_create_info.imageFormat) {
+
+    get_required_physical_device_features(true);
 
     VkSamplerCreateInfo sampler_create_info = {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -62,6 +61,56 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
 
     create_sets_layouts();
     pbr_context.create_pipeline("resources//shaders", pbr_model_data_set_layout, camera_data_set_layout, light_data_set_layout);
+}
+
+std::vector<const char*> GraphicsModuleVulkanApp::get_instance_extensions() {
+    #ifdef _WIN64
+        return {"VK_KHR_surface", "VK_KHR_win32_surface"};
+    #elif __linux__
+        return {"VK_KHR_surface", "VK_KHR_xlib_surface"};
+    #else
+        #error "Unknown compiler or not supported OS"
+    #endif
+}
+
+std::vector<const char*> GraphicsModuleVulkanApp::get_device_extensions() {
+    return {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing"};
+}
+
+VkPhysicalDeviceFeatures2* GraphicsModuleVulkanApp::get_required_physical_device_features(bool delete_static_structure) {
+    static VkPhysicalDeviceFeatures2 *required_device_features2 = nullptr;
+
+    // Structure needs to be deleted
+    if (delete_static_structure && (required_device_features2 != nullptr)) {
+        vulkan_helper::free_physical_device_feature_struct_chain(required_device_features2);
+        required_device_features2 = nullptr;
+        return required_device_features2;
+    }
+    // Structure has already been created
+    else if (required_device_features2 != nullptr) {
+        return required_device_features2;
+    }
+    // First time structure creation
+    else {
+        VkPhysicalDeviceVulkan11Features *required_physical_device_vulkan_11_features = new VkPhysicalDeviceVulkan11Features();
+        required_physical_device_vulkan_11_features->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        required_physical_device_vulkan_11_features->multiview = VK_TRUE;
+
+        VkPhysicalDeviceDescriptorIndexingFeaturesEXT *required_physical_device_indexing_features = new VkPhysicalDeviceDescriptorIndexingFeaturesEXT();
+        required_physical_device_indexing_features->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+        required_physical_device_indexing_features->pNext = required_physical_device_vulkan_11_features;
+        required_physical_device_indexing_features->runtimeDescriptorArray = VK_TRUE;
+        required_physical_device_indexing_features->shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        required_physical_device_indexing_features->descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+        required_physical_device_indexing_features->descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
+        required_physical_device_indexing_features->descriptorBindingPartiallyBound = VK_TRUE;
+
+        required_device_features2 = new VkPhysicalDeviceFeatures2();
+        required_device_features2->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        required_device_features2->pNext = required_physical_device_indexing_features;
+        required_device_features2->features.samplerAnisotropy = VK_TRUE;
+        return required_device_features2;
+    }
 }
 
 void GraphicsModuleVulkanApp::create_sets_layouts() {

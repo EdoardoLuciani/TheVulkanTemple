@@ -134,12 +134,12 @@ namespace vulkan_helper
         return VK_TRUE;
     }
 
-    VkPhysicalDeviceFeatures2 create_physical_device_feature_struct_chain_from_requested(const VkPhysicalDeviceFeatures2 &requested) {
+    VkPhysicalDeviceFeatures2* create_physical_device_feature_struct_chain_from_requested(const VkPhysicalDeviceFeatures2 &requested) {
         const void *requested_chain_ptr = requested.pNext;
 
-        VkPhysicalDeviceFeatures2 new_physical_device_struct_chain = {};
-        new_physical_device_struct_chain.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        void *new_chain_ptr = &new_physical_device_struct_chain;
+        VkPhysicalDeviceFeatures2* new_physical_device_struct_chain = new VkPhysicalDeviceFeatures2;
+        new_physical_device_struct_chain->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        void *new_chain_ptr = new_physical_device_struct_chain;
 
         void *new_node;
         while (requested_chain_ptr) {
@@ -203,10 +203,16 @@ namespace vulkan_helper
         return (p_next_base == nullptr && p_next_requested == nullptr) ? VK_TRUE : VK_FALSE;
     }
 
-    void free_device_feature_struct_chain(void *pNext) {
+    void free_physical_device_feature_struct_chain(VkPhysicalDeviceFeatures2 *ptr) {
+        void *pNext = ptr;
         void *p_next_tmp;
         while (pNext != nullptr) {
             switch(*reinterpret_cast<const int*>(pNext)) {
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2:
+                    p_next_tmp = pNext;
+                    pNext = reinterpret_cast<VkPhysicalDeviceFeatures2*>(pNext)->pNext;
+                    delete reinterpret_cast<VkPhysicalDeviceFeatures2*>(p_next_tmp);
+                    break;
                 case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT:
                     p_next_tmp = pNext;
                     pNext = reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(pNext)->pNext;
