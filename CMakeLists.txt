@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 project(TheVulkanTemple)
 
 # Checkbox to use wayland
-set(USE_WAYLAND FALSE CACHE BOOL "Use Wayland instead of X11, matters only on linux")
+set(USE_WAYLAND "FALSE" CACHE BOOL "Use Wayland instead of X11, matters only on linux" FORCE)
 
 # Adding compile definitions and options
 add_library(compiler_flags INTERFACE)
@@ -82,7 +82,7 @@ if (WIN32)
     target_link_libraries(engine compiler_flags glfw3)
 elseif(UNIX)
     if(DEFINED ENV{WAYLAND_DISPLAY} AND USE_WAYLAND)
-        target_link_libraries(engine compiler_flags glfw3 dl pthread wayland-client)
+        target_link_libraries(engine compiler_flags glfw3 dl pthread wayland-client X11)
     else()
         target_link_libraries(engine compiler_flags glfw3 dl pthread X11)
     endif()
@@ -91,7 +91,7 @@ endif()
 # Library for the sample
 add_executable(sample
         ${SRC_DIR}/magic_enum.hpp
-        ${SRC_DIR}/main.cpp)
+        ${SRC_DIR}/example.cpp)
 
 target_link_libraries(sample compiler_flags engine)
 

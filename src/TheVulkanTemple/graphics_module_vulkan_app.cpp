@@ -8,6 +8,11 @@
 #include "layers/vsm/vsm_context.h"
 #include "layers/hbao/hbao_context.h"
 #include "layers/hdr_tonemap/hdr_tonemap_context.h"
+
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_IMPLEMENTATION
+#include "external/vk_mem_alloc.h"
+
 #include "vulkan_helper.h"
 #include <unordered_map>
 
@@ -29,7 +34,43 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                          hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
                          hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, swapchain_create_info.imageFormat) {
 
+    // Deleting the physical device feature
     get_required_physical_device_features(true);
+
+    VmaAllocatorCreateInfo vma_allocator_create_info = {0};
+    vma_allocator_create_info.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
+    vma_allocator_create_info.physicalDevice = this->selected_physical_device;
+    vma_allocator_create_info.device = this->device;
+    vma_allocator_create_info.preferredLargeHeapBlockSize = 512000000; // blocks larger than 512MB get allocated in a different VkDeviceMemory
+
+    VmaVulkanFunctions vma_vulkan_functions = {
+            vkGetPhysicalDeviceProperties,
+            vkGetPhysicalDeviceMemoryProperties,
+            vkAllocateMemory,
+            vkFreeMemory,
+            vkMapMemory,
+            vkUnmapMemory,
+            vkFlushMappedMemoryRanges,
+            vkInvalidateMappedMemoryRanges,
+            vkBindBufferMemory,
+            vkBindImageMemory,
+            vkGetBufferMemoryRequirements,
+            vkGetImageMemoryRequirements,
+            vkCreateBuffer,
+            vkDestroyBuffer,
+            vkCreateImage,
+            vkDestroyImage,
+            vkCmdCopyBuffer,
+            vkGetBufferMemoryRequirements2,
+            vkGetImageMemoryRequirements2,
+            vkBindBufferMemory2,
+            vkBindImageMemory2,
+            vkGetPhysicalDeviceMemoryProperties2
+    };
+    vma_allocator_create_info.pVulkanFunctions = &vma_vulkan_functions;
+    vma_allocator_create_info.instance = this->instance;
+    vma_allocator_create_info.vulkanApiVersion = VK_MAKE_VERSION(1, 1, 0);
+    vmaCreateAllocator(&vma_allocator_create_info, &vma_allocator);
 
     VkSamplerCreateInfo sampler_create_info = {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -64,17 +105,24 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
 }
 
 std::vector<const char*> GraphicsModuleVulkanApp::get_instance_extensions() {
+    std::vector<const char*> instance_extensions = {"VK_KHR_surface"};
     #ifdef _WIN64
-        return {"VK_KHR_surface", "VK_KHR_win32_surface"};
+        instance_extensions.push_back("VK_KHR_win32_surface")
     #elif __linux__
-        return {"VK_KHR_surface", "VK_KHR_xlib_surface"};
+        #ifdef VK_USE_PLATFORM_WAYLAND_KHR
+            instance_extensions.push_back("VK_KHR_wayland_surface")
+        #else
+            instance_extensions.push_back("VK_KHR_xlib_surface");
+        #endif
     #else
         #error "Unknown compiler or not supported OS"
     #endif
+
+    return instance_extensions;
 }
 
 std::vector<const char*> GraphicsModuleVulkanApp::get_device_extensions() {
-    return {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing"};
+    return {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing", "VK_EXT_memory_budget"};
 }
 
 VkPhysicalDeviceFeatures2* GraphicsModuleVulkanApp::get_required_physical_device_features(bool delete_static_structure) {
@@ -719,7 +767,9 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         vsm_context.record_into_command_buffer(command_buffers[i], object_descriptor_sets, descriptor_sets[1], objects);
         pbr_context.record_into_command_buffer(command_buffers[i], descriptor_sets[0], descriptor_sets[1], object_descriptor_sets, objects);
         smaa_context.record_into_command_buffer(command_buffers[i]);
-        hbao_context.record_into_command_buffer(command_buffers[i], swapchain_create_info.imageExtent, camera.znear, camera.zfar, static_cast<bool>(camera.pos[3]));
+
+        // TODO: here remove the true and replace with attribute from the class
+        hbao_context.record_into_command_buffer(command_buffers[i], swapchain_create_info.imageExtent, camera.znear, camera.zfar, true);
         hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height});
 
         vkEndCommandBuffer(command_buffers[i]);
@@ -866,6 +916,8 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyDescriptorSetLayout(device, light_data_set_layout, nullptr);
     vkDestroyDescriptorSetLayout(device, camera_data_set_layout, nullptr);
     vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
+
+    vmaDestroyAllocator(vma_allocator);
 }
 
 // ----------------- Helper methods -----------------

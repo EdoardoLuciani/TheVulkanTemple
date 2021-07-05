@@ -11,6 +11,7 @@
 #include "layers/pbr/pbr_context.h"
 #include "layers/hdr_tonemap/hdr_tonemap_context.h"
 #include "vulkan_helper.h"
+#include "external/vk_mem_alloc.h"
 #include <glm/glm.hpp>
 #include "camera.h"
 #include "light.h"
@@ -48,6 +49,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         GltfModel* get_gltf_model_ptr(uint32_t idx) { return &objects.at(idx).model; };
     private:
         EngineOptions engine_options;
+        VmaAllocator vma_allocator;
         VkSampler max_aniso_linear_sampler;
 
         std::vector<vk_object_render_info> objects;

@@ -1,4 +1,6 @@
-#version 450
+#version 460
+#include "../light.inc.glsl"
+
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec2 tex_coord;
 layout(location = 2) in vec3 normal;
@@ -9,14 +11,8 @@ layout (set = 0, binding = 0) uniform uniform_buffer {
 	mat4 normal_model;
 };
 
-struct Light {
-	mat4 view;
-	mat4 proj;
-	vec4 pos;
-	vec4 color;
-};
-layout (set = 1, binding = 0) buffer uniform_buffer2 {
-	Light lights[];
+layout (set = 1, binding = 0) readonly buffer uniform_buffer2 {
+	LightParams lights[];
 };
 
 layout (push_constant) uniform uniform_buffer3 {

@@ -89,7 +89,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
     #elif __linux__
         #ifdef VK_USE_PLATFORM_WAYLAND_KHR
             VkWaylandSurfaceCreateInfoKHR surface_create_info = {
-                VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+                VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
                 nullptr,
                 0,
                 glfwGetWaylandDisplay(),

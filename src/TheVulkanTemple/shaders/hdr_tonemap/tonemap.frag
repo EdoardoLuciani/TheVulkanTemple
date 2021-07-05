@@ -107,5 +107,5 @@ void main() {
     out_color = vec4(rgb_to_srgb_approx(xyY_to_rgb(xyY)), 1.0f);
 
     // debug mode!!!
-    //out_color = subpassLoad(input_color);
+    out_color = subpassLoad(input_color);
 }
