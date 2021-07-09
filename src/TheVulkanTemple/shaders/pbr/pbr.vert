@@ -66,7 +66,7 @@ void main() {
 	vs_out.N_g = mat3(normal_view) * mat3(normal_model) * normal;
 
 	for(int i=0; i<lights.length(); i++) {
-		vs_out.L_world[i] = normalize(get_L_vec(lights[i], vs_out.position));
+		vs_out.L_world[i] = get_L_vec(lights[i], vs_out.position);
 		vs_out.L[i] = tbn * vs_out.L_world[i];
 	}
 	gl_Position = projection * view * model * vec4(position,1.0f);

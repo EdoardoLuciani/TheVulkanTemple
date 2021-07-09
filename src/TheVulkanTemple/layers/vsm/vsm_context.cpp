@@ -18,7 +18,7 @@ VSMContext::VSMContext(VkDevice device) {
             VK_SAMPLER_MIPMAP_MODE_LINEAR,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
             0.0f,
             VK_FALSE,
             0.0f,
@@ -26,7 +26,7 @@ VSMContext::VSMContext(VkDevice device) {
             VK_COMPARE_OP_ALWAYS,
             0.0f,
             1.0f,
-            VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+            VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,//VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
             VK_FALSE,
     };
     check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &device_render_target_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
@@ -653,7 +653,7 @@ void VSMContext::record_into_command_buffer(VkCommandBuffer command_buffer, std:
                                             VkDescriptorSet light_data_set, const std::vector<vk_object_render_info> &objects) {
     std::array<VkClearValue,2> clear_values;
     clear_values[0].depthStencil = {1.0f, 0};
-    clear_values[1].color = {1.0f, 1.0f, 1.0f, 1.0f};
+    clear_values[1].color = {-40.0f, 1600.0f, 1.0f, 1.0f};
 
     for (uint32_t i=0; i<depth_images_res.size(); i++) {
         // We first render the shadowmap

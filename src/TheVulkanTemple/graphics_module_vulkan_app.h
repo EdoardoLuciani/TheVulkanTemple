@@ -55,24 +55,27 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         std::vector<vk_object_render_info> objects;
         // Model uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
-        VkDeviceMemory host_model_uniform_memory = VK_NULL_HANDLE;
+        VmaAllocation host_model_uniform_allocation = VK_NULL_HANDLE;
         void *host_model_uniform_buffer_ptr;
         VkBuffer device_model_uniform_buffer = VK_NULL_HANDLE;
+        VmaAllocation device_model_uniform_allocation = VK_NULL_HANDLE;
         // Models data
         VkBuffer device_mesh_data_buffer = VK_NULL_HANDLE;
+        VmaAllocation device_mesh_data_allocation = VK_NULL_HANDLE;
         std::vector<VkImage> device_model_images;
+        std::vector<VmaAllocation> device_model_images_allocations;
         std::vector<VkImageView> device_model_images_views;
         std::vector<VkSampler> model_image_samplers;
-        VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
 
         std::vector<Light> lights;
         const uint32_t MAX_SHADOWED_LIGHTS = 8;
         Camera camera;
-        // Host buffer and memory for the camera and lights data
+        // Host buffer and allocation for the camera and lights data
         VkBuffer host_camera_lights_uniform_buffer = VK_NULL_HANDLE;
-        VkDeviceMemory host_camera_lights_memory = VK_NULL_HANDLE;
+        VmaAllocation host_camera_lights_allocation = VK_NULL_HANDLE;
         void *host_camera_lights_data;
         VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
+        VmaAllocation device_camera_lights_allocation = VK_NULL_HANDLE;
 
         // Image for depth comparison
         VkImage device_depth_image = VK_NULL_HANDLE;
@@ -93,8 +96,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         SmaaContext smaa_context;
         HbaoContext hbao_context;
         HDRTonemapContext hdr_tonemap_context;
-        // Memory in which all attachment reside
-        VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
+        // Allocations in which all attachment reside and device_camera_lights_uniform_buffer reside
+        std::vector<VmaAllocation> device_attachments_allocations;
 
         // Descriptor things
         VkDescriptorSetLayout pbr_model_data_set_layout = VK_NULL_HANDLE;
@@ -116,7 +119,9 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);
         void create_image(VkImage &image, VkFormat format, VkExtent3D image_size, uint32_t layers, uint32_t mipmaps_count, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags = 0);
         void create_image_view(VkImageView &image_view, VkImage image, VkFormat image_format, VkImageAspectFlags aspect_mask, uint32_t start_layer, uint32_t layer_count);
-        void allocate_and_bind_to_memory(VkDeviceMemory &memory, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VkMemoryPropertyFlags flags);
+        void allocate_and_bind_to_memory(std::vector<VmaAllocation> &out_allocations, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VmaMemoryUsage vma_memory_usage);
+        void allocate_and_bind_to_memory_buffer(VmaAllocation &out_allocation, VkBuffer buffer, VmaMemoryUsage vma_memory_usage);
+        void allocate_and_bind_to_memory_image(VmaAllocation &out_allocation, VkImage image, VmaMemoryUsage vma_memory_usage);
         void submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags stage_flags,
                                     std::vector<VkSemaphore> wait_semaphores, std::vector<VkSemaphore> signal_semaphores, VkFence fence = VK_NULL_HANDLE);
 

@@ -42,6 +42,10 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     else if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
+
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        camera_pos_diff *= glm::vec4(3.0f);
+    }
     app->get_camera_ptr()->pos += glm::mat3(glm::transpose(app->get_camera_ptr()->get_view_matrix())) * camera_pos_diff * static_cast<float>(delta_time);
 
     // CAMERA MOUSE CONTROL
@@ -49,7 +53,18 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     glfwGetCursorPos(window, &mouse_polar[1], &mouse_polar[0]);
     mouse_polar *= glm::dvec2(-0.001f, -0.001f);
 
-    app->get_camera_ptr()->dir = static_cast<glm::vec3>(glm::euclidean(mouse_polar));
+    app->get_camera_ptr()->dir = glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar)));
+
+    // Other things
+    app->get_light_ptr(1)->light_params.position = app->get_camera_ptr()->pos + app->get_camera_ptr()->dir*0.1f;
+    app->get_light_ptr(1)->light_params.direction = app->get_camera_ptr()->dir;
+
+    app->get_light_ptr(0)->light_params.color = glm::vec3(5.0f*glm::clamp(glm::cos(glfwGetTime()/2), 0.0, 1.0));
+
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
+        glm::mat4 ball_3_m_matrix = glm::translate(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir)*glm::scale(glm::vec3(0.2f));
+        app->get_gltf_model_ptr(6)->set_model_matrix(ball_3_m_matrix);
+    }
 }
 
 int main() {
@@ -82,14 +97,14 @@ int main() {
                              {"resources//models//EightBall/EightBall.glb", ball_3_m_matrix}
 		});
 		app.load_lights({
-		    {{2.0f, 2.0f, 4.0f}, glm::normalize(glm::vec3({-1.0f, -1.0f, -2.0f})), {10.0f, 10.0f, 0.0f}, Light::LightType::SPOT,
-             30.0f, 0,glm::radians(glm::vec2(30.0f, 60.0f)), glm::radians(60.0f), 1.0f},
-            {{2.0f, 2.0f, -4.0f}, glm::normalize(glm::vec3({-1.0f, -1.0f, 2.0f})), {12.5f, 2.5f, 6.0f}, Light::LightType::SPOT,
-             30.0f, 1,glm::radians(glm::vec2(30.0f, 60.0f)), glm::radians(60.0f), 1.0f}
+		    {{2.0f, 2.0f, 4.0f}, glm::normalize(glm::vec3({-1.0f, -1.0f, -2.0f})), {10.0f, 10.0f, 10.0f}, Light::LightType::DIRECTIONAL,
+             0.0f, 0,glm::radians(glm::vec2(30.0f, 45.0f)), glm::radians(90.0f), 1.0f, 0.01, 10.0f},
+            {{2.0f, 2.0f, -4.0f}, glm::normalize(glm::vec3({-2.0f, -2.0f, 4.0f})), {17.0f, 7.0f, 13.0f}, Light::LightType::SPOT,
+             30.0f, 1,glm::radians(glm::vec2(30.0f, 45.0f)), glm::radians(90.0f), 1.0f, 0.01, 1000.0f}
 		});
 		app.set_camera({{-3.0f, 0.5f, 0.4f}, {-2.2f, -0.04f, 0.40f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.1f, 1000.0f});
 
-        //glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         app.init_renderer();
 

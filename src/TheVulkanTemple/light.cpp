@@ -5,8 +5,31 @@
 
 Light::Light(glm::vec3 pos, glm::vec3 dir, glm::vec3 color, Light::LightType type, float falloff_distance,
              uint32_t shadow_map_index, glm::vec2 penumbra_umbra_angles, float fov, float aspect, float znear, float zfar):
-    Camera(pos, dir, fov, aspect, znear, zfar),
-    light_params{pos, type, dir, falloff_distance, color, shadow_map_index, penumbra_umbra_angles, glm::vec2(0.0f)} {}
+    light_params{pos, type, dir, falloff_distance, color, shadow_map_index, penumbra_umbra_angles, glm::vec2(0.0f)},
+    fov{fov}, aspect{aspect}, znear{znear}, zfar{zfar} {}
+
+glm::uvec2 Light::get_resolution_from_ratio(int size) {
+    return {size*aspect, size};
+}
+
+glm::mat4 Light::get_proj_matrix() {
+    glm::mat4 proj_matrix;
+    if (light_params.type == Light::LightType::DIRECTIONAL) {
+        float focus_plane = (znear + zfar)/2;
+        float halfY = fov/2;
+        float top = focus_plane * glm::tan(halfY); //focus_plane is the distance from the camera
+        float right = top * aspect;
+        proj_matrix = glm::ortho(-right, right, -top, top, znear, zfar);
+    }
+    else {
+        proj_matrix = glm::perspective(fov, aspect, znear, zfar);
+    }
+    return proj_matrix;
+}
+
+glm::mat4 Light::get_view_matrix() {
+    return glm::lookAt(light_params.position, light_params.position + light_params.direction, glm::vec3(0.0f, -1.0f, 0.0f));
+}
 
 uint32_t Light::copy_data_to_ptr(uint8_t *ptr) {
     if (ptr != nullptr) {

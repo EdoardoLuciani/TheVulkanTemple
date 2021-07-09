@@ -40,11 +40,11 @@ void main() {
 
     // NdotV does not depend on the light's position
     float nc_NdotV = dot(N,V);
-    float NdotV = clamp(abs(nc_NdotV), 1e-5, 1.0);
+    float NdotV = clamp(nc_NdotV, 1e-5, 1.0);
     
     // color without ambient
     vec3 rho = vec3(0.0);
-    for(int i=1; i<2; i++) {
+    for(int i=0; i<lights.length(); i++) {
         vec3 L = normalize(fs_in.L[i]);
         vec3 H = normalize(V + L);
 
@@ -61,15 +61,13 @@ void main() {
         vec3 rho_d = Kd * Burley_diffuse_local_sss(corrected_roughness, NdotV, nc_NdotV, nc_NdotL, LdotH, 0.4);
 
         float shadow = 1.0;
-        //bool(lights[i].shadow_map_index - 1)
-        if (true) {
+        if (bool(lights[i].shadow_map_index + 1)) {
             shadow = get_shadow_component(lights[i], shadow_maps[nonuniformEXT(lights[i].shadow_map_index)],
                                                 fs_in.shadow_coord[i].xy/fs_in.shadow_coord[i].w, fs_in.shadow_coord[i].z);
         }
 
         vec3 radiance = get_light_radiance(lights[i], fs_in.position, normalize(fs_in.L_world[i]));
         rho += (rho_s + rho_d) * radiance * NdotL * shadow;
-        //rho += abs(vec3(fs_in.shadow_coord[i].z));
     }
 
     // ambient value is 0.02
@@ -79,8 +77,8 @@ void main() {
     vec3 color = ambient + rho + vec3(texture(images,vec3(fs_in.tex_coord, 3)));
 
     // gamma correction is applied in the tonemap stage
-    //frag_color = vec4(color, 1.0);
-    frag_color = vec4(rho, 1.0);
+    frag_color = vec4(color, 1.0);
+    //frag_color = vec4(ambient * vec3(30.0f), 1.0);
 
     vec3 normal_to_write = (abs(normalize(fs_in.N_g)) + 1) / 2;
     normal_g_image = vec4(normal_to_write, 0.0);

@@ -6,12 +6,11 @@
 class Camera {
     public:
         Camera();
-        Camera(glm::vec3 pos, glm::vec3 dir, float fov, float aspect, float znear = 0.001f, float zfar = std::numeric_limits<float>::max());
+        Camera(glm::vec3 pos, glm::vec3 dir, float fov, float aspect, float znear, float zfar);
         // View, Projection and camera_pos
         virtual uint32_t copy_data_to_ptr(uint8_t *ptr);
 
         // Getters
-        glm::uvec2 get_resolution_from_ratio(int size);
         glm::mat4 get_proj_matrix();
         glm::mat4 get_view_matrix();
 
@@ -27,7 +26,7 @@ class Camera {
         float fov = glm::radians(90.0f);
         float aspect = 1.0f;
         float znear = 0.001f;
-        float zfar = std::numeric_limits<float>::max();
+        float zfar = 1000.0f;
     private:
         glm::dvec2 prev_pos;
         float distance = -1;

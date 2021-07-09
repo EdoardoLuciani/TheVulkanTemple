@@ -9,7 +9,6 @@ vec3 get_light_radiance(LightParams light, vec3 frag_pos, vec3 L_vec) {
         radiance *= pow(t, 2.0);
     }
 
-
     if (light.falloff_distance > 0.0) {
         float dist = length(light.position - frag_pos);
         radiance *= pow(max(1-pow(dist/light.falloff_distance, 2.0f), 0.0f), 2.0f);
@@ -35,17 +34,19 @@ float ReduceLightBleeding(float p_max, float amount) {
     return clamp((p_max - amount) / (1.0 - amount), 0, 1);
 }
 float get_shadow_component(LightParams light, sampler2D shadow_map, vec2 shadow_map_coordinates, float light_frag_depth) {
-    if (bool(light.shadow_map_index - 1)) {
-        // get the moments from the texture using the normalized xy coordinates
-        vec2 moments = texture(shadow_map, shadow_map_coordinates).rg;
-        // apply the chebyshev variance equation to give a probability that the fragment is in shadow
-        float p_max = ChebyshevUpperBound(moments, light_frag_depth);
-        // We apply a fix to the light bleeding problem
-        return ReduceLightBleeding(p_max, 0.6);
+    vec2 moments;
+    // if the texture coordinates are outside we give the moments a really far away depth so no shadowing occurs within reasonable limits
+    if (clamp(shadow_map_coordinates, 0.0, 1.0) != shadow_map_coordinates) {
+        moments = vec2(-40, 1600);
     }
     else {
-        return 1.0;
+        // get the moments from the texture using the normalized xy coordinates
+        moments = texture(shadow_map, shadow_map_coordinates).rg;
     }
+    // apply the chebyshev variance equation to give a probability that the fragment is in shadow
+    float p_max = ChebyshevUpperBound(moments, light_frag_depth);
+    // We apply a fix to the light bleeding problem
+    return ReduceLightBleeding(p_max, 0.6);
 }
 
 vec3 get_L_vec(LightParams light, vec3 frag_pos) {
@@ -53,7 +54,7 @@ vec3 get_L_vec(LightParams light, vec3 frag_pos) {
         return light.position - frag_pos;
     }
     else if (is_directional(light)) {
-        return light.direction;
+        return -light.direction;
     }
     return vec3(1.0);
 }

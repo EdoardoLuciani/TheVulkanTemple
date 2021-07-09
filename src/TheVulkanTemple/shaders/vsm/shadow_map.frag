@@ -9,7 +9,7 @@ layout (location = 0) out vec2 frag_color;
 void main() {
 	// we multiply the depth by .1 and add a bias
 	float depth = -fs_in.position.z * 0.1 - 0.001;
-	
+
 	float moment1 = depth;
 	float moment2 = depth * depth;
 	

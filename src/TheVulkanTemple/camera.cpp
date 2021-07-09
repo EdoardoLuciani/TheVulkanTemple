@@ -7,20 +7,8 @@ Camera::Camera() {};
 
 Camera::Camera(glm::vec3 pos, glm::vec3 dir, float fov, float aspect, float znear, float zfar) : pos{pos}, dir{dir}, fov{fov}, aspect{aspect}, znear{znear}, zfar{zfar} {}
 
-glm::uvec2 Camera::get_resolution_from_ratio(int size) {
-    return {size*aspect, size};
-}
-
 glm::mat4 Camera::get_proj_matrix() {
-    glm::mat4 perspective_matrix;
-    if (zfar == std::numeric_limits<float>::max()) {
-        perspective_matrix = glm::infinitePerspective(fov, aspect, znear);
-    }
-    else {
-        perspective_matrix = glm::perspective(fov, aspect, znear, zfar);
-    }
-
-    return perspective_matrix;
+    return glm::perspective(fov, aspect, znear, zfar);
 }
 
 glm::mat4 Camera::get_view_matrix() {
