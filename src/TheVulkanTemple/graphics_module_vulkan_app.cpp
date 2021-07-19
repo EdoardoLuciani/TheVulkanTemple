@@ -8,13 +8,26 @@
 #include "layers/vsm/vsm_context.h"
 #include "layers/hbao/hbao_context.h"
 #include "layers/hdr_tonemap/hdr_tonemap_context.h"
+
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/random_access_index.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/range/iterator_range.hpp>
+#include <boost/range/combine.hpp>
+#include <boost/range/adaptor/indexed.hpp>
+#include <boost/assign.hpp>
+#include <boost/foreach.hpp>
+
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_IMPLEMENTATION
+#include "external/vk_mem_alloc.h"
+
 #include "vulkan_helper.h"
 #include <unordered_map>
 
 GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name,
                                                  VkExtent2D window_size,
                                                  bool fullscreen,
-                                                 VkBool32 surface_support,
                                                  EngineOptions options) :
                          BaseVulkanApp(application_name,
                                        get_instance_extensions(),
@@ -22,14 +35,50 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        fullscreen,
                                        get_device_extensions(),
                                        get_required_physical_device_features(false),
-                                       surface_support),
-                         vsm_context(device),
+                                       VK_TRUE),
+                         vsm_context(device, "resources//shaders"),
                          pbr_context(device, physical_device_memory_properties, VK_FORMAT_D32_SFLOAT, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8G8B8A8_UNORM),
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
                          hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
                          hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, swapchain_create_info.imageFormat) {
 
+    // Deleting the physical device feature
     get_required_physical_device_features(true);
+
+    VmaAllocatorCreateInfo vma_allocator_create_info = {0};
+    vma_allocator_create_info.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
+    vma_allocator_create_info.physicalDevice = this->selected_physical_device;
+    vma_allocator_create_info.device = this->device;
+    vma_allocator_create_info.preferredLargeHeapBlockSize = 512000000; // blocks larger than 512MB get allocated in a separate VkDeviceMemory
+
+    VmaVulkanFunctions vma_vulkan_functions = {
+            vkGetPhysicalDeviceProperties,
+            vkGetPhysicalDeviceMemoryProperties,
+            vkAllocateMemory,
+            vkFreeMemory,
+            vkMapMemory,
+            vkUnmapMemory,
+            vkFlushMappedMemoryRanges,
+            vkInvalidateMappedMemoryRanges,
+            vkBindBufferMemory,
+            vkBindImageMemory,
+            vkGetBufferMemoryRequirements,
+            vkGetImageMemoryRequirements,
+            vkCreateBuffer,
+            vkDestroyBuffer,
+            vkCreateImage,
+            vkDestroyImage,
+            vkCmdCopyBuffer,
+            vkGetBufferMemoryRequirements2,
+            vkGetImageMemoryRequirements2,
+            vkBindBufferMemory2,
+            vkBindImageMemory2,
+            vkGetPhysicalDeviceMemoryProperties2
+    };
+    vma_allocator_create_info.pVulkanFunctions = &vma_vulkan_functions;
+    vma_allocator_create_info.instance = this->instance;
+    vma_allocator_create_info.vulkanApiVersion = VK_MAKE_VERSION(1, 1, 0);
+    vmaCreateAllocator(&vma_allocator_create_info, &vma_allocator);
 
     VkSamplerCreateInfo sampler_create_info = {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -64,17 +113,24 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
 }
 
 std::vector<const char*> GraphicsModuleVulkanApp::get_instance_extensions() {
+    std::vector<const char*> instance_extensions = {"VK_KHR_surface"};
     #ifdef _WIN64
-        return {"VK_KHR_surface", "VK_KHR_win32_surface"};
+        instance_extensions.push_back("VK_KHR_win32_surface")
     #elif __linux__
-        return {"VK_KHR_surface", "VK_KHR_xlib_surface"};
+        #ifdef VK_USE_PLATFORM_WAYLAND_KHR
+            instance_extensions.push_back("VK_KHR_wayland_surface")
+        #else
+            instance_extensions.push_back("VK_KHR_xlib_surface");
+        #endif
     #else
         #error "Unknown compiler or not supported OS"
     #endif
+
+    return instance_extensions;
 }
 
 std::vector<const char*> GraphicsModuleVulkanApp::get_device_extensions() {
-    return {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing"};
+    return {"VK_KHR_swapchain", "VK_EXT_descriptor_indexing", "VK_EXT_memory_budget"};
 }
 
 VkPhysicalDeviceFeatures2* GraphicsModuleVulkanApp::get_required_physical_device_features(bool delete_static_structure) {
@@ -203,10 +259,10 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
 
     VkBuffer host_model_data_buffer = VK_NULL_HANDLE;
     create_buffer(host_model_data_buffer, models_total_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    VkDeviceMemory host_model_data_memory = VK_NULL_HANDLE;
-    allocate_and_bind_to_memory(host_model_data_memory, {host_model_data_buffer}, {}, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    VmaAllocation host_model_data_transient_allocation = VK_NULL_HANDLE;
+    allocate_and_bind_to_memory_buffer(host_model_data_transient_allocation, host_model_data_buffer, VMA_MEMORY_USAGE_CPU_ONLY);
     void *model_host_data_pointer;
-    check_error(vkMapMemory(device, host_model_data_memory, 0, VK_WHOLE_SIZE, 0, &model_host_data_pointer), vulkan_helper::Error::POINTER_REQUEST_FOR_HOST_MEMORY_FAILED);
+    vmaMapMemory(this->vma_allocator, host_model_data_transient_allocation, &model_host_data_pointer);
 
     // After getting a pointer for the host memory, we iterate once again in the models to copy them to memory and store some information about them
     uint64_t offset = 0;
@@ -217,13 +273,13 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
         offset += objects[i].model.get_last_copy_total_size();
         mesh_and_index_data_size += objects[i].model.get_last_copy_mesh_and_index_data_size();
     }
-    vkUnmapMemory(device, host_model_data_memory);
+    vmaUnmapMemory(this->vma_allocator, host_model_data_transient_allocation);
 
     // After creating memory and buffer for the model data, we need to create a uniform buffer and their memory
     uint64_t uniform_size = vulkan_helper::get_aligned_memory_size(objects.front().model.copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) * objects.size();
     create_buffer(host_model_uniform_buffer, uniform_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    allocate_and_bind_to_memory(host_model_uniform_memory, {host_model_uniform_buffer}, {}, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    vkMapMemory(device, host_model_uniform_memory, 0, VK_WHOLE_SIZE, 0, &host_model_uniform_buffer_ptr);
+    allocate_and_bind_to_memory_buffer(host_model_uniform_allocation, host_model_uniform_buffer, VMA_MEMORY_USAGE_CPU_ONLY);
+    vmaMapMemory(this->vma_allocator, host_model_uniform_allocation, &host_model_uniform_buffer_ptr);
 
     // After copying the data to host memory, we create a device buffer to hold the mesh and index data
     create_buffer(device_mesh_data_buffer, mesh_and_index_data_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
@@ -274,7 +330,12 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
             check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &model_image_samplers.back()), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
         }
     }
-    allocate_and_bind_to_memory(device_model_data_memory, {device_mesh_data_buffer, device_model_uniform_buffer}, device_model_images, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    std::vector<VmaAllocation> out_allocations = {device_mesh_data_allocation, device_model_uniform_allocation};
+    out_allocations.insert(out_allocations.begin(), device_model_images_allocations.begin(), device_model_images_allocations.end());
+    allocate_and_bind_to_memory(out_allocations, {device_mesh_data_buffer, device_model_uniform_buffer}, device_model_images, VMA_MEMORY_USAGE_GPU_ONLY);
+    device_mesh_data_allocation = out_allocations[0];
+    device_model_uniform_allocation = out_allocations[1];
+    device_model_images_allocations = std::vector<VmaAllocation>(out_allocations.begin() + 2, out_allocations.end());
 
     // After the buffer and the images have been allocated and binded, we create the image views with 4 layers for every image
     for (auto& device_model_image_view : device_model_images_views) {
@@ -428,26 +489,35 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     vkResetCommandPool(device, command_pool, 0);
     vkDestroyFence(device, fence, nullptr);
     vkDestroyBuffer(device, host_model_data_buffer, nullptr);
-    vkFreeMemory(device, host_model_data_memory, nullptr);
+    vmaFreeMemory(this->vma_allocator, host_model_data_transient_allocation);
 }
 
-void GraphicsModuleVulkanApp::load_lights(const std::vector<Light> &lights) {
-    this->lights = lights;
+void GraphicsModuleVulkanApp::load_lights(std::vector<Light> &&lights) {
+    this->lights_container.assign(lights.begin(), lights.end());
+
+    /*
+    auto it_begin = this->lights_container.get<1>().upper_bound(0);
+    auto it_end = this->lights_container.get<1>().end();
+    for (auto &elem : boost::make_iterator_range(it_begin, it_end)) {
+        auto boh = elem;
+    }
+    */
 }
 
-void GraphicsModuleVulkanApp::set_camera(Camera camera) {
+void GraphicsModuleVulkanApp::set_camera(Camera &&camera) {
     this->camera = camera;
 }
 
 void GraphicsModuleVulkanApp::init_renderer() {
     // We calculate the size needed for the buffer
     uint64_t camera_lights_data_size = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
-            lights.front().copy_data_to_ptr(nullptr) * lights.size();
+            lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size();
 
     // We create and allocate a host buffer for holding the camera and lights
     create_buffer(host_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    allocate_and_bind_to_memory(host_camera_lights_memory, {host_camera_lights_uniform_buffer}, {}, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    vkMapMemory(device, host_camera_lights_memory, 0, VK_WHOLE_SIZE, 0, &host_camera_lights_data);
+
+    allocate_and_bind_to_memory_buffer(host_camera_lights_allocation, host_camera_lights_uniform_buffer, VMA_MEMORY_USAGE_CPU_ONLY);
+    vmaMapMemory(vma_allocator, host_camera_lights_allocation, &host_camera_lights_data);
 
     std::vector<VkBuffer> device_buffers_to_allocate;
     std::vector<VkImage> device_images_to_allocate;
@@ -456,11 +526,22 @@ void GraphicsModuleVulkanApp::init_renderer() {
     create_buffer(device_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     device_buffers_to_allocate.push_back(device_camera_lights_uniform_buffer);
 
-    std::vector<VkExtent2D> depth_images_resolution(lights.size());
-    for (uint32_t i=0; i<depth_images_resolution.size(); i++) {
-        depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(1000).x, lights[i].get_resolution_from_ratio(1000).y};
+
+    // Iterator range that goes only through shadowed lights
+    auto shadowed_lights_it_range = boost::make_iterator_range(this->lights_container.get<1>().upper_bound(0),
+                                                               this->lights_container.get<1>().end());
+    std::vector<VkExtent2D> shadow_map_resolutions(boost::size(shadowed_lights_it_range));
+    std::vector<uint32_t> ssbo_indices(boost::size(shadowed_lights_it_range));
+
+    uint32_t j = 0;
+    for (const auto& [shadowed_light, shadow_map_res, ssbo_index] : boost::combine(shadowed_lights_it_range, shadow_map_resolutions, ssbo_indices)) {
+        shadow_map_res = {shadowed_light.get_shadow_map_resolution().x, shadowed_light.get_shadow_map_resolution().y};
+        shadowed_light.light_params.shadow_map_index = j;
+        ssbo_index = lights_container.iterator_to(shadowed_light) - lights_container.begin();
+        j++;
     }
-    vsm_context.create_resources(depth_images_resolution, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
+
+    vsm_context.create_resources(shadow_map_resolutions, ssbo_indices, pbr_model_data_set_layout, light_data_set_layout);
     smaa_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders");
     hbao_context.create_resources(swapchain_create_info.imageExtent);
     hdr_tonemap_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders", swapchain_images.size());
@@ -494,8 +575,12 @@ void GraphicsModuleVulkanApp::init_renderer() {
     auto hbao_array_images = hbao_context.get_device_images();
     device_images_to_allocate.insert(device_images_to_allocate.end(), hbao_array_images.begin(), hbao_array_images.end());
 
-    // We then allocate all needed images and buffers in a single allocation
-    allocate_and_bind_to_memory(device_attachments_memory, device_buffers_to_allocate, device_images_to_allocate,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    // We then allocate all needed images and buffers in the gpu, freeing the others first
+    std::vector<VmaAllocation> out_allocations = {device_camera_lights_allocation};
+    out_allocations.insert(out_allocations.begin(), device_attachments_allocations.begin(), device_attachments_allocations.end());
+    allocate_and_bind_to_memory(out_allocations, device_buffers_to_allocate, device_images_to_allocate, VMA_MEMORY_USAGE_GPU_ONLY);
+    device_camera_lights_allocation = out_allocations[0];
+    device_attachments_allocations = std::vector<VmaAllocation>(out_allocations.begin() + 1, out_allocations.end());
 
     // We then create the image views
     create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0,1);
@@ -591,14 +676,17 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     VkDescriptorBufferInfo light_descriptor_buffer_info = {
         device_camera_lights_uniform_buffer,
         vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment),
-        lights.front().copy_data_to_ptr(nullptr) * lights.size()
+        lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()
     };
-    std::vector<VkDescriptorImageInfo> light_descriptor_image_infos(lights.size());
-    for(uint32_t i=0; i<lights.size(); i++) {
-        light_descriptor_image_infos[i] = {
-                max_aniso_linear_sampler,
-                vsm_context.get_image_view(i),
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+
+    auto shadowed_lights_it_range = boost::make_iterator_range(this->lights_container.get<1>().upper_bound(0),
+                                                               this->lights_container.get<1>().end());
+    std::vector<VkDescriptorImageInfo> light_descriptor_image_infos(boost::size(shadowed_lights_it_range));
+    for (const auto& [light, light_descriptor_image_info] : boost::combine(shadowed_lights_it_range, light_descriptor_image_infos)) {
+        light_descriptor_image_info = {
+            max_aniso_linear_sampler,
+            vsm_context.get_image_view(light.light_params.shadow_map_index),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
     }
 
@@ -686,7 +774,7 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         vkCmdCopyBuffer(command_buffers[i], host_model_uniform_buffer, device_model_uniform_buffer, 1, &buffer_copy);
 
         buffer_copy = {0,0, vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
-                            lights.front().copy_data_to_ptr(nullptr) * lights.size()};
+                            lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()};
         vkCmdCopyBuffer(command_buffers[i], host_camera_lights_uniform_buffer, device_camera_lights_uniform_buffer, 1, &buffer_copy);
 
         // Transitioning layout from the write to the shader read
@@ -719,7 +807,9 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         vsm_context.record_into_command_buffer(command_buffers[i], object_descriptor_sets, descriptor_sets[1], objects);
         pbr_context.record_into_command_buffer(command_buffers[i], descriptor_sets[0], descriptor_sets[1], object_descriptor_sets, objects);
         smaa_context.record_into_command_buffer(command_buffers[i]);
-        hbao_context.record_into_command_buffer(command_buffers[i], swapchain_create_info.imageExtent, camera.znear, camera.zfar, static_cast<bool>(camera.pos[3]));
+
+        // TODO: here remove the true and replace with attribute from the class
+        hbao_context.record_into_command_buffer(command_buffers[i], swapchain_create_info.imageExtent, camera.znear, camera.zfar, true);
         hdr_tonemap_context.record_into_command_buffer(command_buffers[i], i, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height});
 
         vkEndCommandBuffer(command_buffers[i]);
@@ -742,8 +832,8 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
 
         camera.copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data));
         for(uint32_t i = 0, offset = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment);
-            i<lights.size(); i++) {
-            offset += lights[i].copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data) + offset);
+            i<lights_container.size(); i++) {
+            offset += lights_container[i].copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data) + offset);
         }
 
         for(uint32_t i = 0, offset = 0; i < objects.size(); i++) {
@@ -829,9 +919,9 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     model_image_samplers.clear();
 
     // Model uniform related things freed
-    vkUnmapMemory(device, host_model_uniform_memory);
+    vmaUnmapMemory(this->vma_allocator, host_model_uniform_allocation);
     vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
-    vkFreeMemory(device, host_model_uniform_memory, nullptr);
+    vmaFreeMemory(this->vma_allocator, host_model_uniform_allocation);
 
     // Model related things freed
     for (auto& device_model_image_view : device_model_images_views) {
@@ -840,14 +930,18 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     for (auto& device_model_image : device_model_images) {
         vkDestroyImage(device, device_model_image, nullptr);
     }
+    for (auto& allocation : device_model_images_allocations) {
+        vmaFreeMemory(this->vma_allocator, allocation);
+    }
     vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
+    vmaFreeMemory(this->vma_allocator, device_mesh_data_allocation);
     vkDestroyBuffer(device, device_model_uniform_buffer, nullptr);
-    vkFreeMemory(device, device_model_data_memory, nullptr);
+    vmaFreeMemory(this->vma_allocator, device_model_uniform_allocation);
 
     // Camera and light uniform related things freed
-    vkUnmapMemory(device, host_camera_lights_memory);
+    vmaUnmapMemory(this->vma_allocator, host_camera_lights_allocation);
     vkDestroyBuffer(device, host_camera_lights_uniform_buffer, nullptr);
-    vkFreeMemory(device, host_camera_lights_memory, nullptr);
+    vmaFreeMemory(this->vma_allocator, host_camera_lights_allocation);
 
     vkDestroyImageView(device, device_depth_image_view, nullptr);
     vkDestroyImage(device, device_depth_image, nullptr);
@@ -860,12 +954,16 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyImageView(device, device_global_ao_image_view, nullptr);
     vkDestroyImage(device, device_global_ao_image, nullptr);
     vkDestroyBuffer(device, device_camera_lights_uniform_buffer, nullptr);
-    vkFreeMemory(device, device_attachments_memory, nullptr);
+    for (const auto& allocation : device_attachments_allocations) {
+        vmaFreeMemory(this->vma_allocator, allocation);
+    }
 
     vkDestroyDescriptorSetLayout(device, pbr_model_data_set_layout, nullptr);
     vkDestroyDescriptorSetLayout(device, light_data_set_layout, nullptr);
     vkDestroyDescriptorSetLayout(device, camera_data_set_layout, nullptr);
     vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
+
+    vmaDestroyAllocator(vma_allocator);
 }
 
 // ----------------- Helper methods -----------------
@@ -921,49 +1019,39 @@ void GraphicsModuleVulkanApp::create_image_view(VkImageView &image_view, VkImage
     check_error(vkCreateImageView(device, &image_view_create_info, nullptr, &image_view), vulkan_helper::Error::IMAGE_VIEW_CREATION_FAILED);
 }
 
-void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(VkDeviceMemory &memory, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VkMemoryPropertyFlags flags) {
-    std::vector<VkMemoryRequirements> memory_requirements(buffers.size() + images.size());
-    for (uint32_t i=0; i<buffers.size(); i++) {
-        vkGetBufferMemoryRequirements(device, buffers[i], &memory_requirements[i]);
-    }
-    for (uint32_t i=0; i<images.size(); i++) {
-        vkGetImageMemoryRequirements(device, images[i], &memory_requirements[i+buffers.size()]);
+void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(std::vector<VmaAllocation> &out_allocations, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VmaMemoryUsage vma_memory_usage) {
+    out_allocations.resize(buffers.size() + images.size());
+    for (uint32_t i = 0; i < buffers.size(); i++) {
+        this->allocate_and_bind_to_memory_buffer(out_allocations[i], buffers[i], vma_memory_usage);
     }
 
-    uint64_t allocation_size = 0;
-    for (uint32_t i = 0; i < memory_requirements.size(); i++) {
-        allocation_size += memory_requirements[i].size;
-        if ((i+1) < memory_requirements.size()) {
-            allocation_size = vulkan_helper::get_aligned_memory_size(allocation_size, memory_requirements.at(i+1).alignment);
-        }
+    for (uint32_t i = 0, j = buffers.size(); i < images.size(); i++, j++) {
+        this->allocate_and_bind_to_memory_image(out_allocations[j], images[i], vma_memory_usage);
     }
+}
 
-    VkMemoryAllocateInfo memory_allocate_info = {
-        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        nullptr,
-        allocation_size,
-        vulkan_helper::select_memory_index(physical_device_memory_properties, memory_requirements.back(), flags)
-    };
-    vkFreeMemory(device, memory, nullptr);
-    check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &memory), vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
+void GraphicsModuleVulkanApp::allocate_and_bind_to_memory_buffer(VmaAllocation &out_allocation, VkBuffer buffer, VmaMemoryUsage vma_memory_usage) {
+    vmaFreeMemory(this->vma_allocator, out_allocation);
 
-    auto sum_offsets = [&](uint32_t idx) {
-        int sum = 0;
-        for (uint32_t i = 0; i < idx; i++) {
-            sum += memory_requirements[i].size;
-            if ((i+1) < memory_requirements.size()) {
-                sum = vulkan_helper::get_aligned_memory_size(sum, memory_requirements.at(i+1).alignment);
-            }
-        }
-        return sum;
-    };
+    VmaAllocationCreateInfo vma_allocation_create_info = {0};
+    vma_allocation_create_info.usage = vma_memory_usage;
+    check_error(vmaAllocateMemoryForBuffer(this->vma_allocator, buffer, &vma_allocation_create_info, &out_allocation, nullptr),
+                vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
 
-    for (uint32_t i=0; i<buffers.size(); i++) {
-        check_error(vkBindBufferMemory(device, buffers[i], memory, sum_offsets(i)), vulkan_helper::Error::BIND_BUFFER_MEMORY_FAILED);
-    }
-    for (uint32_t i=0; i<images.size(); i++) {
-        check_error(vkBindImageMemory(device, images[i], memory, sum_offsets(i+buffers.size())), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
-    }
+    check_error(vmaBindBufferMemory(this->vma_allocator, out_allocation, buffer), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
+
+}
+
+void GraphicsModuleVulkanApp::allocate_and_bind_to_memory_image(VmaAllocation &out_allocation, VkImage image, VmaMemoryUsage vma_memory_usage) {
+    vmaFreeMemory(this->vma_allocator, out_allocation);
+
+    VmaAllocationCreateInfo vma_allocation_create_info = {0};
+    vma_allocation_create_info.usage = vma_memory_usage;
+    check_error(vmaAllocateMemoryForImage(this->vma_allocator, image, &vma_allocation_create_info, &out_allocation, nullptr),
+                vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
+
+    check_error(vmaBindImageMemory(this->vma_allocator, out_allocation, image), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
+
 }
 
 void GraphicsModuleVulkanApp::submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags pipeline_stage_flags,

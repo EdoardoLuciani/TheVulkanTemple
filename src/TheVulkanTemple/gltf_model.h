@@ -4,7 +4,7 @@
 #include <string>
 #include <array>
 #include <glm/glm.hpp>
-#include <tiny_gltf.h>
+#include "external/tiny_gltf.h"
 #include "volk.h"
 
 class GltfModel {

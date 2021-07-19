@@ -162,6 +162,8 @@ namespace vulkan_helper
                     reinterpret_cast<VkPhysicalDeviceVulkan11Features*>(new_node)->pNext = nullptr;
                     break;
                 }
+                default:
+                    return new_physical_device_struct_chain;
             }
             reinterpret_cast<VkPhysicalDeviceFeatures2*>(new_chain_ptr)->pNext = new_node;
             new_chain_ptr = reinterpret_cast<const VkPhysicalDeviceFeatures2*>(new_chain_ptr)->pNext;

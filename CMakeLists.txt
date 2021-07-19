@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 project(TheVulkanTemple)
 
 # Checkbox to use wayland
-set(USE_WAYLAND FALSE CACHE BOOL "Use Wayland instead of X11, matters only on linux")
+set(USE_WAYLAND "FALSE" CACHE BOOL "Use Wayland instead of X11, matters only on linux" FORCE)
 
 # Adding compile definitions and options
 add_library(compiler_flags INTERFACE)
@@ -42,7 +42,7 @@ set(GLFW_INCLUDE_DIR "" CACHE PATH "Include directories of GLFW")
 set(GLFW_LIB_DIR "" CACHE PATH "Lib dir of GLFW")
 set(GLM_INCLUDE_DIR "" CACHE PATH "Include dir for GLM")
 set(VULKAN_SDK_INCLUDE_DIR "$ENV{VULKAN_SDK}/include" CACHE PATH "Include dir for the vulkan SDK")
-set(TINY_GLTF_INCLUDE_DIR "" CACHE PATH "Include dir for tiny_gltf")
+set(BOOST_INCLUDE_DIR "" CACHE PATH "Include dir for boost")
 
 # Library for TheVulkanTemple engine
 add_library(engine OBJECT
@@ -76,13 +76,13 @@ target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
 target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})
 target_include_directories(engine PUBLIC ${GLM_INCLUDE_DIR})
 target_include_directories(engine PUBLIC ${VULKAN_SDK_INCLUDE_DIR})
-target_include_directories(engine PUBLIC ${TINY_GLTF_INCLUDE_DIR})
+target_include_directories(engine PUBLIC ${BOOST_INCLUDE_DIR})
 
 if (WIN32)
     target_link_libraries(engine compiler_flags glfw3)
 elseif(UNIX)
     if(DEFINED ENV{WAYLAND_DISPLAY} AND USE_WAYLAND)
-        target_link_libraries(engine compiler_flags glfw3 dl pthread wayland-client)
+        target_link_libraries(engine compiler_flags glfw3 dl pthread wayland-client X11)
     else()
         target_link_libraries(engine compiler_flags glfw3 dl pthread X11)
     endif()
@@ -91,7 +91,7 @@ endif()
 # Library for the sample
 add_executable(sample
         ${SRC_DIR}/magic_enum.hpp
-        ${SRC_DIR}/main.cpp)
+        ${SRC_DIR}/example.cpp)
 
 target_link_libraries(sample compiler_flags engine)
 

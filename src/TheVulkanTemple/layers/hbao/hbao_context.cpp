@@ -2020,9 +2020,9 @@ void HbaoContext::record_into_command_buffer(VkCommandBuffer command_buffer, VkE
     vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
 
     if (generate_normals) {
-    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, stages[VIEW_NORMAL].pipeline);
-    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, stages[VIEW_NORMAL].pipeline);
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
         render_pass_begin_info = {
             VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,

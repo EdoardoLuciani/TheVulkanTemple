@@ -11,10 +11,17 @@
 #include "layers/pbr/pbr_context.h"
 #include "layers/hdr_tonemap/hdr_tonemap_context.h"
 #include "vulkan_helper.h"
+#include "external/vk_mem_alloc.h"
 #include <glm/glm.hpp>
 #include "camera.h"
 #include "light.h"
 #include "gltf_model.h"
+
+#include "boost/multi_index_container.hpp"
+#include <boost/multi_index/random_access_index.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/member.hpp>
 
 struct EngineOptions {
     int anti_aliasing;
@@ -28,15 +35,14 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         GraphicsModuleVulkanApp(const std::string &application_name,
                       VkExtent2D window_size,
                       bool fullscreen,
-                      VkBool32 surface_support,
                       EngineOptions options);
 
         ~GraphicsModuleVulkanApp();
 
 		// Directly copy data from disk to VRAM
 		void load_3d_objects(std::vector<GltfModel> gltf_models);
-        void load_lights(const std::vector<Light> &lights);
-        void set_camera(Camera camera);
+        void load_lights(std::vector<Light> &&lights);
+        void set_camera(Camera &&camera);
         void init_renderer();
 
         void start_frame_loop(std::function<void(GraphicsModuleVulkanApp*)> resize_callback,
@@ -44,33 +50,48 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
 
         // Methods to manage the scene objects
         Camera* get_camera_ptr() { return &camera; };
-        Light* get_light_ptr(uint32_t idx) { return &lights.at(idx); };
+        const Light* get_light_ptr(uint32_t idx) { return &lights_container.at(idx); };
         GltfModel* get_gltf_model_ptr(uint32_t idx) { return &objects.at(idx).model; };
     private:
         EngineOptions engine_options;
+        VmaAllocator vma_allocator;
         VkSampler max_aniso_linear_sampler;
 
         std::vector<vk_object_render_info> objects;
         // Model uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
-        VkDeviceMemory host_model_uniform_memory = VK_NULL_HANDLE;
+        VmaAllocation host_model_uniform_allocation = VK_NULL_HANDLE;
         void *host_model_uniform_buffer_ptr;
         VkBuffer device_model_uniform_buffer = VK_NULL_HANDLE;
+        VmaAllocation device_model_uniform_allocation = VK_NULL_HANDLE;
         // Models data
         VkBuffer device_mesh_data_buffer = VK_NULL_HANDLE;
+        VmaAllocation device_mesh_data_allocation = VK_NULL_HANDLE;
         std::vector<VkImage> device_model_images;
+        std::vector<VmaAllocation> device_model_images_allocations;
         std::vector<VkImageView> device_model_images_views;
         std::vector<VkSampler> model_image_samplers;
-        VkDeviceMemory device_model_data_memory = VK_NULL_HANDLE;
 
-        std::vector<Light> lights;
+        // Conteiner that makes possible to iterate through shadowed and non shadowed lights separately while also indexing them randomly
+        typedef boost::multi_index_container<
+            Light,
+            boost::multi_index::indexed_by<
+                boost::multi_index::random_access<>,
+                boost::multi_index::ordered_non_unique<
+                    BOOST_MULTI_INDEX_MEMBER(Light, uint32_t, shadow_map_height)
+                >
+            >
+        > LightsContainer;
+        LightsContainer lights_container;
+
         const uint32_t MAX_SHADOWED_LIGHTS = 8;
         Camera camera;
-        // Host buffer and memory for the camera and lights data
+        // Host buffer and allocation for the camera and lights data
         VkBuffer host_camera_lights_uniform_buffer = VK_NULL_HANDLE;
-        VkDeviceMemory host_camera_lights_memory = VK_NULL_HANDLE;
+        VmaAllocation host_camera_lights_allocation = VK_NULL_HANDLE;
         void *host_camera_lights_data;
         VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
+        VmaAllocation device_camera_lights_allocation = VK_NULL_HANDLE;
 
         // Image for depth comparison
         VkImage device_depth_image = VK_NULL_HANDLE;
@@ -91,8 +112,8 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         SmaaContext smaa_context;
         HbaoContext hbao_context;
         HDRTonemapContext hdr_tonemap_context;
-        // Memory in which all attachment reside
-        VkDeviceMemory device_attachments_memory = VK_NULL_HANDLE;
+        // Allocations in which all attachment reside and device_camera_lights_uniform_buffer reside
+        std::vector<VmaAllocation> device_attachments_allocations;
 
         // Descriptor things
         VkDescriptorSetLayout pbr_model_data_set_layout = VK_NULL_HANDLE;
@@ -114,7 +135,9 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         void create_buffer(VkBuffer &buffer, uint64_t size, VkBufferUsageFlags usage);
         void create_image(VkImage &image, VkFormat format, VkExtent3D image_size, uint32_t layers, uint32_t mipmaps_count, VkImageUsageFlags usage_flags, VkImageCreateFlags create_flags = 0);
         void create_image_view(VkImageView &image_view, VkImage image, VkFormat image_format, VkImageAspectFlags aspect_mask, uint32_t start_layer, uint32_t layer_count);
-        void allocate_and_bind_to_memory(VkDeviceMemory &memory, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VkMemoryPropertyFlags flags);
+        void allocate_and_bind_to_memory(std::vector<VmaAllocation> &out_allocations, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VmaMemoryUsage vma_memory_usage);
+        void allocate_and_bind_to_memory_buffer(VmaAllocation &out_allocation, VkBuffer buffer, VmaMemoryUsage vma_memory_usage);
+        void allocate_and_bind_to_memory_image(VmaAllocation &out_allocation, VkImage image, VmaMemoryUsage vma_memory_usage);
         void submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags stage_flags,
                                     std::vector<VkSemaphore> wait_semaphores, std::vector<VkSemaphore> signal_semaphores, VkFence fence = VK_NULL_HANDLE);
 
