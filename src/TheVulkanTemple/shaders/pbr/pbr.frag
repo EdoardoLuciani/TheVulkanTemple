@@ -44,7 +44,7 @@ void main() {
     
     // color without ambient
     vec3 rho = vec3(0.0);
-    for(int i=0; i<lights.length(); i++) {
+    for(int i=0; i<2; i++) {
         vec3 L = normalize(fs_in.L[i]);
         vec3 H = normalize(V + L);
 
@@ -61,7 +61,7 @@ void main() {
         vec3 rho_d = Kd * Burley_diffuse_local_sss(corrected_roughness, NdotV, nc_NdotV, nc_NdotL, LdotH, 0.4);
 
         float shadow = 1.0;
-        if (bool(lights[i].shadow_map_index + 1)) {
+        if (is_shadowed(lights[i])) {
             shadow = get_shadow_component(lights[i], shadow_maps[nonuniformEXT(lights[i].shadow_map_index)],
                                                 fs_in.shadow_coord[i].xy/fs_in.shadow_coord[i].w, fs_in.shadow_coord[i].z);
         }

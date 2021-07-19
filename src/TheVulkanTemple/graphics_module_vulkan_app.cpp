@@ -9,6 +9,15 @@
 #include "layers/hbao/hbao_context.h"
 #include "layers/hdr_tonemap/hdr_tonemap_context.h"
 
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/random_access_index.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/range/iterator_range.hpp>
+#include <boost/range/combine.hpp>
+#include <boost/range/adaptor/indexed.hpp>
+#include <boost/assign.hpp>
+#include <boost/foreach.hpp>
+
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
 #define VMA_IMPLEMENTATION
 #include "external/vk_mem_alloc.h"
@@ -19,7 +28,6 @@
 GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_name,
                                                  VkExtent2D window_size,
                                                  bool fullscreen,
-                                                 VkBool32 surface_support,
                                                  EngineOptions options) :
                          BaseVulkanApp(application_name,
                                        get_instance_extensions(),
@@ -27,8 +35,8 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                        fullscreen,
                                        get_device_extensions(),
                                        get_required_physical_device_features(false),
-                                       surface_support),
-                         vsm_context(device),
+                                       VK_TRUE),
+                         vsm_context(device, "resources//shaders"),
                          pbr_context(device, physical_device_memory_properties, VK_FORMAT_D32_SFLOAT, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8G8B8A8_UNORM),
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
                          hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
@@ -484,18 +492,26 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     vmaFreeMemory(this->vma_allocator, host_model_data_transient_allocation);
 }
 
-void GraphicsModuleVulkanApp::load_lights(const std::vector<Light> &lights) {
-    this->lights = lights;
+void GraphicsModuleVulkanApp::load_lights(std::vector<Light> &&lights) {
+    this->lights_container.assign(lights.begin(), lights.end());
+
+    /*
+    auto it_begin = this->lights_container.get<1>().upper_bound(0);
+    auto it_end = this->lights_container.get<1>().end();
+    for (auto &elem : boost::make_iterator_range(it_begin, it_end)) {
+        auto boh = elem;
+    }
+    */
 }
 
-void GraphicsModuleVulkanApp::set_camera(Camera camera) {
+void GraphicsModuleVulkanApp::set_camera(Camera &&camera) {
     this->camera = camera;
 }
 
 void GraphicsModuleVulkanApp::init_renderer() {
     // We calculate the size needed for the buffer
     uint64_t camera_lights_data_size = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
-            lights.front().copy_data_to_ptr(nullptr) * lights.size();
+            lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size();
 
     // We create and allocate a host buffer for holding the camera and lights
     create_buffer(host_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -510,11 +526,22 @@ void GraphicsModuleVulkanApp::init_renderer() {
     create_buffer(device_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     device_buffers_to_allocate.push_back(device_camera_lights_uniform_buffer);
 
-    std::vector<VkExtent2D> depth_images_resolution(lights.size());
-    for (uint32_t i=0; i<depth_images_resolution.size(); i++) {
-        depth_images_resolution[i] = {lights[i].get_resolution_from_ratio(1000).x, lights[i].get_resolution_from_ratio(1000).y};
+
+    // Iterator range that goes only through shadowed lights
+    auto shadowed_lights_it_range = boost::make_iterator_range(this->lights_container.get<1>().upper_bound(0),
+                                                               this->lights_container.get<1>().end());
+    std::vector<VkExtent2D> shadow_map_resolutions(boost::size(shadowed_lights_it_range));
+    std::vector<uint32_t> ssbo_indices(boost::size(shadowed_lights_it_range));
+
+    uint32_t j = 0;
+    for (const auto& [shadowed_light, shadow_map_res, ssbo_index] : boost::combine(shadowed_lights_it_range, shadow_map_resolutions, ssbo_indices)) {
+        shadow_map_res = {shadowed_light.get_shadow_map_resolution().x, shadowed_light.get_shadow_map_resolution().y};
+        shadowed_light.light_params.shadow_map_index = j;
+        ssbo_index = lights_container.iterator_to(shadowed_light) - lights_container.begin();
+        j++;
     }
-    vsm_context.create_resources(depth_images_resolution, "resources//shaders", pbr_model_data_set_layout, light_data_set_layout);
+
+    vsm_context.create_resources(shadow_map_resolutions, ssbo_indices, pbr_model_data_set_layout, light_data_set_layout);
     smaa_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders");
     hbao_context.create_resources(swapchain_create_info.imageExtent);
     hdr_tonemap_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders", swapchain_images.size());
@@ -649,14 +676,17 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     VkDescriptorBufferInfo light_descriptor_buffer_info = {
         device_camera_lights_uniform_buffer,
         vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment),
-        lights.front().copy_data_to_ptr(nullptr) * lights.size()
+        lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()
     };
-    std::vector<VkDescriptorImageInfo> light_descriptor_image_infos(lights.size());
-    for(uint32_t i=0; i<lights.size(); i++) {
-        light_descriptor_image_infos[i] = {
-                max_aniso_linear_sampler,
-                vsm_context.get_image_view(i),
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+
+    auto shadowed_lights_it_range = boost::make_iterator_range(this->lights_container.get<1>().upper_bound(0),
+                                                               this->lights_container.get<1>().end());
+    std::vector<VkDescriptorImageInfo> light_descriptor_image_infos(boost::size(shadowed_lights_it_range));
+    for (const auto& [light, light_descriptor_image_info] : boost::combine(shadowed_lights_it_range, light_descriptor_image_infos)) {
+        light_descriptor_image_info = {
+            max_aniso_linear_sampler,
+            vsm_context.get_image_view(light.light_params.shadow_map_index),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
     }
 
@@ -744,7 +774,7 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         vkCmdCopyBuffer(command_buffers[i], host_model_uniform_buffer, device_model_uniform_buffer, 1, &buffer_copy);
 
         buffer_copy = {0,0, vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
-                            lights.front().copy_data_to_ptr(nullptr) * lights.size()};
+                            lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()};
         vkCmdCopyBuffer(command_buffers[i], host_camera_lights_uniform_buffer, device_camera_lights_uniform_buffer, 1, &buffer_copy);
 
         // Transitioning layout from the write to the shader read
@@ -802,8 +832,8 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
 
         camera.copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data));
         for(uint32_t i = 0, offset = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment);
-            i<lights.size(); i++) {
-            offset += lights[i].copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data) + offset);
+            i<lights_container.size(); i++) {
+            offset += lights_container[i].copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data) + offset);
         }
 
         for(uint32_t i = 0, offset = 0; i < objects.size(); i++) {

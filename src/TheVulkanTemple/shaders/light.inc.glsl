@@ -7,7 +7,7 @@ struct LightParams {
     vec3 direction;
     float falloff_distance;
     vec3 color;
-    uint shadow_map_index;
+    int shadow_map_index;
     vec2 penumbra_umbra_angles;
     vec2 dummy;
     mat4 view;
@@ -24,5 +24,9 @@ bool is_point(LightParams light) {
 
 bool is_directional(LightParams light) {
     return light.type == 2;
+}
+
+bool is_shadowed(LightParams light) {
+    return light.shadow_map_index >= 0;
 }
 #endif // #define INCLUDE_GUARD_LIGHT

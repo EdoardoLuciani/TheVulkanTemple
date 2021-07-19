@@ -19,34 +19,39 @@
 
 class VSMContext {
 public:
-    VSMContext(VkDevice device);
+    VSMContext(VkDevice device, std::string shader_dir_path);
     ~VSMContext();
 
     std::vector<VkImage> get_device_images();
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();
     VkImageView get_image_view(int index);
 
-    void create_resources(std::vector<VkExtent2D> depth_images_res, std::string shader_dir_path,
+    void create_resources(std::vector<VkExtent2D> depth_images_res, std::vector<uint32_t> ssbo_indices,
                           VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout);
     void init_resources();
     void allocate_descriptor_sets(VkDescriptorPool descriptor_pool);
     void record_into_command_buffer(VkCommandBuffer command_buffer, std::vector<VkDescriptorSet> object_data_set,
                                     VkDescriptorSet light_data_set, const std::vector<vk_object_render_info> &object_render_info);
 private:
-    std::vector<VkExtent2D> depth_images_res;
-
     VkDevice device = VK_NULL_HANDLE;
     VkSampler device_render_target_sampler = VK_NULL_HANDLE;
     VkDescriptorSetLayout vsm_descriptor_set_layout = VK_NULL_HANDLE;
     VkRenderPass shadow_map_render_pass = VK_NULL_HANDLE;
+    std::string shader_dir_path;
 
-    std::vector<VkImage> device_vsm_depth_images;
-    std::vector<std::array<VkImageView, 2>> device_vsm_depth_image_views;
+    struct light_vsm_data {
+        VkExtent2D depth_image_res;
+        uint32_t ssbo_index;
 
-    std::vector<VkImage> device_light_depth_images;
-    std::vector<VkImageView> device_light_depth_image_views;
+        VkImage device_vsm_depth_image;
+        std::array<VkImageView, 2> device_vsm_depth_image_views;
 
-    std::vector<VkFramebuffer> framebuffers;
+        VkImage device_light_depth_image;
+        VkImageView device_light_depth_image_view;
+
+        VkFramebuffer framebuffer;
+    };
+    std::vector<light_vsm_data> lights_vsm;
 
     // We have the same layout for two different descriptor_sets
     std::vector<VkDescriptorSet> vsm_descriptor_sets;
@@ -62,7 +67,7 @@ private:
     // Vulkan methods
     void create_image_views();
     void create_framebuffers();
-    void create_shadow_map_pipeline(std::string shader_dir_path, VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout);
+    void create_shadow_map_pipeline(VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout);
     void create_gaussian_blur_pipelines(std::string shader_dir_path);
 };
 #endif //BASE_VULKAN_APP_VSM_CONTEXT_H

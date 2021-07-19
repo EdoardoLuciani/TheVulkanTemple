@@ -56,10 +56,10 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     app->get_camera_ptr()->dir = glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar)));
 
     // Other things
-    app->get_light_ptr(1)->light_params.position = app->get_camera_ptr()->pos + app->get_camera_ptr()->dir*0.1f;
-    app->get_light_ptr(1)->light_params.direction = app->get_camera_ptr()->dir;
+    app->get_light_ptr(1)->set_pos(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir*0.1f);
+    app->get_light_ptr(1)->set_dir(app->get_camera_ptr()->dir);
 
-    app->get_light_ptr(0)->light_params.color = glm::vec3(5.0f*glm::clamp(glm::cos(glfwGetTime()/2), 0.0, 1.0));
+    app->get_light_ptr(0)->set_color(glm::vec3(5.0f*glm::clamp(glm::cos(glfwGetTime()/2), 0.0, 1.0)));
 
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
         glm::mat4 ball_3_m_matrix = glm::translate(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir)*glm::scale(glm::vec3(0.2f));
@@ -75,7 +75,7 @@ int main() {
   
 	try {
 	    VkExtent2D screen_size = {800,800};
-		GraphicsModuleVulkanApp app("TheVulkanTemple", screen_size, false, VK_TRUE, options);
+		GraphicsModuleVulkanApp app("TheVulkanTemple", screen_size, false, options);
 
         glm::mat4 water_bottle_m_matrix = glm::translate(glm::vec3(-1.0f, 0.02f, -0.5f))*glm::scale(glm::vec3(0.4f,0.4f,0.4f));
         glm::mat4 table_m_matrix = glm::translate(glm::vec3(0.5f, -0.35f, 0.0f))*glm::rotate(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f))
@@ -98,9 +98,9 @@ int main() {
 		});
 		app.load_lights({
 		    {{2.0f, 2.0f, 4.0f}, glm::normalize(glm::vec3({-1.0f, -1.0f, -2.0f})), {10.0f, 10.0f, 10.0f}, Light::LightType::DIRECTIONAL,
-             0.0f, 0,glm::radians(glm::vec2(30.0f, 45.0f)), glm::radians(90.0f), 1.0f, 0.01, 10.0f},
+             0.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 0, glm::radians(90.0f), 1.0f, 0.01, 10.0f},
             {{2.0f, 2.0f, -4.0f}, glm::normalize(glm::vec3({-2.0f, -2.0f, 4.0f})), {17.0f, 7.0f, 13.0f}, Light::LightType::SPOT,
-             30.0f, 1,glm::radians(glm::vec2(30.0f, 45.0f)), glm::radians(90.0f), 1.0f, 0.01, 1000.0f}
+             30.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 1000, glm::radians(90.0f), 1.0f, 0.01, 1000.0f}
 		});
 		app.set_camera({{-3.0f, 0.5f, 0.4f}, {-2.2f, -0.04f, 0.40f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.1f, 1000.0f});
 

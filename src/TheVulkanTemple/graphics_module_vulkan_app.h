@@ -17,6 +17,12 @@
 #include "light.h"
 #include "gltf_model.h"
 
+#include "boost/multi_index_container.hpp"
+#include <boost/multi_index/random_access_index.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/member.hpp>
+
 struct EngineOptions {
     int anti_aliasing;
     int shadows;
@@ -29,15 +35,14 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         GraphicsModuleVulkanApp(const std::string &application_name,
                       VkExtent2D window_size,
                       bool fullscreen,
-                      VkBool32 surface_support,
                       EngineOptions options);
 
         ~GraphicsModuleVulkanApp();
 
 		// Directly copy data from disk to VRAM
 		void load_3d_objects(std::vector<GltfModel> gltf_models);
-        void load_lights(const std::vector<Light> &lights);
-        void set_camera(Camera camera);
+        void load_lights(std::vector<Light> &&lights);
+        void set_camera(Camera &&camera);
         void init_renderer();
 
         void start_frame_loop(std::function<void(GraphicsModuleVulkanApp*)> resize_callback,
@@ -45,7 +50,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
 
         // Methods to manage the scene objects
         Camera* get_camera_ptr() { return &camera; };
-        Light* get_light_ptr(uint32_t idx) { return &lights.at(idx); };
+        const Light* get_light_ptr(uint32_t idx) { return &lights_container.at(idx); };
         GltfModel* get_gltf_model_ptr(uint32_t idx) { return &objects.at(idx).model; };
     private:
         EngineOptions engine_options;
@@ -67,7 +72,18 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         std::vector<VkImageView> device_model_images_views;
         std::vector<VkSampler> model_image_samplers;
 
-        std::vector<Light> lights;
+        // Conteiner that makes possible to iterate through shadowed and non shadowed lights separately while also indexing them randomly
+        typedef boost::multi_index_container<
+            Light,
+            boost::multi_index::indexed_by<
+                boost::multi_index::random_access<>,
+                boost::multi_index::ordered_non_unique<
+                    BOOST_MULTI_INDEX_MEMBER(Light, uint32_t, shadow_map_height)
+                >
+            >
+        > LightsContainer;
+        LightsContainer lights_container;
+
         const uint32_t MAX_SHADOWED_LIGHTS = 8;
         Camera camera;
         // Host buffer and allocation for the camera and lights data
