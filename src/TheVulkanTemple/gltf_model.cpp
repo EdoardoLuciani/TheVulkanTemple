@@ -3,7 +3,7 @@
 #define TINYGLTF_USE_CPP14
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <tiny_gltf.h>
+#include "external/tiny_gltf.h"
 #include <array>
 
 GltfModel::GltfModel(std::string model_path, glm::mat4 model_matrix) {

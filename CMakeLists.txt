@@ -42,7 +42,7 @@ set(GLFW_INCLUDE_DIR "" CACHE PATH "Include directories of GLFW")
 set(GLFW_LIB_DIR "" CACHE PATH "Lib dir of GLFW")
 set(GLM_INCLUDE_DIR "" CACHE PATH "Include dir for GLM")
 set(VULKAN_SDK_INCLUDE_DIR "$ENV{VULKAN_SDK}/include" CACHE PATH "Include dir for the vulkan SDK")
-set(TINY_GLTF_INCLUDE_DIR "" CACHE PATH "Include dir for tiny_gltf")
+set(BOOST_INCLUDE_DIR "" CACHE PATH "Include dir for boost")
 
 # Library for TheVulkanTemple engine
 add_library(engine OBJECT
@@ -76,7 +76,7 @@ target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
 target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})
 target_include_directories(engine PUBLIC ${GLM_INCLUDE_DIR})
 target_include_directories(engine PUBLIC ${VULKAN_SDK_INCLUDE_DIR})
-target_include_directories(engine PUBLIC ${TINY_GLTF_INCLUDE_DIR})
+target_include_directories(engine PUBLIC ${BOOST_INCLUDE_DIR})
 
 if (WIN32)
     target_link_libraries(engine compiler_flags glfw3)

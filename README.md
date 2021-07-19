@@ -8,7 +8,7 @@ It supports fullscreen mode as well as windowed. Due to its modularity, it is qu
 ## Features
 - PBR Pipeline
 - Shadows
-- Point lights
+- Point, spot and directional lights
 - Edge detection anti-aliasing
 - High dynamic range with final tonemapping
 - GLTF model as inputs
@@ -23,6 +23,8 @@ It supports fullscreen mode as well as windowed. Due to its modularity, it is qu
 - SMAA: header for the smaa library - https://github.com/iryoku/smaa
 - GLSL-Color-Spaces: for color manipulation in hdr shader - https://github.com/tobspr/GLSL-Color-Spaces
 - tiny_gltf: to open .gltf files - https://github.com/syoyo/tinygltf
+- VMA: to better manage allocations - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+- boost: used for multi_index_container
 
 ## Files
 - main.cpp: shows how to use the rendering engine
@@ -35,7 +37,7 @@ GLFW_INCLUDE_DIR,
 GLFW_LIB_DIR,
 GLM_INCLUDE_DIR,
 VULKAN_SDK_INCLUDE_DIR,
-TINY_GLTF_INCLUDE_DIR.
+BOOST_INCLUDE_DIR .
 
 ## Future plans
 Occlusion culling on objects

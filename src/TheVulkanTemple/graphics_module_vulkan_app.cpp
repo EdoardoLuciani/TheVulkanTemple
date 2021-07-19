@@ -49,7 +49,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     vma_allocator_create_info.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
     vma_allocator_create_info.physicalDevice = this->selected_physical_device;
     vma_allocator_create_info.device = this->device;
-    vma_allocator_create_info.preferredLargeHeapBlockSize = 512000000; // blocks larger than 512MB get allocated in a different VkDeviceMemory
+    vma_allocator_create_info.preferredLargeHeapBlockSize = 512000000; // blocks larger than 512MB get allocated in a separate VkDeviceMemory
 
     VmaVulkanFunctions vma_vulkan_functions = {
             vkGetPhysicalDeviceProperties,
