@@ -37,6 +37,7 @@ class BaseVulkanApp {
 		VkSwapchainCreateInfoKHR swapchain_create_info;
 		VkSwapchainKHR swapchain = VK_NULL_HANDLE;
 		std::vector<VkImage> swapchain_images;
+		std::vector<VkImageView> swapchain_images_views;
 
 		VkCommandPool command_pool;
 		std::vector<VkCommandBuffer> command_buffers;

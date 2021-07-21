@@ -1,0 +1,30 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_shading_language_420pack : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#define A_HALF
+#define FSR_RCAS_F 1
+#include "inputs.inc.glsl"
+
+AF4 FsrRcasLoadF(ASU2 p) { return texelFetch(sampler2D(InputTexture,InputSampler), ASU2(p), 0); }
+void FsrRcasInputF(inout AF1 r, inout AF1 g, inout AF1 b) {}
+
+void CurrFilter(AU2 pos) {
+    AF3 c;
+    FsrRcasF(c.r, c.g, c.b, pos, rcas_const);
+    imageStore(OutputTexture, ASU2(pos), AF4(c, 1));
+}
+
+layout(local_size_x=64) in;
+void main() {
+    // Do remapping of local xy in workgroup for a more PS-like swizzle pattern.
+    AU2 gxy = ARmp8x8(gl_LocalInvocationID.x) + AU2(gl_WorkGroupID.x << 4u, gl_WorkGroupID.y << 4u);
+    CurrFilter(gxy);
+    gxy.x += 8u;
+    CurrFilter(gxy);
+    gxy.y += 8u;
+    CurrFilter(gxy);
+    gxy.x -= 8u;
+    CurrFilter(gxy);
+}

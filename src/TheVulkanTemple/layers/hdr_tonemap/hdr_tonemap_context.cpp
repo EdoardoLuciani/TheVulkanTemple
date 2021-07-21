@@ -41,7 +41,7 @@ HDRTonemapContext::HDRTonemapContext(VkDevice device, VkFormat input_image_forma
             VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             VK_ATTACHMENT_STORE_OP_DONT_CARE,
             VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
     }
     }};
     std::array<VkAttachmentReference,3> attachment_references {{
@@ -107,10 +107,6 @@ HDRTonemapContext::~HDRTonemapContext() {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
 
-    for (auto& out_image_view : out_images_views) {
-        vkDestroyImageView(device, out_image_view, nullptr);
-    }
-
     vkDestroyRenderPass(device, hdr_tonemap_render_pass, nullptr);
     vkDestroyPipelineLayout(device, hdr_tonemap_pipeline_layout, nullptr);
     vkDestroyPipeline(device, hdr_tonemap_pipeline, nullptr);
@@ -118,9 +114,8 @@ HDRTonemapContext::~HDRTonemapContext() {
     vkDestroyDescriptorSetLayout(device, hdr_tonemap_set_layout, nullptr);
 }
 
-void HDRTonemapContext::create_resources(VkExtent2D screen_res, std::string shader_dir_path, uint32_t out_images_count) {
+void HDRTonemapContext::create_resources(VkExtent2D screen_res, std::string shader_dir_path) {
     // We get the output images count in the resources method
-    this->out_images_count = out_images_count;
     this->out_image_res = screen_res;
 
     std::vector<uint8_t> shader_contents;
@@ -323,28 +318,7 @@ std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> HDRTonemapCo
             1};
 }
 
-void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView input_ao_image_view, std::vector<VkImage> out_images, VkFormat image_format) {
-    this->out_images = out_images;
-
-    for (uint64_t i=0; i < out_images_views.size(); i++) {
-        vkDestroyImageView(device, out_images_views[i], nullptr);
-    }
-    out_images_views.resize(out_images.size());
-
-    for (uint64_t i=0; i<out_images_views.size(); i++) {
-        VkImageViewCreateInfo image_view_create_info = {
-                VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                nullptr,
-                0,
-                out_images[i],
-                VK_IMAGE_VIEW_TYPE_2D,
-                image_format,
-                {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
-                {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
-        };
-        check_error(vkCreateImageView(device, &image_view_create_info, nullptr, &out_images_views[i]), vulkan_helper::Error::IMAGE_VIEW_CREATION_FAILED);
-    }
-
+void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView input_ao_image_view, std::vector<VkImageView> out_image_views) {
     VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             nullptr,
@@ -399,13 +373,13 @@ void HDRTonemapContext::allocate_descriptor_sets(VkDescriptorPool descriptor_poo
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
     hdr_tonemap_framebuffers.clear();
-    hdr_tonemap_framebuffers.resize(out_images_count);
+    hdr_tonemap_framebuffers.resize(out_image_views.size());
 
     for (size_t i = 0; i < hdr_tonemap_framebuffers.size(); i++) {
         std::array<VkImageView, 3> attachments = {
                 input_image_view,
                 input_ao_image_view,
-                out_images_views[i]
+                out_image_views[i]
         };
         VkFramebufferCreateInfo framebuffer_create_info = {
                 VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,

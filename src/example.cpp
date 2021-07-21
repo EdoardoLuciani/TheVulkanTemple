@@ -69,9 +69,8 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
 
 int main() {
     EngineOptions options;
-    options.anti_aliasing = 0;
-    options.shadows = 0;
-    options.HDR = 0;
+    options.fsr_settings.preset = AmdFsr::Preset::NONE;
+	options.fsr_settings.precision = AmdFsr::Precision::FP32;
   
 	try {
 	    VkExtent2D screen_size = {800,800};

@@ -10,6 +10,7 @@
 #include "layers/hbao/hbao_context.h"
 #include "layers/pbr/pbr_context.h"
 #include "layers/hdr_tonemap/hdr_tonemap_context.h"
+#include "layers/amd_fsr/amd_fsr.h"
 #include "vulkan_helper.h"
 #include "external/vk_mem_alloc.h"
 #include <glm/glm.hpp>
@@ -17,19 +18,17 @@
 #include "light.h"
 #include "gltf_model.h"
 
-#include "boost/multi_index_container.hpp"
+#include <boost/multi_index_container.hpp>
 #include <boost/multi_index/random_access_index.hpp>
 #include <boost/multi_index/sequenced_index.hpp>
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/member.hpp>
 
 struct EngineOptions {
-    int anti_aliasing;
-    int shadows;
-    int HDR;
+    AmdFsr::Settings fsr_settings;
 };
 
-class GraphicsModuleVulkanApp: public BaseVulkanApp {
+class GraphicsModuleVulkanApp : public BaseVulkanApp {
     public:
         // Inheriting BaseVulkanApp constructor
         GraphicsModuleVulkanApp(const std::string &application_name,
@@ -105,6 +104,9 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Image for hbao output
         VkImage device_global_ao_image = VK_NULL_HANDLE;
         VkImageView device_global_ao_image_view = VK_NULL_HANDLE;
+        // Image for HDRTonemap output
+        VkImage device_tonemapped_image = VK_NULL_HANDLE;
+		VkImageView device_tonemapped_image_view = VK_NULL_HANDLE;
 
         // Contexts for graphical effects
         VSMContext vsm_context;
@@ -144,7 +146,7 @@ class GraphicsModuleVulkanApp: public BaseVulkanApp {
         // Static methods used for filling the BaseVulkanApp structure
         static std::vector<const char*> get_instance_extensions();
         static std::vector<const char*> get_device_extensions();
-        static VkPhysicalDeviceFeatures2* get_required_physical_device_features(bool delete_static_structure);
+        static VkPhysicalDeviceFeatures2* get_required_physical_device_features(bool delete_static_structure, EngineOptions engine_options);
 };
 
 #endif //BASE_VULKAN_APP_GRAPHICS_MODULE_VULKAN_APP_H

@@ -647,7 +647,7 @@ void VSMContext::record_into_command_buffer(VkCommandBuffer command_buffer, std:
     clear_values[0].depthStencil = {1.0f, 0};
     clear_values[1].color = {-40.0f, 1600.0f, 1.0f, 1.0f};
 
-    for (int i=0; i < lights_vsm.size(); i++) {
+    for (uint32_t i=0; i < lights_vsm.size(); i++) {
         // We first render the shadowmap
         VkRenderPassBeginInfo render_pass_begin_info = {
             VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,

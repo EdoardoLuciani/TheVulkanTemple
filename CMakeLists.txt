@@ -62,6 +62,8 @@ add_library(engine OBJECT
         ${ENGINE_SRC_DIR}/layers/hbao/hbao_context.h
         ${ENGINE_SRC_DIR}/layers/pbr/pbr_context.cpp
         ${ENGINE_SRC_DIR}/layers/pbr/pbr_context.h
+        ${ENGINE_SRC_DIR}/layers/amd_fsr/amd_fsr.cpp
+        ${ENGINE_SRC_DIR}/layers/amd_fsr/amd_fsr.h
         ${ENGINE_SRC_DIR}/volk.c
         ${ENGINE_SRC_DIR}/volk.h
         ${ENGINE_SRC_DIR}/camera.cpp

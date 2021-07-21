@@ -57,12 +57,12 @@ private:
         };
         mutable LightParams light_params;
 
+		uint32_t shadow_map_height;
+
         mutable float fov;
         mutable float aspect;
         mutable float znear;
         mutable float zfar;
-
-        uint32_t shadow_map_height;
 
         // GraphicsModuleVulkanApp should be able to modify light_params, since it is directly copied to gpu memory
         friend class GraphicsModuleVulkanApp;

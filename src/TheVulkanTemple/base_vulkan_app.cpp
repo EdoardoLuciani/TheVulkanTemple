@@ -201,7 +201,10 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 
 BaseVulkanApp::~BaseVulkanApp() {
     vkDeviceWaitIdle(device);
-    vkFreeCommandBuffers(device, command_pool, command_buffers.size(), command_buffers.data());
+	for (auto& image_view : swapchain_images_views) {
+		vkDestroyImageView(device, image_view, nullptr);
+	}
+	vkFreeCommandBuffers(device, command_pool, command_buffers.size(), command_buffers.data());
     vkDestroyCommandPool(device, command_pool, nullptr);
     vkDestroySwapchainKHR(device, swapchain, nullptr);
     vkDestroyDevice(device, nullptr);
@@ -235,7 +238,7 @@ void BaseVulkanApp::create_swapchain() {
     glfwGetWindowSize(window, &width, &height);
 	VkExtent2D size_of_images = vulkan_helper::select_size_of_images(surface_capabilities, { static_cast<uint32_t>(width),static_cast<uint32_t>(height) });
 
-	VkImageUsageFlags image_usage = vulkan_helper::select_image_usage(surface_capabilities, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+	VkImageUsageFlags image_usage = vulkan_helper::select_image_usage(surface_capabilities, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
 	VkSurfaceTransformFlagBitsKHR surface_transform = vulkan_helper::select_surface_transform(surface_capabilities, VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR);
 
 	uint32_t formats_count = 0;
@@ -272,6 +275,25 @@ void BaseVulkanApp::create_swapchain() {
 	vkGetSwapchainImagesKHR(device, swapchain, &swapchain_images_count, nullptr);
 	swapchain_images.resize(swapchain_images_count);
 	check_error(vkGetSwapchainImagesKHR(device, swapchain, &swapchain_images_count, swapchain_images.data()), vulkan_helper::Error::SWAPCHAIN_IMAGES_RETRIEVAL_FAILED);
+
+	for (auto& image_view : swapchain_images_views) {
+		vkDestroyImageView(device, image_view, nullptr);
+	}
+
+	swapchain_images_views.resize(swapchain_images_count);
+	for (uint32_t i = 0; i < swapchain_images.size(); i++) {
+		VkImageViewCreateInfo image_view_create_info = {
+				VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+				nullptr,
+				0,
+				swapchain_images[i],
+				VK_IMAGE_VIEW_TYPE_2D,
+				swapchain_create_info.imageFormat,
+				{VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
+				{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+		};
+		vkCreateImageView(device, &image_view_create_info, nullptr, &swapchain_images_views[i]);
+	}
 }
 
 void BaseVulkanApp::create_cmd_pool_and_buffers(uint32_t queue_family_index) {
