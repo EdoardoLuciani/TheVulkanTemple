@@ -30,6 +30,7 @@ class AmdFsr {
     ~AmdFsr();
 
 	VkExtent2D get_recommended_input_resolution(VkExtent2D display_image_size);
+	float get_negative_mip_bias();
     VkBuffer get_device_buffer() { return device_fsr_constants_buffer; };
     VkImage get_device_image() { return device_out_easu_image; };
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();
@@ -44,11 +45,14 @@ class AmdFsr {
 		std::array<float, 5> scaling_factors = {1.0f, 1.0f/2.0f, 1.0f/1.7f,
 											   1.0f/1.5f, 1.0f/1.3f};
 
+		std::array<float, 5> negative_mip_biases = {0.0f, -1.0f, -0.79f,
+											-0.58f, -0.38f};
+
         VkDevice device;
         Settings fsr_settings;
         VkSampler common_fsr_sampler;
         VkDescriptorSetLayout common_fsr_descriptor_set_layout;
-        VkBuffer device_fsr_constants_buffer;
+        VkBuffer device_fsr_constants_buffer = VK_NULL_HANDLE;
 
         std::array<VkDescriptorSet, 2> fsr_descriptor_sets; // easu + rcas
 
@@ -58,11 +62,12 @@ class AmdFsr {
         VkExtent2D input_image_size;
         VkExtent2D output_image_size;
 
-        VkImage device_out_easu_image;
-        VkImageView device_out_easu_image_view;
+        VkImage device_out_easu_image = VK_NULL_HANDLE;
+        VkImageView device_out_easu_image_view = VK_NULL_HANDLE;
 
         std::array<glm::uvec4, 5> fsr_constants;
         bool fsr_constants_changed = false;
+        int fsr_to_copy = 6;
         static constexpr int threadGroupWorkRegionDim = 16;
         glm::uvec3 dispatch_size;
 

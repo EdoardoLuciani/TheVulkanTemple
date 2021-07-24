@@ -3,10 +3,7 @@
 #include <glm/glm.hpp>
 
 #define A_CPU 1
-#define A_GLSL 1
-#define A_HALF 1
-#define FSR_EASU_H 1
-#define FSR_RCAS_H 1
+#define A_GCC 1
 #include "ffx_a.h"
 #include "ffx_fsr1.h"
 
@@ -46,21 +43,21 @@ AmdFsr::AmdFsr(VkDevice device, Settings fsr_settings, std::string shader_dir_pa
             nullptr
     };
     descriptor_set_layout_binding[1] = {
-            0,
+            1,
             VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
             1,
             VK_SHADER_STAGE_COMPUTE_BIT,
             nullptr
     };
     descriptor_set_layout_binding[2] = {
-            0,
+            2,
             VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             1,
             VK_SHADER_STAGE_COMPUTE_BIT,
             nullptr
     };
     descriptor_set_layout_binding[3] = {
-            0,
+            3,
             VK_DESCRIPTOR_TYPE_SAMPLER,
             1,
             VK_SHADER_STAGE_COMPUTE_BIT,
@@ -71,7 +68,7 @@ AmdFsr::AmdFsr(VkDevice device, Settings fsr_settings, std::string shader_dir_pa
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             nullptr,
             0,
-            1,
+			descriptor_set_layout_binding.size(),
             descriptor_set_layout_binding.data()
     };
     check_error(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &common_fsr_descriptor_set_layout), vulkan_helper::Error::DESCRIPTOR_SET_LAYOUT_CREATION_FAILED);
@@ -84,12 +81,21 @@ AmdFsr::AmdFsr(VkDevice device, Settings fsr_settings, std::string shader_dir_pa
         nullptr,
         0,
         sizeof(glm::uvec4)*5,
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_SHARING_MODE_EXCLUSIVE,
         0,
         nullptr
     };
     check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &device_fsr_constants_buffer), vulkan_helper::Error::BUFFER_CREATION_FAILED);
+    VkMemoryRequirements2 memory_requirements {
+			VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2
+    };
+	VkBufferMemoryRequirementsInfo2 info = {
+			VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2,
+			nullptr,
+			device_fsr_constants_buffer
+	};
+    vkGetBufferMemoryRequirements2(device, &info, &memory_requirements);
 }
 
 VkExtent2D AmdFsr::get_recommended_input_resolution(VkExtent2D display_image_size) {
@@ -98,13 +104,17 @@ VkExtent2D AmdFsr::get_recommended_input_resolution(VkExtent2D display_image_siz
 			static_cast<uint32_t>(std::ceil(display_image_size.height * scaling_factor))};
 }
 
+float AmdFsr::get_negative_mip_bias() {
+	return negative_mip_biases[static_cast<uint32_t>(fsr_settings.preset)];
+}
+
 void AmdFsr::create_pipelines(std::string shader_dir_path) {
     std::string shader_precision_postfix;
     if (fsr_settings.precision == Precision::FP32) {
-        shader_precision_postfix = "_float.comp";
+        shader_precision_postfix = "_float.comp.spv";
     }
     else {
-        shader_precision_postfix = "_half.comp";
+        shader_precision_postfix = "_half.comp.spv";
     }
 
     std::vector<uint8_t> shader_contents;
@@ -209,6 +219,7 @@ void AmdFsr::create_resources(VkExtent2D input_image_size, VkExtent2D output_ima
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_out_easu_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 
     // Updating the constants based on the resolutions and sharpness
+
 	FsrEasuCon(reinterpret_cast<AU1*>(&fsr_constants[0]), reinterpret_cast<AU1*>(&fsr_constants[1]),
 			reinterpret_cast<AU1*>(&fsr_constants[2]), reinterpret_cast<AU1*>(&fsr_constants[3]),
 			static_cast<AF1>(input_image_size.width), static_cast<AF1>(input_image_size.height),
@@ -226,6 +237,7 @@ void AmdFsr::create_resources(VkExtent2D input_image_size, VkExtent2D output_ima
 void AmdFsr::set_rcas_sharpness(float sharpness) {
 	FsrRcasCon(reinterpret_cast<AU1*>(&fsr_constants[4]), sharpness);
 	fsr_constants_changed = true;
+	fsr_to_copy = 6;
 }
 
 void AmdFsr::create_image_views() {
@@ -373,11 +385,12 @@ void AmdFsr::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageV
 }
 
 void AmdFsr::record_into_command_buffer(VkCommandBuffer command_buffer, VkImage input_image, VkImage output_image) {
-	if (fsr_constants_changed) {
+	// todo: remove fsr_to_copy in favour of boolean when doing multithreding w/ secondary command buffers
+	if (fsr_to_copy) {
 		VkBufferMemoryBarrier buffer_memory_barrier = {
 				VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
 				nullptr,
-				VK_ACCESS_UNIFORM_READ_BIT,
+				0,
 				VK_ACCESS_TRANSFER_WRITE_BIT,
 				VK_QUEUE_FAMILY_IGNORED,
 				VK_QUEUE_FAMILY_IGNORED,
@@ -391,9 +404,10 @@ void AmdFsr::record_into_command_buffer(VkCommandBuffer command_buffer, VkImage 
 
 		buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
-		vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT		, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
 
-		fsr_constants_changed = false;
+		vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+
+		fsr_to_copy--;
 	}
 
 	// EASU pass
@@ -403,7 +417,7 @@ void AmdFsr::record_into_command_buffer(VkCommandBuffer command_buffer, VkImage 
 		nullptr,
 		VK_ACCESS_SHADER_WRITE_BIT,
 		VK_ACCESS_SHADER_READ_BIT,
-		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		VK_QUEUE_FAMILY_IGNORED,
 		VK_QUEUE_FAMILY_IGNORED,
@@ -413,9 +427,9 @@ void AmdFsr::record_into_command_buffer(VkCommandBuffer command_buffer, VkImage 
 	image_memory_barriers[1] = {
 		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 		nullptr,
-		VK_ACCESS_SHADER_READ_BIT,
+		0,
 		VK_ACCESS_SHADER_WRITE_BIT,
-		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_UNDEFINED,
 		VK_IMAGE_LAYOUT_GENERAL,
 		VK_QUEUE_FAMILY_IGNORED,
 		VK_QUEUE_FAMILY_IGNORED,
@@ -458,6 +472,20 @@ void AmdFsr::record_into_command_buffer(VkCommandBuffer command_buffer, VkImage 
 	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, fsr_pipelines[1]);
 	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, common_fsr_pipeline_layout, 0, 1, &fsr_descriptor_sets[1], 0, nullptr);
 	vkCmdDispatch(command_buffer, dispatch_size.x, dispatch_size.y, dispatch_size.z);
+
+	image_memory_barriers[0] = {
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			nullptr,
+			VK_ACCESS_SHADER_WRITE_BIT,
+			VK_ACCESS_MEMORY_READ_BIT,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			output_image,
+			{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+	};
+	vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, image_memory_barriers.data());
 }
 
 AmdFsr::~AmdFsr() {

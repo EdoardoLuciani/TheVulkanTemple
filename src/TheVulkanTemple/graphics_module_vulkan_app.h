@@ -4,6 +4,7 @@
 #include <vector>
 #include <array>
 #include <functional>
+#include <optional>
 #include "base_vulkan_app.h"
 #include "layers/smaa/smaa_context.h"
 #include "layers/vsm/vsm_context.h"
@@ -53,6 +54,7 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         GltfModel* get_gltf_model_ptr(uint32_t idx) { return &objects.at(idx).model; };
     private:
         EngineOptions engine_options;
+		VkExtent2D rendering_resolution;
         VmaAllocator vma_allocator;
         VkSampler max_aniso_linear_sampler;
 
@@ -90,7 +92,7 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         VmaAllocation host_camera_lights_allocation = VK_NULL_HANDLE;
         void *host_camera_lights_data;
         VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
-        VmaAllocation device_camera_lights_allocation = VK_NULL_HANDLE;
+        VmaAllocation device_camera_lights_uniform_allocation = VK_NULL_HANDLE;
 
         // Image for depth comparison
         VkImage device_depth_image = VK_NULL_HANDLE;
@@ -107,6 +109,9 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         // Image for HDRTonemap output
         VkImage device_tonemapped_image = VK_NULL_HANDLE;
 		VkImageView device_tonemapped_image_view = VK_NULL_HANDLE;
+		// Image for AmdFSR
+		VkImage device_upscaled_image = VK_NULL_HANDLE;
+		VkImageView device_upscaled_image_view = VK_NULL_HANDLE;
 
         // Contexts for graphical effects
         VSMContext vsm_context;
@@ -114,7 +119,12 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         SmaaContext smaa_context;
         HbaoContext hbao_context;
         HDRTonemapContext hdr_tonemap_context;
-        // Allocations in which all attachment reside and device_camera_lights_uniform_buffer reside
+        std::unique_ptr<AmdFsr> amd_fsr = nullptr;
+
+        // Static allocations for the layers
+        VmaAllocation amd_fsr_uniform_allocation = VK_NULL_HANDLE;
+
+        // Allocations in which all attachment reside
         std::vector<VmaAllocation> device_attachments_allocations;
 
         // Descriptor things

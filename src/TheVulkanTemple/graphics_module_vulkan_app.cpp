@@ -41,9 +41,18 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                          smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
                          hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
                          hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8B8A8_UNORM) {
+    engine_options = options;
 
-    // Deleting the physical device feature
+	// Deleting the physical device feature
     get_required_physical_device_features(true, options);
+
+    if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+		amd_fsr = std::make_unique<AmdFsr>(device, engine_options.fsr_settings, "resources//shaders");
+		rendering_resolution = amd_fsr->get_recommended_input_resolution(swapchain_create_info.imageExtent);
+    }
+    else {
+		rendering_resolution = swapchain_create_info.imageExtent;
+    }
 
     VmaAllocatorCreateInfo vma_allocator_create_info = {0};
     vma_allocator_create_info.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
@@ -110,6 +119,9 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
 
     create_sets_layouts();
     pbr_context.create_pipeline("resources//shaders", pbr_model_data_set_layout, camera_data_set_layout, light_data_set_layout);
+
+    // We perform allocations that are not dependant on screen resolutions
+	allocate_and_bind_to_memory_buffer(amd_fsr_uniform_allocation, amd_fsr->get_device_buffer(), VMA_MEMORY_USAGE_GPU_ONLY);
 }
 
 std::vector<const char*> GraphicsModuleVulkanApp::get_instance_extensions() {
@@ -183,6 +195,9 @@ VkPhysicalDeviceFeatures2* GraphicsModuleVulkanApp::get_required_physical_device
         required_device_features2->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         required_device_features2->pNext = required_physical_device_indexing_features;
         required_device_features2->features.samplerAnisotropy = VK_TRUE;
+		if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE && engine_options.fsr_settings.precision == AmdFsr::Precision::FP16) {
+			required_device_features2->features.shaderInt16 = VK_TRUE;
+		}
 
         return required_device_features2;
     }
@@ -336,7 +351,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
                     VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                     VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                     VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                    0.0f,
+                    amd_fsr ? amd_fsr->get_negative_mip_bias() : 0.0f,
                     VK_TRUE,
                     16.0f,
                     VK_FALSE,
@@ -349,7 +364,8 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
             check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &model_image_samplers.back()), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
         }
     }
-    std::vector<VmaAllocation> out_allocations;
+	std::vector<VmaAllocation> out_allocations = {device_mesh_data_allocation, device_model_uniform_allocation};
+	out_allocations.insert(out_allocations.begin(), device_model_images_allocations.begin(), device_model_images_allocations.end());
     allocate_and_bind_to_memory(out_allocations, {device_mesh_data_buffer, device_model_uniform_buffer}, device_model_images, VMA_MEMORY_USAGE_GPU_ONLY);
     device_mesh_data_allocation = out_allocations[0];
     device_model_uniform_allocation = out_allocations[1];
@@ -536,7 +552,6 @@ void GraphicsModuleVulkanApp::init_renderer() {
     create_buffer(device_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     device_buffers_to_allocate.push_back(device_camera_lights_uniform_buffer);
 
-
     // Iterator range that goes only through shadowed lights
     auto shadowed_lights_it_range = boost::make_iterator_range(this->lights_container.get<1>().upper_bound(0),
                                                                this->lights_container.get<1>().end());
@@ -552,47 +567,59 @@ void GraphicsModuleVulkanApp::init_renderer() {
     }
 
     vsm_context.create_resources(shadow_map_resolutions, ssbo_indices, pbr_model_data_set_layout, light_data_set_layout);
-    smaa_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders");
-    hbao_context.create_resources(swapchain_create_info.imageExtent);
-    hdr_tonemap_context.create_resources(swapchain_create_info.imageExtent, "resources//shaders");
+    smaa_context.create_resources(rendering_resolution, "resources//shaders");
+    hbao_context.create_resources(rendering_resolution);
+    hdr_tonemap_context.create_resources(rendering_resolution, "resources//shaders");
+    if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+		amd_fsr->create_resources(rendering_resolution, swapchain_create_info.imageExtent);
+    }
 
     // We create some attachments useful during rendering
-    create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+    create_image(device_depth_image, VK_FORMAT_D32_SFLOAT, {rendering_resolution.width, rendering_resolution.height, 1},
                  1, 1,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_depth_image);
 
-    create_image(device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+    create_image(device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32, {rendering_resolution.width, rendering_resolution.height, 1},
                  2, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_render_target);
 
-    create_image(device_normal_g_image, VK_FORMAT_R8G8B8A8_UNORM, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+    create_image(device_normal_g_image, VK_FORMAT_R8G8B8A8_UNORM, {rendering_resolution.width, rendering_resolution.height, 1},
                  1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_normal_g_image);
 
-    create_image(device_global_ao_image, VK_FORMAT_R8_UNORM, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+    create_image(device_global_ao_image, VK_FORMAT_R8_UNORM, {rendering_resolution.width, rendering_resolution.height, 1},
                  1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_global_ao_image);
 
-	create_image(device_tonemapped_image, VK_FORMAT_R8G8B8A8_UNORM, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+	create_image(device_tonemapped_image, VK_FORMAT_R8G8B8A8_UNORM, {rendering_resolution.width, rendering_resolution.height, 1},
 			1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 	device_images_to_allocate.push_back(device_tonemapped_image);
 
-    // We request information about the buffer and images we need from vsm_context and store them in a vector
+	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+		create_image(device_upscaled_image, VK_FORMAT_R8G8B8A8_UNORM, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height, 1},
+				1, 1, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+		device_images_to_allocate.push_back(device_upscaled_image);
+	}
+
+    // We request information about the buffer and images we need from the contexts and store them in a vector
     auto vec = vsm_context.get_device_images();
     device_images_to_allocate.insert(device_images_to_allocate.end(), vec.begin(), vec.end());
 
-    // We request information about the images and buffer we need from smaa_context and store them in a vector
     auto smaa_array_images = smaa_context.get_device_images();
     device_images_to_allocate.insert(device_images_to_allocate.end(), smaa_array_images.begin(), smaa_array_images.end());
 
-    // We request information about the images and buffer we need from hbao_contex and store them in a vector
     auto hbao_array_images = hbao_context.get_device_images();
     device_images_to_allocate.insert(device_images_to_allocate.end(), hbao_array_images.begin(), hbao_array_images.end());
 
+	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+		device_images_to_allocate.push_back(amd_fsr->get_device_image());
+	}
+
     // We then allocate all needed images and buffers in the gpu, freeing the others first
-    std::vector<VmaAllocation> out_allocations;
+	std::vector<VmaAllocation> out_allocations = { device_camera_lights_uniform_allocation};
+	out_allocations.insert(out_allocations.begin(), device_attachments_allocations.begin(), device_attachments_allocations.end());
     allocate_and_bind_to_memory(out_allocations, device_buffers_to_allocate, device_images_to_allocate, VMA_MEMORY_USAGE_GPU_ONLY);
-    device_camera_lights_allocation = out_allocations[0];
+	device_camera_lights_uniform_allocation = out_allocations[0];
     device_attachments_allocations = std::vector<VmaAllocation>(out_allocations.begin() + 1, out_allocations.end());
 
     // We then create the image views
@@ -602,10 +629,13 @@ void GraphicsModuleVulkanApp::init_renderer() {
     create_image_view(device_normal_g_image_view, device_normal_g_image, VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
     create_image_view(device_global_ao_image_view, device_global_ao_image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
 	create_image_view(device_tonemapped_image_view, device_tonemapped_image, VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+		create_image_view(device_upscaled_image_view, device_upscaled_image, VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+	}
 
     vsm_context.init_resources();
     smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
-    pbr_context.set_output_images(swapchain_create_info.imageExtent, device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view);
+    pbr_context.set_output_images(rendering_resolution, device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view);
     hbao_context.init_resources();
     hbao_context.update_constants(camera.get_proj_matrix());
 
@@ -629,6 +659,9 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     vulkan_helper::insert_or_sum(sets_elements_required, smaa_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, hbao_context.get_required_descriptor_pool_size_and_sets());
     vulkan_helper::insert_or_sum(sets_elements_required, hdr_tonemap_context.get_required_descriptor_pool_size_and_sets());
+	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+		vulkan_helper::insert_or_sum(sets_elements_required, amd_fsr->get_required_descriptor_pool_size_and_sets());
+	}
     std::vector<VkDescriptorPoolSize> descriptor_pool_size = vulkan_helper::convert_map_to_vector(sets_elements_required.first);
 
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
@@ -647,6 +680,9 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     smaa_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[0]);
     hbao_context.allocate_descriptor_sets(attachments_descriptor_pool, device_depth_image_view, device_normal_g_image_view, device_global_ao_image_view);
     hdr_tonemap_context.allocate_descriptor_sets(attachments_descriptor_pool, device_render_target_image_views[1], device_global_ao_image_view, {device_tonemapped_image_view});
+	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+		amd_fsr->allocate_descriptor_sets(attachments_descriptor_pool, device_tonemapped_image_view, device_upscaled_image_view);
+	}
 
     // then we allocate descriptor sets for camera, lights and objects
     std::vector<VkDescriptorSetLayout> layouts_of_sets;
@@ -823,8 +859,17 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         smaa_context.record_into_command_buffer(command_buffers[i]);
 
         // TODO: here remove the true and replace with attribute from the class
-        hbao_context.record_into_command_buffer(command_buffers[i], swapchain_create_info.imageExtent, camera.znear, camera.zfar, true);
-        hdr_tonemap_context.record_into_command_buffer(command_buffers[i], 0, {swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height});
+        hbao_context.record_into_command_buffer(command_buffers[i], rendering_resolution, camera.znear, camera.zfar, true);
+        hdr_tonemap_context.record_into_command_buffer(command_buffers[i], 0, rendering_resolution);
+
+		VkImage image_to_copy;
+		if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+			amd_fsr->record_into_command_buffer(command_buffers[i], device_tonemapped_image, device_upscaled_image);
+			image_to_copy = device_upscaled_image;
+		}
+		else {
+			image_to_copy = device_tonemapped_image;
+		}
 
 		VkImageMemoryBarrier image_memory_barrier = {
 				VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -846,7 +891,7 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
 			{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
 			{{0,0,0}, {static_cast<int32_t>(swapchain_create_info.imageExtent.width), static_cast<int32_t>(swapchain_create_info.imageExtent.height), 1}},
 		};
-        vkCmdBlitImage(command_buffers[i], device_tonemapped_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchain_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_blit, VK_FILTER_NEAREST);
+        vkCmdBlitImage(command_buffers[i], image_to_copy, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchain_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_blit, VK_FILTER_NEAREST);
 
         image_memory_barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
 		image_memory_barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
@@ -942,6 +987,12 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
 void GraphicsModuleVulkanApp::on_window_resize(std::function<void(GraphicsModuleVulkanApp*)> resize_callback) {
     vkDeviceWaitIdle(device);
     create_swapchain();
+	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+		rendering_resolution = amd_fsr->get_recommended_input_resolution(swapchain_create_info.imageExtent);
+	}
+	else {
+		rendering_resolution = swapchain_create_info.imageExtent;
+	}
     init_renderer();
     resize_callback(this);
 }
@@ -995,9 +1046,14 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyImage(device, device_normal_g_image, nullptr);
     vkDestroyImageView(device, device_global_ao_image_view, nullptr);
     vkDestroyImage(device, device_global_ao_image, nullptr);
+
 	vkDestroyImageView(device, device_tonemapped_image_view, nullptr);
 	vkDestroyImage(device, device_tonemapped_image, nullptr);
-    vkDestroyBuffer(device, device_camera_lights_uniform_buffer, nullptr);
+
+	vkDestroyImageView(device, device_upscaled_image_view, nullptr);
+	vkDestroyImage(device, device_upscaled_image, nullptr);
+
+	vkDestroyBuffer(device, device_camera_lights_uniform_buffer, nullptr);
     for (const auto& allocation : device_attachments_allocations) {
         vmaFreeMemory(this->vma_allocator, allocation);
     }
@@ -1007,6 +1063,7 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyDescriptorSetLayout(device, camera_data_set_layout, nullptr);
     vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
 
+	vmaFreeMemory(vma_allocator, amd_fsr_uniform_allocation);
     vmaDestroyAllocator(vma_allocator);
 }
 
@@ -1064,7 +1121,11 @@ void GraphicsModuleVulkanApp::create_image_view(VkImageView &image_view, VkImage
 }
 
 void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(std::vector<VmaAllocation> &out_allocations, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VmaMemoryUsage vma_memory_usage) {
-    out_allocations.resize(buffers.size() + images.size());
+    for (auto& allocation : out_allocations) {
+		vmaFreeMemory(vma_allocator, allocation);
+    }
+	out_allocations.resize(buffers.size() + images.size());
+
     for (uint32_t i = 0; i < buffers.size(); i++) {
         this->allocate_and_bind_to_memory_buffer(out_allocations[i], buffers[i], vma_memory_usage);
     }
@@ -1075,8 +1136,6 @@ void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(std::vector<VmaAllocat
 }
 
 void GraphicsModuleVulkanApp::allocate_and_bind_to_memory_buffer(VmaAllocation &out_allocation, VkBuffer buffer, VmaMemoryUsage vma_memory_usage) {
-    vmaFreeMemory(this->vma_allocator, out_allocation);
-
     VmaAllocationCreateInfo vma_allocation_create_info = {0};
     vma_allocation_create_info.usage = vma_memory_usage;
     check_error(vmaAllocateMemoryForBuffer(this->vma_allocator, buffer, &vma_allocation_create_info, &out_allocation, nullptr),
@@ -1087,8 +1146,6 @@ void GraphicsModuleVulkanApp::allocate_and_bind_to_memory_buffer(VmaAllocation &
 }
 
 void GraphicsModuleVulkanApp::allocate_and_bind_to_memory_image(VmaAllocation &out_allocation, VkImage image, VmaMemoryUsage vma_memory_usage) {
-    vmaFreeMemory(this->vma_allocator, out_allocation);
-
     VmaAllocationCreateInfo vma_allocation_create_info = {0};
     vma_allocation_create_info.usage = vma_memory_usage;
     check_error(vmaAllocateMemoryForImage(this->vma_allocator, image, &vma_allocation_create_info, &out_allocation, nullptr),

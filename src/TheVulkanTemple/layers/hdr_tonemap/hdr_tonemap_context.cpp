@@ -36,7 +36,7 @@ HDRTonemapContext::HDRTonemapContext(VkDevice device, VkFormat input_image_forma
             0,
             out_format,
             VK_SAMPLE_COUNT_1_BIT,
-            VK_ATTACHMENT_LOAD_OP_CLEAR,
+            VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             VK_ATTACHMENT_STORE_OP_STORE,
             VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             VK_ATTACHMENT_STORE_OP_DONT_CARE,

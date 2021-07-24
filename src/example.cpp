@@ -69,8 +69,8 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
 
 int main() {
     EngineOptions options;
-    options.fsr_settings.preset = AmdFsr::Preset::NONE;
-	options.fsr_settings.precision = AmdFsr::Precision::FP32;
+    options.fsr_settings.preset = AmdFsr::Preset::ULTRA_QUALITY;
+	options.fsr_settings.precision = AmdFsr::Precision::FP16;
   
 	try {
 	    VkExtent2D screen_size = {800,800};
@@ -97,13 +97,13 @@ int main() {
 		});
 		app.load_lights({
 		    {{2.0f, 2.0f, 4.0f}, glm::normalize(glm::vec3({-1.0f, -1.0f, -2.0f})), {10.0f, 10.0f, 10.0f}, Light::LightType::DIRECTIONAL,
-             0.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 0, glm::radians(90.0f), 1.0f, 0.01, 10.0f},
+             0.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 1000, glm::radians(90.0f), 1.0f, 0.01, 10.0f},
             {{2.0f, 2.0f, -4.0f}, glm::normalize(glm::vec3({-2.0f, -2.0f, 4.0f})), {17.0f, 7.0f, 13.0f}, Light::LightType::SPOT,
-             30.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 1000, glm::radians(90.0f), 1.0f, 0.01, 1000.0f}
+             30.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 0, glm::radians(90.0f), 1.0f, 0.01, 1000.0f}
 		});
 		app.set_camera({{-3.0f, 0.5f, 0.4f}, {-2.2f, -0.04f, 0.40f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.1f, 1000.0f});
 
-        glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        //glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         app.init_renderer();
 

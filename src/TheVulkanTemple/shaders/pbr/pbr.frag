@@ -79,6 +79,6 @@ void main() {
     // gamma correction is applied in the tonemap stage
     frag_color = vec4(color, 1.0);
 
-    vec3 normal_to_write = (abs(normalize(fs_in.N_g)) + 1) / 2;
+    vec3 normal_to_write = (normalize(-fs_in.N_g)*0.5 + 0.5);
     normal_g_image = vec4(normal_to_write, 0.0);
 }

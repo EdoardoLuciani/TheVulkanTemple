@@ -11,9 +11,10 @@ It supports fullscreen mode as well as windowed. Due to its modularity, it is qu
 - Point, spot and directional lights
 - Edge detection anti-aliasing
 - High dynamic range with final tonemapping
+- Image upscaling with FidelityFX-FSR  
 - GLTF model as inputs
 - Runtime mipmap generation
-- Fullscreen, windowed and resizing of window
+- Fullscreen, windowed and window resize
 
 ## Libraries used
 - volk: to dynamically load entrypoints - https://github.com/zeux/volk
@@ -25,6 +26,7 @@ It supports fullscreen mode as well as windowed. Due to its modularity, it is qu
 - tiny_gltf: to open .gltf files - https://github.com/syoyo/tinygltf
 - VMA: to better manage allocations - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
 - boost: used for multi_index_container
+- FidelityFX-FSR: image upscaling - https://github.com/GPUOpen-Effects/FidelityFX-FSR
 
 ## Files
 - main.cpp: shows how to use the rendering engine
@@ -37,7 +39,7 @@ GLFW_INCLUDE_DIR,
 GLFW_LIB_DIR,
 GLM_INCLUDE_DIR,
 VULKAN_SDK_INCLUDE_DIR,
-BOOST_INCLUDE_DIR .
+BOOST_INCLUDE_DIR.
 
 ## Future plans
-Occlusion culling on objects
+Occlusion culling on objects, multithreaded rendering.

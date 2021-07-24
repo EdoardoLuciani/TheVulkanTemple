@@ -1699,12 +1699,13 @@ void HbaoContext::update_constants(glm::mat4 proj) {
     }
 
     // radius
-    float blur_intensity = 2.0f;
-    float bias = 0.1f;
-    blur_sharpness = 40.0f;
+    float radius = 0.4f;
+    float blur_intensity = 3.0f;
+    float bias = 0.7f;
+    blur_sharpness = 3.0f;
 
     float meters2viewspace   = 1.0f;
-    float R                  = blur_intensity * meters2viewspace;
+    float R                  = radius * meters2viewspace;
     hbao_data->R2             = R * R;
     hbao_data->NegInvR2       = -1.0f / hbao_data->R2;
     hbao_data->RadiusToScreen = R * 0.5f * projScale;
@@ -1722,7 +1723,7 @@ void HbaoContext::update_constants(glm::mat4 proj) {
     hbao_data->InvFullResolution    = glm::vec2(1.0f / float(screen_extent.width), 1.0f / float(screen_extent.height));
 
     for(int i = 0; i < 16; i++) {
-        hbao_data->float2Offsets[i] = glm::vec4(float(i % 4) + 0.5f, float(i / 4) + 0.5f, 0.0f, 1.0f);
+        hbao_data->float2Offsets[i] = glm::vec4(float(i % 4) + 0.5f, float(i / 4) + 0.5f, 0.0f, 0.0f);
 
         float Rand1 = distribution(random_engine);
         float Rand2 = distribution(random_engine);
