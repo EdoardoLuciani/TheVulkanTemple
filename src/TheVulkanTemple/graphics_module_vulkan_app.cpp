@@ -3,6 +3,7 @@
 #include <string>
 #include <chrono>
 #include <iostream>
+#include <span>
 #include "layers/smaa/smaa_context.h"
 #include "layers/pbr/pbr_context.h"
 #include "layers/vsm/vsm_context.h"
@@ -58,7 +59,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     vma_allocator_create_info.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
     vma_allocator_create_info.physicalDevice = this->selected_physical_device;
     vma_allocator_create_info.device = this->device;
-    vma_allocator_create_info.preferredLargeHeapBlockSize = 512000000; // blocks larger than 512MB get allocated in a separate VkDeviceMemory
+    vma_allocator_create_info.preferredLargeHeapBlockSize = 512000000; // blocks larger than 512 MB get allocated in a separate VkDeviceMemory
 
     VmaVulkanFunctions vma_vulkan_functions = {
             vkGetPhysicalDeviceProperties,
@@ -120,8 +121,10 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     create_sets_layouts();
     pbr_context.create_pipeline("resources//shaders", pbr_model_data_set_layout, camera_data_set_layout, light_data_set_layout);
 
-    // We perform allocations that are not dependant on screen resolutions
-	allocate_and_bind_to_memory_buffer(amd_fsr_uniform_allocation, amd_fsr->get_device_buffer(), VMA_MEMORY_USAGE_GPU_ONLY);
+    // We perform allocations that are not dependent on screen resolutions
+    if (amd_fsr) {
+		allocate_and_bind_to_memory_buffer(amd_fsr_uniform_allocation, amd_fsr->get_device_buffer(), VMA_MEMORY_USAGE_GPU_ONLY);
+    }
 }
 
 std::vector<const char*> GraphicsModuleVulkanApp::get_instance_extensions() {
@@ -161,25 +164,28 @@ VkPhysicalDeviceFeatures2* GraphicsModuleVulkanApp::get_required_physical_device
 
     // First time structure creation
     else {
-        VkPhysicalDeviceVulkan11Features *required_physical_device_vulkan_11_features = new VkPhysicalDeviceVulkan11Features();
-        required_physical_device_vulkan_11_features->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-        required_physical_device_vulkan_11_features->multiview = VK_TRUE;
+    	VkPhysicalDeviceMultiviewFeatures *required_physical_device_multiview_features = new VkPhysicalDeviceMultiviewFeatures();
+		required_physical_device_multiview_features->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES;
+		required_physical_device_multiview_features->multiview = VK_TRUE;
 
         void* p_next;
         // AmdFsr can be run in F32 or F16, in the latter storageBuffer16BitAccess and shaderFloat16 need to be enabled
         if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE && engine_options.fsr_settings.precision == AmdFsr::Precision::FP16) {
-            required_physical_device_vulkan_11_features->storageBuffer16BitAccess = VK_TRUE;
+            VkPhysicalDevice16BitStorageFeatures *physical_device_16_bit_storage_features = new VkPhysicalDevice16BitStorageFeatures();
+            physical_device_16_bit_storage_features->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES;
+            physical_device_16_bit_storage_features->pNext = required_physical_device_multiview_features;
+            physical_device_16_bit_storage_features->storageBuffer16BitAccess = VK_TRUE;
 
             VkPhysicalDeviceShaderFloat16Int8FeaturesKHR *physical_device_shader_float_16_int_8_features = new VkPhysicalDeviceShaderFloat16Int8FeaturesKHR({
-                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR,
-                required_physical_device_vulkan_11_features,
-                VK_TRUE, // shaderFloat16
-                VK_FALSE // shaderInt8
+					VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR,
+					physical_device_16_bit_storage_features,
+					VK_TRUE, // shaderFloat16
+                	VK_FALSE // shaderInt8
             });
             p_next = physical_device_shader_float_16_int_8_features;
         }
         else {
-            p_next = required_physical_device_vulkan_11_features;
+            p_next = required_physical_device_multiview_features;
         }
 
         VkPhysicalDeviceDescriptorIndexingFeaturesEXT *required_physical_device_indexing_features = new VkPhysicalDeviceDescriptorIndexingFeaturesEXT();
@@ -276,19 +282,18 @@ void GraphicsModuleVulkanApp::create_sets_layouts() {
     vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &light_data_set_layout);
 }
 
-void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models) {
-    objects.resize(gltf_models.size());
+void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string, glm::mat4>> model_file_matrix) {
+    std::vector<GltfModel> gltf_models;
 
     // Get the total size of the models to allocate a buffer for it and copy them to host memory
     uint64_t models_total_size = 0;
-    for (uint32_t i = 0; i < gltf_models.size(); i++) {
-        objects[i].model = gltf_models[i];
-        objects[i].model.copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true,true,
-                                              GltfModel::t_model_attributes::T_ALL, nullptr  );
-        if (objects[i].model.get_last_copy_image_layers() != 4) {
-            throw(std::make_pair(-1, vulkan_helper::Error::LOADED_MODEL_IS_NOT_PBR));
-        }
-        models_total_size += objects[i].model.get_last_copy_total_size();
+    for (uint32_t i = 0; i < model_file_matrix.size(); i++) {
+		gltf_models.push_back(GltfModel(model_file_matrix[i].first));
+		auto infos = gltf_models.back().copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true, true,
+                                              GltfModel::t_model_attributes::T_ALL, nullptr);
+
+		vk_models.emplace_back(VkModel(device, model_file_matrix[i].first, infos, model_file_matrix[i].second));
+        models_total_size += vk_models.back().get_all_primitives_total_size();
     }
 
     VkBuffer host_model_data_buffer = VK_NULL_HANDLE;
@@ -301,16 +306,16 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     // After getting a pointer for the host memory, we iterate once again in the models to copy them to memory and store some information about them
     uint64_t offset = 0;
     uint64_t mesh_and_index_data_size = 0;
-    for (uint32_t i=0; i < objects.size(); i++) {
-        objects[i].model.copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true, true,
+    for (uint32_t i=0; i < gltf_models.size(); i++) {
+        gltf_models[i].copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true, true,
                                                 GltfModel::t_model_attributes::T_ALL, static_cast<uint8_t*>(model_host_data_pointer) + offset);
-        offset += objects[i].model.get_last_copy_total_size();
-        mesh_and_index_data_size += objects[i].model.get_last_copy_mesh_and_index_data_size();
+        offset += vk_models[i].get_all_primitives_total_size();
+        mesh_and_index_data_size += vk_models[i].get_all_primitives_mesh_and_indices_size();
     }
     vmaUnmapMemory(this->vma_allocator, host_model_data_transient_allocation);
 
     // After creating memory and buffer for the model data, we need to create a uniform buffer and their memory
-    uint64_t uniform_size = vulkan_helper::get_aligned_memory_size(objects.front().model.copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) * objects.size();
+    uint64_t uniform_size = vulkan_helper::get_aligned_memory_size(vk_models.front().copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) * vk_models.size();
     create_buffer(host_model_uniform_buffer, uniform_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     allocate_and_bind_to_memory_buffer(host_model_uniform_allocation, host_model_uniform_buffer, VMA_MEMORY_USAGE_CPU_ONLY);
     vmaMapMemory(this->vma_allocator, host_model_uniform_allocation, &host_model_uniform_buffer_ptr);
@@ -321,65 +326,13 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     // We also need to create a device buffer for the model's uniform
     create_buffer(device_model_uniform_buffer, uniform_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 
-    // We must also create an image for the textures of every object along with their samplers, after destroying the precedent images and samplers
-    for (auto &device_model_image : device_model_images) {
-        vkDestroyImage(device, device_model_image, nullptr);
-    }
-    device_model_images.clear();
-
-    for(auto &model_image_sampler : model_image_samplers) {
-        vkDestroySampler(device, model_image_sampler, nullptr);
-    }
-    model_image_samplers.clear();
-
-    for (uint32_t i=0; i<objects.size(); i++) {
-        if (objects[i].model.get_last_copy_texture_size()) {
-            uint32_t mipmap_levels = vulkan_helper::get_mipmap_count(objects[i].model.get_last_copy_image_extent());
-
-            device_model_images.push_back(VK_NULL_HANDLE);
-            create_image(device_model_images.back(), VK_FORMAT_R8G8B8A8_UNORM, objects[i].model.get_last_copy_image_extent(), objects[i].model.get_last_copy_image_layers(),
-                         mipmap_levels, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-
-            model_image_samplers.push_back(VK_NULL_HANDLE);
-            VkSamplerCreateInfo sampler_create_info = {
-                    VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                    nullptr,
-                    0,
-                    VK_FILTER_LINEAR,
-                    VK_FILTER_LINEAR,
-                    VK_SAMPLER_MIPMAP_MODE_LINEAR,
-                    VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                    VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                    VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                    amd_fsr ? amd_fsr->get_negative_mip_bias() : 0.0f,
-                    VK_TRUE,
-                    16.0f,
-                    VK_FALSE,
-                    VK_COMPARE_OP_ALWAYS,
-                    0.0f,
-                    static_cast<float>(mipmap_levels),
-                    VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
-                    VK_FALSE,
-            };
-            check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &model_image_samplers.back()), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
-        }
-    }
 	std::vector<VmaAllocation> out_allocations = {device_mesh_data_allocation, device_model_uniform_allocation};
-	out_allocations.insert(out_allocations.begin(), device_model_images_allocations.begin(), device_model_images_allocations.end());
-    allocate_and_bind_to_memory(out_allocations, {device_mesh_data_buffer, device_model_uniform_buffer}, device_model_images, VMA_MEMORY_USAGE_GPU_ONLY);
+    allocate_and_bind_to_memory(out_allocations, {device_mesh_data_buffer, device_model_uniform_buffer}, {}, VMA_MEMORY_USAGE_GPU_ONLY);
     device_mesh_data_allocation = out_allocations[0];
     device_model_uniform_allocation = out_allocations[1];
-    device_model_images_allocations = std::vector<VmaAllocation>(out_allocations.begin() + 2, out_allocations.end());
 
-    // After the buffer and the images have been allocated and binded, we create the image views with 4 layers for every image
-    for (auto& device_model_image_view : device_model_images_views) {
-        vkDestroyImageView(device, device_model_image_view, nullptr);
-    }
-    device_model_images_views.clear();
-
-    device_model_images_views.resize(device_model_images.size());
-    for (uint32_t i=0; i<device_model_images.size(); i++) {
-        create_image_view(device_model_images_views[i], device_model_images[i], VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 0, objects[i].model.get_last_copy_image_layers());
+    for (uint32_t i = 0; i < vk_models.size(); i++) {
+    	vk_models[i].vk_create_images(amd_fsr ? amd_fsr->get_negative_mip_bias() : 0.0f, vma_allocator);
     }
 
     // After setting the required memory we register the command buffer to upload the data
@@ -394,120 +347,32 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<GltfModel> gltf_models
     // We calculate the offset for the mesh data both in the host and device buffers and register the copy
     uint64_t src_offset = 0;
     uint64_t dst_offset = 0;
-    std::vector<VkBufferCopy> buffer_copies(objects.size());
-    for (uint32_t i=0; i<buffer_copies.size(); i++) {
-        objects[i].data_buffer = device_mesh_data_buffer;
+    std::vector<VkBufferCopy> buffer_copies;
+	for (uint32_t i = 0; i < vk_models.size(); i++) {
+		for (uint32_t j = 0; j < vk_models[i].device_primitives_data_info.size(); j++) {
+			vk_models[i].device_primitives_data_info[j].data_buffer = device_mesh_data_buffer;
 
-        buffer_copies[i].srcOffset = src_offset;
-        src_offset += objects[i].model.get_last_copy_total_size();
+			VkBufferCopy buffer_copy;
+			buffer_copy.srcOffset = src_offset;
+			src_offset += vk_models[i].host_primitives_data_info[j].get_total_size();
 
-        buffer_copies[i].dstOffset = dst_offset;
-        objects[i].mesh_data_offset = dst_offset;
-        objects[i].index_data_offset = dst_offset + objects[i].model.get_last_copy_mesh_size();
-        dst_offset += objects[i].model.get_last_copy_mesh_and_index_data_size();
+			buffer_copy.dstOffset = dst_offset;
+			vk_models[i].device_primitives_data_info[j].primitive_vertices_data_offset = dst_offset;
+			vk_models[i].device_primitives_data_info[j].index_data_offset = dst_offset + vk_models[i].host_primitives_data_info[j].interleaved_vertices_data_size;
+			dst_offset += vk_models[i].host_primitives_data_info[j].get_mesh_and_index_data_size();
 
-        buffer_copies[i].size = objects[i].model.get_last_copy_mesh_and_index_data_size();
-    }
+			buffer_copy.size = vk_models[i].host_primitives_data_info[j].get_mesh_and_index_data_size();
+
+			buffer_copies.push_back(buffer_copy);
+		}
+	}
     vkCmdCopyBuffer(command_buffers[0], host_model_data_buffer, device_mesh_data_buffer, buffer_copies.size(), buffer_copies.data());
 
-    // We need to transition all layers and first mipmap of the device images to DST_OPTIMAL
-    std::vector<VkImageMemoryBarrier> image_memory_barriers(device_model_images.size());
-    for (uint32_t i=0; i<image_memory_barriers.size(); i++) {
-        image_memory_barriers[i] = {
-            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            nullptr,
-            0,
-            VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_QUEUE_FAMILY_IGNORED,
-            VK_QUEUE_FAMILY_IGNORED,
-            device_model_images[i],
-            {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
-        };
-    }
-    vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
+	dst_offset = 0;
+	for (uint32_t i = 0; i < vk_models.size(); i++) {
+		dst_offset = vk_models[i].vk_init_images(command_buffers[0], host_model_data_buffer, dst_offset);
+	}
 
-    // We perform the copy from the host buffer to the device images
-    uint64_t image_data_offset = 0;
-    for (uint32_t i=0; i<device_model_images.size(); i++) {
-        image_data_offset += objects[i].model.get_last_copy_mesh_and_index_data_size();
-        VkBufferImageCopy buffer_image_copy = {
-            image_data_offset,
-            0,
-            0,
-            {VK_IMAGE_ASPECT_COLOR_BIT,0,0,4},
-            {0,0,0},
-            objects[i].model.get_last_copy_image_extent()
-        };
-        image_data_offset += objects[i].model.get_last_copy_texture_size();
-        vkCmdCopyBufferToImage(command_buffers[0], host_model_data_buffer, device_model_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
-    }
-
-    // After copying the images we need to generate the mipmaps
-    for (uint32_t i=0; i < image_memory_barriers.size(); i++) {
-        VkImageMemoryBarrier image_memory_barrier;
-        image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        image_memory_barrier.pNext = nullptr;
-
-        image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        image_memory_barrier.image = device_model_images[i];
-
-        image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        image_memory_barrier.subresourceRange.levelCount = 1;
-        image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-        image_memory_barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-        VkOffset3D mip_size = { static_cast<int32_t>(objects[i].model.get_last_copy_image_extent().width),
-                                static_cast<int32_t>(objects[i].model.get_last_copy_image_extent().height),
-                                static_cast<int32_t>(objects[i].model.get_last_copy_image_extent().depth)};
-
-        // We first transition the j-1 mipmap level to SRC_OPTIMAL, perform the copy to the j mipmap level and transition j-1 to SHADER_READ_ONLY
-        for (uint32_t j = 1; j < vulkan_helper::get_mipmap_count(objects[i].model.get_last_copy_image_extent()); j++) {
-            image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            image_memory_barrier.subresourceRange.baseMipLevel = j - 1;
-            vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
-
-            VkImageBlit image_blit {
-                {VK_IMAGE_ASPECT_COLOR_BIT, j - 1, 0, objects[i].model.get_last_copy_image_layers()},
-                {{ 0, 0, 0 }, mip_size},
-                {VK_IMAGE_ASPECT_COLOR_BIT, j, 0, objects[i].model.get_last_copy_image_layers()},
-                {{ 0, 0, 0 }, mip_size.x > 1 ? mip_size.x / 2 : 1, mip_size.y > 1 ? mip_size.y / 2 : 1, 1}
-            };
-            vkCmdBlitImage(command_buffers[0], device_model_images[i], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, device_model_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_blit, VK_FILTER_LINEAR);
-
-            image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
-
-            if (mip_size.x > 1) mip_size.x /= 2;
-            if (mip_size.y > 1) mip_size.y /= 2;
-        }
-    }
-
-    // After the copy we need to transition the last mipmap level (which is still in DST_OPTIMAL) to be shader ready
-    for (uint32_t i=0; i<image_memory_barriers.size(); i++) {
-        image_memory_barriers[i] = {
-            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            nullptr,
-            VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_ACCESS_SHADER_READ_BIT,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_QUEUE_FAMILY_IGNORED,
-            VK_QUEUE_FAMILY_IGNORED,
-            device_model_images[i],
-            {VK_IMAGE_ASPECT_COLOR_BIT, vulkan_helper::get_mipmap_count(objects[i].model.get_last_copy_image_extent()) - 1,
-             1, 0, VK_REMAINING_ARRAY_LAYERS}
-        };
-    }
-    vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
     vkEndCommandBuffer(command_buffers[0]);
 
     // After registering the command we create a fence and submit the command_buffer
@@ -548,7 +413,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     std::vector<VkBuffer> device_buffers_to_allocate;
     std::vector<VkImage> device_images_to_allocate;
 
-    // We create the device buffer that is gonna hold camera and lights information
+    // We create the device buffer that is going to hold camera and lights information
     create_buffer(device_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     device_buffers_to_allocate.push_back(device_camera_lights_uniform_buffer);
 
@@ -646,13 +511,19 @@ void GraphicsModuleVulkanApp::init_renderer() {
 
 void GraphicsModuleVulkanApp::write_descriptor_sets() {
     // Then we get all the required descriptors and request a single pool
+    uint64_t all_primitives_count = 0;
+    for (uint64_t i = 0; i < vk_models.size(); i++) {
+		all_primitives_count += vk_models[i].device_primitives_data_info.size();
+    }
+
+    // uniform buffer is for the camera, the storage buffer is for the lights
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> sets_elements_required = {
             {
-                    {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 + objects.size()},
-                    {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_SHADOWED_LIGHTS + objects.size()},
+                    {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 + all_primitives_count},
+                    {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_SHADOWED_LIGHTS + all_primitives_count},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}
             },
-            static_cast<uint32_t>(1 + 1 + objects.size())
+            static_cast<uint32_t>(1 + 1 + all_primitives_count)
     };
 
     vulkan_helper::insert_or_sum(sets_elements_required, vsm_context.get_required_descriptor_pool_size_and_sets());
@@ -688,7 +559,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     std::vector<VkDescriptorSetLayout> layouts_of_sets;
     layouts_of_sets.push_back(camera_data_set_layout);
     layouts_of_sets.push_back(light_data_set_layout);
-    layouts_of_sets.insert(layouts_of_sets.end(), objects.size(), pbr_model_data_set_layout);
+    layouts_of_sets.insert(layouts_of_sets.end(), all_primitives_count, pbr_model_data_set_layout);
 
     descriptor_sets.resize(layouts_of_sets.size());
     VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
@@ -701,7 +572,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     check_error(vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, descriptor_sets.data()), vulkan_helper::Error::DESCRIPTOR_SET_ALLOCATION_FAILED);
 
     // After we write the descriptor sets for camera, lights and objects
-    std::vector<VkWriteDescriptorSet> write_descriptor_set(1 + 2 + 2 * objects.size());
+    std::vector<VkWriteDescriptorSet> write_descriptor_set(1 + 2);
 
     // First we do the camera
     VkDescriptorBufferInfo camera_descriptor_buffer_info = {
@@ -766,51 +637,22 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     };
 
     // Lastly, the objects
-    std::vector<VkDescriptorBufferInfo> object_descriptor_buffer_infos(objects.size());
-    for(uint32_t i = 0, offset = 0; i<objects.size(); i++) {
-        object_descriptor_buffer_infos[i] = {
-                device_model_uniform_buffer,
-                offset,
-                vulkan_helper::get_aligned_memory_size(objects[i].model.copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment)
-        };
-        offset += object_descriptor_buffer_infos[i].range;
-    }
-    std::vector<VkDescriptorImageInfo> object_descriptor_image_infos(objects.size());
-    for(uint32_t i = 0; i<objects.size(); i++) {
-        object_descriptor_image_infos[i] = {
-                model_image_samplers[i],
-                device_model_images_views[i],
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        };
-    }
-
-    for (uint32_t i=0; i<objects.size(); i++) {
-        write_descriptor_set[2*i+3] = {
-                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                nullptr,
-                descriptor_sets[i+2],
-                0,
-                0,
-                1,
-                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                nullptr,
-                &object_descriptor_buffer_infos[i],
-                nullptr
-        };
-        write_descriptor_set[2*i+4] = {
-                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                nullptr,
-                descriptor_sets[i+2],
-                1,
-                0,
-                1,
-                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                &object_descriptor_image_infos[i],
-                nullptr,
-                nullptr
-        };
+    auto it = descriptor_sets.begin() + 2;
+    for (uint32_t i = 0, offset = 0; i < vk_models.size(); i++) {
+    	auto vk_model_write_descriptor_sets = vk_models[i].get_descriptor_writes({ it, vk_models[i].device_primitives_data_info.size() },
+						device_model_uniform_buffer, offset,
+						physical_device_properties.limits.minUniformBufferOffsetAlignment);
+    	it += vk_models[i].device_primitives_data_info.size();
+    	offset += vk_models[i].copy_uniform_data(nullptr);
+    	write_descriptor_set.insert(write_descriptor_set.end(), vk_model_write_descriptor_sets.begin(), vk_model_write_descriptor_sets.end());
     }
     vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
+
+    auto it2 = write_descriptor_set.begin() + 3;
+    for (uint32_t i = 0; i < vk_models.size(); i++) {
+    	vk_models[i].clean_descriptor_writes({ it2, 2 });
+    	it2 += vk_models[i].device_primitives_data_info.size() * 2;
+    }
 }
 
 void GraphicsModuleVulkanApp::record_command_buffers() {
@@ -820,14 +662,14 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr };
         vkBeginCommandBuffer(command_buffers[i], &command_buffer_begin_info);
 
-        VkBufferCopy buffer_copy = { 0,0,vulkan_helper::get_aligned_memory_size(objects.front().model.copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) * objects.size()};
+        VkBufferCopy buffer_copy = { 0,0,vulkan_helper::get_aligned_memory_size(vk_models.front().copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) * vk_models.size()};
         vkCmdCopyBuffer(command_buffers[i], host_model_uniform_buffer, device_model_uniform_buffer, 1, &buffer_copy);
 
         buffer_copy = {0,0, vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
                             lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()};
         vkCmdCopyBuffer(command_buffers[i], host_camera_lights_uniform_buffer, device_camera_lights_uniform_buffer, 1, &buffer_copy);
 
-        // Transitioning layout from the write to the shader read
+        // Transitioning layout from write to shader read
         std::array<VkBufferMemoryBarrier,2> buffer_memory_barriers;
         buffer_memory_barriers[0] = {
                 VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -854,8 +696,8 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
         vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, nullptr, 2, buffer_memory_barriers.data(), 0, nullptr);
 
         std::vector<VkDescriptorSet> object_descriptor_sets(descriptor_sets.begin() + 2, descriptor_sets.end());
-        vsm_context.record_into_command_buffer(command_buffers[i], object_descriptor_sets, descriptor_sets[1], objects);
-        pbr_context.record_into_command_buffer(command_buffers[i], descriptor_sets[0], descriptor_sets[1], object_descriptor_sets, objects);
+        vsm_context.record_into_command_buffer(command_buffers[i], descriptor_sets[1], vk_models);
+        pbr_context.record_into_command_buffer(command_buffers[i], descriptor_sets[0], descriptor_sets[1], vk_models);
         smaa_context.record_into_command_buffer(command_buffers[i]);
 
         // TODO: here remove the true and replace with attribute from the class
@@ -923,9 +765,9 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
             offset += lights_container[i].copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data) + offset);
         }
 
-        for(uint32_t i = 0, offset = 0; i < objects.size(); i++) {
-            objects[i].model.copy_uniform_data(static_cast<uint8_t*>(host_model_uniform_buffer_ptr) + offset);
-            offset += vulkan_helper::get_aligned_memory_size(objects[i].model.copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment);
+        for(uint32_t i = 0, offset = 0; i < vk_models.size(); i++) {
+            vk_models[i].copy_uniform_data(static_cast<uint8_t*>(host_model_uniform_buffer_ptr) + offset);
+            offset += vulkan_helper::get_aligned_memory_size(vk_models[i].copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment);
         }
 
         uint32_t image_index = 0;
@@ -1006,26 +848,14 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
 
     vkDestroySampler(device, max_aniso_linear_sampler, nullptr);
 
-    for(auto &model_image_sampler : model_image_samplers) {
-        vkDestroySampler(device, model_image_sampler, nullptr);
-    }
-    model_image_samplers.clear();
-
     // Model uniform related things freed
     vmaUnmapMemory(this->vma_allocator, host_model_uniform_allocation);
     vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
     vmaFreeMemory(this->vma_allocator, host_model_uniform_allocation);
 
     // Model related things freed
-    for (auto& device_model_image_view : device_model_images_views) {
-        vkDestroyImageView(device, device_model_image_view, nullptr);
-    }
-    for (auto& device_model_image : device_model_images) {
-        vkDestroyImage(device, device_model_image, nullptr);
-    }
-    for (auto& allocation : device_model_images_allocations) {
-        vmaFreeMemory(this->vma_allocator, allocation);
-    }
+    vk_models.clear();
+
     vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
     vmaFreeMemory(this->vma_allocator, device_mesh_data_allocation);
     vkDestroyBuffer(device, device_model_uniform_buffer, nullptr);
@@ -1152,7 +982,6 @@ void GraphicsModuleVulkanApp::allocate_and_bind_to_memory_image(VmaAllocation &o
                 vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
 
     check_error(vmaBindImageMemory(this->vma_allocator, out_allocation, image), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
-
 }
 
 void GraphicsModuleVulkanApp::submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags pipeline_stage_flags,

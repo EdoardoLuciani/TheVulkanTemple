@@ -56,20 +56,26 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     app->get_camera_ptr()->dir = glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar)));
 
     // Other things
-    app->get_light_ptr(1)->set_pos(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir*0.1f);
-    app->get_light_ptr(1)->set_dir(app->get_camera_ptr()->dir);
-
     app->get_light_ptr(0)->set_color(glm::vec3(5.0f*glm::clamp(glm::cos(glfwGetTime()/2), 0.0, 1.0)));
 
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
         glm::mat4 ball_3_m_matrix = glm::translate(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir)*glm::scale(glm::vec3(0.2f));
         app->get_gltf_model_ptr(6)->set_model_matrix(ball_3_m_matrix);
     }
+
+	app->get_light_ptr(1)->set_pos(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir*0.1f);
+	app->get_light_ptr(1)->set_dir(app->get_camera_ptr()->dir);
+	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
+		app->get_light_ptr(1)->set_color(glm::vec3(0.0f));
+	}
+	else {
+		app->get_light_ptr(1)->set_color({17.0f, 7.0f, 13.0f});
+	}
 }
 
 int main() {
     EngineOptions options;
-    options.fsr_settings.preset = AmdFsr::Preset::ULTRA_QUALITY;
+    options.fsr_settings.preset = AmdFsr::Preset::NONE;
 	options.fsr_settings.precision = AmdFsr::Precision::FP16;
   
 	try {

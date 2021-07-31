@@ -73,8 +73,14 @@ void main() {
     // ambient value is 0.02
     vec3 ambient = vec3(0.02) * albedo;
 
+    // If the layers are 4 then the last one is the emissive
+    vec3 emissive = vec3(0.0f);
+    if (textureSize(images, 0).z == 4) {
+        emissive = vec3(texture(images,vec3(fs_in.tex_coord, 3)));
+    }
+
     // final color is composed of ambient, diffuse, specular and emissive
-    vec3 color = ambient + rho + vec3(texture(images,vec3(fs_in.tex_coord, 3)));
+    vec3 color = ambient + rho + emissive;
 
     // gamma correction is applied in the tonemap stage
     frag_color = vec4(color, 1.0);

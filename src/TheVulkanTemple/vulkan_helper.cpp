@@ -141,29 +141,23 @@ namespace vulkan_helper
         new_physical_device_struct_chain->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         void *new_chain_ptr = new_physical_device_struct_chain;
 
+		#define CREATE_STRUCT_CASE(sTypeCode, Type) { case sTypeCode: { \
+			new_node = new Type; \
+			reinterpret_cast<Type*>(new_node)->sType = sTypeCode; \
+			reinterpret_cast<Type*>(new_node)->pNext = nullptr; \
+			break; }                                                \
+		}
+
         void *new_node;
         while (requested_chain_ptr) {
             switch(*reinterpret_cast<const int*>(requested_chain_ptr)) {
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT: {
-                    new_node = new VkPhysicalDeviceDescriptorIndexingFeaturesEXT;
-                    reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(new_node)->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
-                    reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(new_node)->pNext = nullptr;
-                    break;
-                }
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR: {
-                    new_node = new VkPhysicalDeviceShaderFloat16Int8FeaturesKHR;
-                    reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(new_node)->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR;
-                    reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(new_node)->pNext = nullptr;
-                    break;
-                }
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
-                    new_node = new VkPhysicalDeviceVulkan11Features;
-                    reinterpret_cast<VkPhysicalDeviceVulkan11Features*>(new_node)->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-                    reinterpret_cast<VkPhysicalDeviceVulkan11Features*>(new_node)->pNext = nullptr;
-                    break;
-                }
+                CREATE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT, VkPhysicalDeviceDescriptorIndexingFeaturesEXT)
+                CREATE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR, VkPhysicalDeviceShaderFloat16Int8FeaturesKHR)
+                CREATE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, VkPhysicalDeviceVulkan11Features)
+                CREATE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES, VkPhysicalDeviceMultiviewFeatures)
+                CREATE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES, VkPhysicalDevice16BitStorageFeatures)
                 default:
-                    return new_physical_device_struct_chain;
+                	return new_physical_device_struct_chain;
             }
             reinterpret_cast<VkPhysicalDeviceFeatures2*>(new_chain_ptr)->pNext = new_node;
             new_chain_ptr = reinterpret_cast<const VkPhysicalDeviceFeatures2*>(new_chain_ptr)->pNext;
@@ -181,23 +175,20 @@ namespace vulkan_helper
         const void *p_next_base = base.pNext;
         const void *p_next_requested = requested.pNext;
 
+		#define COMPARE_STRUCT_CASE(sTypeCode, Type) { case sTypeCode: \
+			if (!compare_device_features_struct(p_next_base, p_next_requested, sizeof(Type))) { \
+        		return VK_FALSE; \
+    		} \
+        	break; \
+        }
+
         while (p_next_base != nullptr && p_next_requested != nullptr) {
             switch(*reinterpret_cast<const int*>(p_next_base)) {
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT:
-                    if (!compare_device_features_struct(p_next_base, p_next_requested, sizeof(VkPhysicalDeviceDescriptorIndexingFeaturesEXT))) {
-                        return VK_FALSE;
-                    }
-                    break;
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR:
-                    if (!compare_device_features_struct(p_next_base, p_next_requested, sizeof(VkPhysicalDeviceShaderFloat16Int8FeaturesKHR))) {
-                        return VK_FALSE;
-                    }
-                    break;
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
-                    if (!compare_device_features_struct(p_next_base, p_next_requested, sizeof(VkPhysicalDeviceVulkan11Features))) {
-                        return VK_FALSE;
-                    }
-                    break;
+                COMPARE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT, VkPhysicalDeviceDescriptorIndexingFeaturesEXT)
+                COMPARE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR, VkPhysicalDeviceShaderFloat16Int8FeaturesKHR)
+                COMPARE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, VkPhysicalDeviceVulkan11Features)
+                COMPARE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES, VkPhysicalDeviceMultiviewFeatures)
+                COMPARE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES, VkPhysicalDevice16BitStorageFeatures)
             }
             p_next_base = reinterpret_cast<const VkPhysicalDeviceFeatures2*>(p_next_base)->pNext;
             p_next_requested = reinterpret_cast<const VkPhysicalDeviceFeatures2*>(p_next_requested)->pNext;
@@ -206,30 +197,24 @@ namespace vulkan_helper
     }
 
     void free_physical_device_feature_struct_chain(VkPhysicalDeviceFeatures2 *ptr) {
-        void *pNext = ptr;
-        void *p_next_tmp;
+    	void *pNext = ptr;
+    	void *p_next_tmp;
+
+	#define FREE_STRUCT_CASE(sTypeCode, Type) { case sTypeCode: \
+		p_next_tmp = pNext; \
+		pNext = reinterpret_cast<Type*>(pNext)->pNext; \
+		delete reinterpret_cast<Type*>(p_next_tmp); \
+		break; \
+    }
+
         while (pNext != nullptr) {
             switch(*reinterpret_cast<const int*>(pNext)) {
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2:
-                    p_next_tmp = pNext;
-                    pNext = reinterpret_cast<VkPhysicalDeviceFeatures2*>(pNext)->pNext;
-                    delete reinterpret_cast<VkPhysicalDeviceFeatures2*>(p_next_tmp);
-                    break;
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT:
-                    p_next_tmp = pNext;
-                    pNext = reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(pNext)->pNext;
-                    delete reinterpret_cast<VkPhysicalDeviceDescriptorIndexingFeaturesEXT*>(p_next_tmp);
-                    break;
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR:
-                    p_next_tmp = pNext;
-                    pNext = reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(pNext)->pNext;
-                    delete reinterpret_cast<VkPhysicalDeviceShaderFloat16Int8FeaturesKHR*>(p_next_tmp);
-                    break;
-                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
-                    p_next_tmp = pNext;
-                    pNext = reinterpret_cast<VkPhysicalDeviceVulkan11Features*>(pNext)->pNext;
-                    delete reinterpret_cast<VkPhysicalDeviceVulkan11Features*>(p_next_tmp);
-                    break;
+            	FREE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, VkPhysicalDeviceFeatures2)
+            	FREE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT, VkPhysicalDeviceDescriptorIndexingFeaturesEXT)
+            	FREE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR, VkPhysicalDeviceShaderFloat16Int8FeaturesKHR)
+            	FREE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, VkPhysicalDeviceVulkan11Features)
+            	FREE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES, VkPhysicalDeviceMultiviewFeatures)
+            	FREE_STRUCT_CASE(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES, VkPhysicalDevice16BitStorageFeatures)
             }
         }
     }

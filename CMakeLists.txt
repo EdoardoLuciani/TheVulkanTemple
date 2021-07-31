@@ -6,7 +6,7 @@ set(USE_WAYLAND "FALSE" CACHE BOOL "Use Wayland instead of X11, matters only on 
 
 # Adding compile definitions and options
 add_library(compiler_flags INTERFACE)
-target_compile_features(compiler_flags INTERFACE cxx_std_17)
+target_compile_features(compiler_flags INTERFACE cxx_std_20)
 if (WIN32)
     target_compile_definitions(compiler_flags INTERFACE "VK_USE_PLATFORM_WIN32_KHR")
     target_compile_definitions(compiler_flags INTERFACE "GLFW_EXPOSE_NATIVE_WIN32")
@@ -72,7 +72,8 @@ add_library(engine OBJECT
         ${ENGINE_SRC_DIR}/light.h
         ${ENGINE_SRC_DIR}/gltf_model.cpp
         ${ENGINE_SRC_DIR}/gltf_model.h
-)
+        ${ENGINE_SRC_DIR}/vk_model.cpp
+        ${ENGINE_SRC_DIR}/vk_model.h)
 
 target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
 target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})

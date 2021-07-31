@@ -30,8 +30,7 @@ public:
                           VkDescriptorSetLayout pbr_model_set_layout, VkDescriptorSetLayout light_set_layout);
     void init_resources();
     void allocate_descriptor_sets(VkDescriptorPool descriptor_pool);
-    void record_into_command_buffer(VkCommandBuffer command_buffer, std::vector<VkDescriptorSet> object_data_set,
-                                    VkDescriptorSet light_data_set, const std::vector<vk_object_render_info> &object_render_info);
+    void record_into_command_buffer(VkCommandBuffer command_buffer, VkDescriptorSet light_data_set, const std::vector<VkModel> &vk_models);
 private:
     VkDevice device = VK_NULL_HANDLE;
     VkSampler device_render_target_sampler = VK_NULL_HANDLE;

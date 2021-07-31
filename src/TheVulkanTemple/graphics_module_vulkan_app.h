@@ -40,7 +40,7 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         ~GraphicsModuleVulkanApp();
 
 		// Directly copy data from disk to VRAM
-		void load_3d_objects(std::vector<GltfModel> gltf_models);
+		void load_3d_objects(std::vector<std::pair<std::string, glm::mat4>> model_file_matrix);
         void load_lights(std::vector<Light> &&lights);
         void set_camera(Camera &&camera);
         void init_renderer();
@@ -51,14 +51,14 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         // Methods to manage the scene objects
         Camera* get_camera_ptr() { return &camera; };
         const Light* get_light_ptr(uint32_t idx) { return &lights_container.at(idx); };
-        GltfModel* get_gltf_model_ptr(uint32_t idx) { return &objects.at(idx).model; };
+        VkModel* get_gltf_model_ptr(uint32_t idx) { return &vk_models.at(idx); };
     private:
         EngineOptions engine_options;
 		VkExtent2D rendering_resolution;
         VmaAllocator vma_allocator;
         VkSampler max_aniso_linear_sampler;
 
-        std::vector<vk_object_render_info> objects;
+        std::vector<VkModel> vk_models;
         // Model uniform data
         VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
         VmaAllocation host_model_uniform_allocation = VK_NULL_HANDLE;
@@ -68,12 +68,12 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         // Models data
         VkBuffer device_mesh_data_buffer = VK_NULL_HANDLE;
         VmaAllocation device_mesh_data_allocation = VK_NULL_HANDLE;
-        std::vector<VkImage> device_model_images;
-        std::vector<VmaAllocation> device_model_images_allocations;
-        std::vector<VkImageView> device_model_images_views;
-        std::vector<VkSampler> model_image_samplers;
+        //std::vector<VkImage> device_model_images;
+        //std::vector<VmaAllocation> device_model_images_allocations;
+        //std::vector<VkImageView> device_model_images_views;
+        //std::vector<VkSampler> model_image_samplers;
 
-        // Conteiner that makes possible to iterate through shadowed and non shadowed lights separately while also indexing them randomly
+        // Conteiner that makes possible to iterate through shadowed and non-shadowed lights separately while also indexing them randomly
         typedef boost::multi_index_container<
             Light,
             boost::multi_index::indexed_by<

@@ -16,7 +16,7 @@ class PbrContext {
 
         void set_output_images(VkExtent2D screen_res, VkImageView out_depth_image, VkImageView out_color_image, VkImageView out_normal_image);
         void record_into_command_buffer(VkCommandBuffer command_buffer, VkDescriptorSet camera_descriptor_set, VkDescriptorSet light_descriptor_set,
-                                        const std::vector<VkDescriptorSet> &object_descriptor_sets, const std::vector<vk_object_render_info> &object_render_info);
+				const std::vector<VkModel> &vk_models);
 
     private:
         VkDevice device = VK_NULL_HANDLE;

@@ -1,4 +1,5 @@
 #include "gltf_model.h"
+#include <unordered_map>
 #define TINYGLTF_IMPLEMENTATION
 #define TINYGLTF_USE_CPP14
 #define STB_IMAGE_IMPLEMENTATION
@@ -6,163 +7,130 @@
 #include "external/tiny_gltf.h"
 #include <array>
 
-GltfModel::GltfModel(std::string model_path, glm::mat4 model_matrix) {
-    this->set_model_matrix(model_matrix);
-
+GltfModel::GltfModel(std::string model_path) {
     std::string err, warn;
     if (!loader.LoadBinaryFromFile(&model, &err, &warn, model_path)) {
         throw gltf_errors::LOADING_FAILED;
     }
 
     // We need the strings in order to access each attribute
-    std::array<const char*,4> v_model_attributes_string {
-            "POSITION",
-            "TEXCOORD_0",
-            "NORMAL",
-            "TANGENT"
+    std::unordered_map<std::string, uint32_t> v_model_attributes_and_size {
+			{"POSITION", 12},
+			{"TEXCOORD_0", 8},
+			{"NORMAL", 12},
+			{"TANGENT", 16},
     };
 
-    // We set the element size for each attribute, index will receive its element size later on
-    attributes[0].element_size = 12; // vec3
-    attributes[1].element_size = 8; // vec2
-    attributes[2].element_size = 12; // vec3
-    attributes[3].element_size = 16; // vec4
-
     // We read the data from the file and store it
-    for (uint8_t i=0; i < v_model_attributes_string.size(); i++) {
-        auto it = model.meshes[0].primitives[0].attributes.find(v_model_attributes_string[i]);
-            if (it != model.meshes[0].primitives[0].attributes.end()) {
-                attributes[i].byte_offset = model.accessors[it->second].byteOffset;
-                attributes[i].byte_offset += model.bufferViews[model.accessors[it->second].bufferView].byteOffset;
-                attributes[i].byte_lenght = model.bufferViews[model.accessors[it->second].bufferView].byteLength;
-                attributes[i].element_count = attributes[i].byte_lenght / attributes[i].element_size;
-        }
-    }
+	primitive_attributes.resize(model.meshes[0].primitives.size());
 
-    // We read the indices data and store it
-    int acc_indices = model.meshes[0].primitives[0].indices;
-    if (acc_indices != -1) {
-        attributes[4].byte_offset = model.accessors[acc_indices].byteOffset;
-        attributes[4].byte_offset += model.bufferViews[model.accessors[acc_indices].bufferView].byteOffset;
-        attributes[4].byte_lenght = model.bufferViews[model.accessors[acc_indices].bufferView].byteLength;
-        attributes[4].element_size = model.accessors[acc_indices].componentType - 5121;
-        attributes[4].element_count = attributes[4].byte_lenght / attributes[4].element_size;
-    }
+    for (uint32_t i = 0; i < primitive_attributes.size(); i++) {
+    	// Reading the attributes POSITION, TEXCOORD_0, NORMAL and TANGENT
+		for (auto it = v_model_attributes_and_size.begin(); it != v_model_attributes_and_size.end(); it++) {
+			auto attribute_accessor = model.meshes[0].primitives[i].attributes.find(it->first);
+			if (attribute_accessor != model.meshes[0].primitives[i].attributes.end()) {
+				primitive_attributes[i].geom_attributes[it->first].byte_offset = model.accessors[attribute_accessor->second].byteOffset;
+				primitive_attributes[i].geom_attributes[it->first].byte_offset += model.bufferViews[model.accessors[attribute_accessor->second].bufferView].byteOffset;
+				primitive_attributes[i].geom_attributes[it->first].byte_lenght = model.bufferViews[model.accessors[attribute_accessor->second].bufferView].byteLength;
+				primitive_attributes[i].geom_attributes[it->first].element_count = primitive_attributes[i].geom_attributes[it->first].byte_lenght / it->second;
+				primitive_attributes[i].geom_attributes[it->first].element_size = it->second;
+			}
+		}
 
-    // We get the indices of the textures and then we take their sizes
-    maps[0].index = model.materials[0].pbrMetallicRoughness.baseColorTexture.index;
-    maps[1].index = model.materials[0].pbrMetallicRoughness.metallicRoughnessTexture.index;
-    maps[2].index = model.materials[0].normalTexture.index;
-    maps[3].index = model.materials[0].emissiveTexture.index;
+		// Reading the indices data
+		int acc_indices = model.meshes[0].primitives[i].indices;
+		if (acc_indices != -1) {
+			primitive_attributes[i].index_attributes.byte_offset = model.accessors[acc_indices].byteOffset;
+			primitive_attributes[i].index_attributes.byte_offset += model.bufferViews[model.accessors[acc_indices].bufferView].byteOffset;
+			primitive_attributes[i].index_attributes.byte_lenght = model.bufferViews[model.accessors[acc_indices].bufferView].byteLength;
+			primitive_attributes[i].index_attributes.element_size = model.accessors[acc_indices].componentType - 5121;
+			primitive_attributes[i].index_attributes.element_count = primitive_attributes[i].index_attributes.byte_lenght / primitive_attributes[i].index_attributes.element_size;
+		}
 
-    for (uint32_t i = 0; i < maps.size(); i++) {
-        if (maps[i].index != -1) {
-            maps[i].size.x = model.images[maps[i].index].width;
-            maps[i].size.y = model.images[maps[i].index].height;
-        }
-    }
+		// We get the indices of the textures and then we take their sizes
+		int mat_index = model.meshes[0].primitives[i].material;
+		primitive_attributes[i].maps[0].index = model.materials[mat_index].pbrMetallicRoughness.baseColorTexture.index;
+		primitive_attributes[i].maps[1].index = model.materials[mat_index].pbrMetallicRoughness.metallicRoughnessTexture.index;
+		primitive_attributes[i].maps[2].index = model.materials[mat_index].normalTexture.index;
+		primitive_attributes[i].maps[3].index = model.materials[mat_index].emissiveTexture.index;
 
-    for (uint32_t i = 0; i < maps.size(); i++) {
-        if (maps[i].index != -1) {
-            maps[i].size.x = model.images[maps[i].index].width;
-            maps[i].size.y = model.images[maps[i].index].height;
-        }
+		for (uint32_t j = 0; j < primitive_attributes[i].maps.size(); j++) {
+			if (primitive_attributes[i].maps[j].index != -1) {
+				primitive_attributes[i].maps[j].size.x = model.images[primitive_attributes[i].maps[i].index].width;
+				primitive_attributes[i].maps[j].size.y = model.images[primitive_attributes[i].maps[i].index].height;
+			}
+		}
     }
 }
 
-GltfModel::copied_data_info GltfModel::copy_model_data_in_ptr(uint8_t v_attributes_to_copy, bool vertex_normalize, bool index_resolve, uint8_t t_attributes_to_copy, void *dst_ptr) {
-    memset(&last_copied_data_info, 0, sizeof(copied_data_info));
+std::vector<VkModel::primitive_host_data_info> GltfModel::copy_model_data_in_ptr(uint8_t v_attributes_to_copy, bool vertex_normalize, bool index_resolve, uint8_t t_attributes_to_copy, void *dst_ptr) {
+    std::vector<VkModel::primitive_host_data_info> last_copied_data_infos(primitive_attributes.size());
+    // Clear all contents of the vector
+    memset(last_copied_data_infos.data(), 0, last_copied_data_infos.size()*sizeof(VkModel::primitive_host_data_info));
 
-    // Normalize vectors on request
-    if (vertex_normalize && attributes[0].byte_lenght && dst_ptr != nullptr) {
-        normalize_vectors(reinterpret_cast<glm::vec3*>(model.buffers[0].data.data() + attributes[0].byte_offset), attributes[0].element_count);
-    }
+	for (uint32_t i = 0; i < primitive_attributes.size(); i++) {
+		// Normalize vectors on request
+		if (vertex_normalize && primitive_attributes[i].geom_attributes["POSITION"].byte_lenght && dst_ptr!=nullptr) {
+			normalize_vectors(reinterpret_cast<glm::vec3*>(model.buffers[0].data.data()+primitive_attributes[i].geom_attributes["POSITION"].byte_offset),
+					primitive_attributes[i].geom_attributes["POSITION"].element_count);
+		}
 
-    // Calculate the block size for each point and store the vertices based on attribute request and availability
-    int group_size = 0;
-    for (uint8_t i=0; i<v_model_attributes_max_set_bits; i++) {
-        if (v_attributes_to_copy & (1 << i)) {
-            if (attributes[i].element_count) {
-                last_copied_data_info.vertices = attributes[i].element_count;
-            }
-            group_size += attributes[i].element_size;
-        }
-    }
+		// Calculate the block size for each point and store the vertices based on attribute request and availability
+		std::array<std::string,4> map_indices = {"POSITION", "TEXCOORD_0", "NORMAL", "TANGENT"};
+		int group_size = 0;
+		for (uint32_t j = 0; j < map_indices.size(); j++) {
+			if (v_attributes_to_copy & (1 << j)) {
+				group_size += primitive_attributes[i].geom_attributes[map_indices[j]].element_size;
+			}
+		}
+		last_copied_data_infos[i].vertices = primitive_attributes[i].geom_attributes["POSITION"].element_count;
+		last_copied_data_infos[i].interleaved_vertices_data_size = group_size * last_copied_data_infos[i].vertices;
 
-    last_copied_data_info.interleaved_mesh_data_size = group_size * last_copied_data_info.vertices;
+		if (index_resolve) {
+			last_copied_data_infos[i].index_data_size = primitive_attributes[i].index_attributes.byte_lenght;
+			last_copied_data_infos[i].indices = primitive_attributes[i].index_attributes.element_count;
+		}
 
-    // Vertex data copy
-    if (dst_ptr != nullptr) {
-        for (uint32_t i = 0; i < attributes[0].element_count; i++) {
-            int written_data_size = 0;
-            for (uint8_t j=0; j<v_model_attributes_max_set_bits; j++) {
-                if (v_attributes_to_copy & (1 << j)) {
-                    memcpy(static_cast<uint8_t *>(dst_ptr) + (i * group_size) + written_data_size,
-                           model.buffers[0].data.data() + attributes[j].byte_offset + i * attributes[j].element_size,
-                           attributes[j].element_size);
-                    written_data_size += attributes[j].element_size;
-                }
-            }
-        }
-    }
+		for (uint8_t j = 0; j < t_model_attributes_max_set_bits; j++) {
+			if (t_attributes_to_copy & (1 << j)) {
+				last_copied_data_infos[i].image_extent = { primitive_attributes[i].maps[j].size.x, primitive_attributes[i].maps[j].size.y, 1};
+				last_copied_data_infos[i].image_layers++;
+			}
+		}
 
-    if (index_resolve) {
-        last_copied_data_info.index_data_size = attributes[4].byte_lenght;
-        last_copied_data_info.indices = attributes[4].element_count;
-        last_copied_data_info.index_data_type = static_cast<VkIndexType>(attributes[4].element_size - (attributes[4].element_size - 1) - 1);
+		// Interleaved vertex data copy
+		if (dst_ptr != nullptr) {
+			uint32_t written_data_size = 0;
+			// all element count fields of POSITION, TEXCOORD_0, NORMAL and TANGENT *should* be the same
+			for (uint32_t n_group = 0; n_group < primitive_attributes[i].geom_attributes["POSITION"].element_count; n_group++) {
+				for (uint8_t k=0; k < v_model_attributes_max_set_bits; k++) {
+					if (v_attributes_to_copy & (1 << k)) {
+						memcpy(static_cast<uint8_t *>(dst_ptr) + written_data_size,
+								model.buffers[0].data.data() + primitive_attributes[i].geom_attributes[map_indices[k]].byte_offset + n_group * primitive_attributes[i].geom_attributes[map_indices[k]].element_size,
+								primitive_attributes[i].geom_attributes[map_indices[k]].element_size);
+						written_data_size += primitive_attributes[i].geom_attributes[map_indices[k]].element_size;
+					}
+				}
+			}
 
-        if (dst_ptr != nullptr) {
-            for (uint32_t i = 0; i < attributes[4].element_count; i++) {
-                memcpy(static_cast<uint8_t *>(dst_ptr) + last_copied_data_info.interleaved_mesh_data_size,
-                       model.buffers[0].data.data() + attributes[4].byte_offset,
-                       attributes[4].byte_lenght);
-            }
-        }
-    }
+			if (index_resolve) {
+				memcpy(static_cast<uint8_t *>(dst_ptr) + written_data_size,
+					model.buffers[0].data.data() + primitive_attributes[i].index_attributes.byte_offset,
+					primitive_attributes[i].index_attributes.byte_lenght);
+				written_data_size += primitive_attributes[i].index_attributes.byte_lenght;
+			}
 
-    int progressive_data = 0;
-    for (uint8_t i=0; i<t_model_attributes_max_set_bits; i++) {
-        if (t_attributes_to_copy & (1 << i)) {
-            if (dst_ptr != nullptr) {
-                memcpy(static_cast<uint8_t *>(dst_ptr) + last_copied_data_info.interleaved_mesh_data_size + last_copied_data_info.index_data_size + progressive_data,
-                       model.images[maps[i].index].image.data(),
-                       model.images[maps[i].index].image.size());
-                progressive_data += model.images[maps[i].index].image.size();
-            }
-            last_copied_data_info.image_size = {maps[i].size.x, maps[i].size.y, 1};
-            last_copied_data_info.image_layers++;
-        }
-    }
-
-    return last_copied_data_info;
-}
-
-uint64_t GltfModel::get_last_copy_total_size() const {
-    int size_per_texel = 4;
-    return last_copied_data_info.interleaved_mesh_data_size + last_copied_data_info.index_data_size +
-            last_copied_data_info.image_size.width * last_copied_data_info.image_size.height * last_copied_data_info.image_size.depth * size_per_texel * last_copied_data_info.image_layers;
-}
-
-uint64_t GltfModel::get_last_copy_mesh_and_index_data_size() const {
-    return last_copied_data_info.interleaved_mesh_data_size + last_copied_data_info.index_data_size;
-}
-
-uint64_t GltfModel::get_last_copy_texture_size() const {
-    int size_per_texel = 4;
-    return last_copied_data_info.image_size.width * last_copied_data_info.image_size.height * last_copied_data_info.image_size.depth * size_per_texel * last_copied_data_info.image_layers;
-}
-
-void GltfModel::set_model_matrix(glm::mat4 model_matrix) {
-    this->model_matrix = model_matrix;
-    this->normal_matrix = glm::transpose(glm::inverse(model_matrix));
-}
-
-uint32_t GltfModel::copy_uniform_data(uint8_t *dst_ptr) {
-    if (dst_ptr != nullptr) {
-        memcpy(dst_ptr, &model_matrix, sizeof(glm::mat4));
-        memcpy(dst_ptr + sizeof(glm::mat4), &normal_matrix, sizeof(glm::mat4));
-    }
-    return sizeof(glm::mat4)*2;
+			for (uint8_t j=0; j < t_model_attributes_max_set_bits; j++) {
+				if (t_attributes_to_copy & (1 << j)) {
+					memcpy(static_cast<uint8_t*>(dst_ptr) + written_data_size,
+							model.images[primitive_attributes[i].maps[j].index].image.data(),
+							model.images[primitive_attributes[i].maps[j].index].image.size());
+					written_data_size += model.images[primitive_attributes[i].maps[j].index].image.size();
+				}
+			}
+		}
+	}
+    return last_copied_data_infos;
 }
 
 void GltfModel::normalize_vectors(glm::vec3 *vectors, int number_of_elements) {

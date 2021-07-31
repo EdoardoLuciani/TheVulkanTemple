@@ -331,7 +331,7 @@ void PbrContext::set_output_images(VkExtent2D screen_res, VkImageView out_depth_
 }
 
 void PbrContext::record_into_command_buffer(VkCommandBuffer command_buffer, VkDescriptorSet camera_descriptor_set, VkDescriptorSet light_descriptor_set,
-                                            const std::vector<VkDescriptorSet> &object_descriptor_sets, const std::vector<vk_object_render_info> &object_render_info) {
+		const std::vector<VkModel> &vk_models) {
     std::array<VkClearValue,3> clear_values;
     clear_values[0].depthStencil = {1.0f, 0};
     clear_values[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -365,14 +365,10 @@ void PbrContext::record_into_command_buffer(VkCommandBuffer command_buffer, VkDe
     };
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-    std::array<VkDescriptorSet,3> to_bind = { VK_NULL_HANDLE, light_descriptor_set, camera_descriptor_set };
-    for (uint32_t j=0; j<object_render_info.size(); j++) {
-        to_bind[0] = object_descriptor_sets[j];
-        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 0, to_bind.size(), to_bind.data(), 0, nullptr);
-
-        vkCmdBindVertexBuffers(command_buffer, 0, 1, &object_render_info[j].data_buffer, &object_render_info[j].mesh_data_offset);
-        vkCmdBindIndexBuffer(command_buffer, object_render_info[j].data_buffer, object_render_info[j].index_data_offset, object_render_info[j].model.get_last_copy_index_type());
-        vkCmdDrawIndexed(command_buffer, object_render_info[j].model.get_last_copy_indices(), 1, 0, 0, 0);
+    std::vector<VkDescriptorSet> to_bind = { light_descriptor_set, camera_descriptor_set };
+    for (uint32_t j=0; j<vk_models.size(); j++) {
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 1, to_bind.size(), to_bind.data(), 0, nullptr);
+        vk_models[j].vk_record_draw(command_buffer, pbr_pipeline_layout, 0);
     }
     vkCmdEndRenderPass(command_buffer);
 }
