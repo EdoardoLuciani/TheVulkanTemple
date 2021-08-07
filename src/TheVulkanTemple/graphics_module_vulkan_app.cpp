@@ -204,7 +204,6 @@ VkPhysicalDeviceFeatures2* GraphicsModuleVulkanApp::get_required_physical_device
 		if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE && engine_options.fsr_settings.precision == AmdFsr::Precision::FP16) {
 			required_device_features2->features.shaderInt16 = VK_TRUE;
 		}
-
         return required_device_features2;
     }
 }
@@ -289,13 +288,12 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
     uint64_t models_total_size = 0;
     for (uint32_t i = 0; i < model_file_matrix.size(); i++) {
 		gltf_models.push_back(GltfModel(model_file_matrix[i].first));
-		auto infos = gltf_models.back().copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true, true,
+		auto infos = gltf_models.back().copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, false, true,
                                               GltfModel::t_model_attributes::T_ALL, nullptr);
 
 		vk_models.emplace_back(VkModel(device, model_file_matrix[i].first, infos, model_file_matrix[i].second));
         models_total_size += vk_models.back().get_all_primitives_total_size();
     }
-
     VkBuffer host_model_data_buffer = VK_NULL_HANDLE;
     create_buffer(host_model_data_buffer, models_total_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     VmaAllocation host_model_data_transient_allocation = VK_NULL_HANDLE;
@@ -841,11 +839,9 @@ void GraphicsModuleVulkanApp::on_window_resize(std::function<void(GraphicsModule
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDeviceWaitIdle(device);
-
     for (auto& semaphore : semaphores) {
         vkDestroySemaphore(device, semaphore, nullptr);
     }
-
     vkDestroySampler(device, max_aniso_linear_sampler, nullptr);
 
     // Model uniform related things freed

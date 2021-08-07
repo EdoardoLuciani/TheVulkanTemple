@@ -18,11 +18,12 @@ class VkModel {
 			uint32_t index_data_size;
 			uint32_t indices;
 
+			uint32_t image_alignment_size;
 			VkExtent3D image_extent;
 			uint32_t image_layers;
 
 			uint64_t get_total_size() const {
-				return get_mesh_and_index_data_size() + get_texture_size();
+				return get_mesh_and_index_data_size() + image_alignment_size + get_texture_size();
 			}
 
 			uint64_t get_mesh_and_index_data_size() const {

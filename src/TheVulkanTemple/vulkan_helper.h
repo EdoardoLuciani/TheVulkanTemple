@@ -45,8 +45,7 @@ namespace vulkan_helper {
         FRAMEBUFFER_CREATION_FAILED,
         SHADER_MODULE_CREATION_FAILED,
         ACQUIRE_NEXT_IMAGE_FAILED,
-        QUEUE_PRESENT_FAILED,
-        FFX_CACAO_INIT_FAILED
+        QUEUE_PRESENT_FAILED
     };
 
 	VkPresentModeKHR select_presentation_mode(const std::vector<VkPresentModeKHR>& presentation_modes, VkPresentModeKHR desired_presentation_mode);

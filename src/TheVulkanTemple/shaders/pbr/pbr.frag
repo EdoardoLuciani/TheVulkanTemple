@@ -44,7 +44,7 @@ void main() {
     
     // color without ambient
     vec3 rho = vec3(0.0);
-    for(int i=0; i<2; i++) {
+    for(int i=0; i<lights.length(); i++) {
         vec3 L = normalize(fs_in.L[i]);
         vec3 H = normalize(V + L);
 

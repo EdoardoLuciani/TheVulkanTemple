@@ -77,6 +77,6 @@ class GltfModel {
         };
         std::vector<attributes> primitive_attributes;
 
-        void normalize_vectors(glm::vec3 * vectors, int number_of_elements);
+        void normalize_positions();
 };
 #endif //BASE_VULKAN_APP_GLTF_MODEL_H

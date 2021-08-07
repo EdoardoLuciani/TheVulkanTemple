@@ -3,6 +3,7 @@
 #include <vector>
 #include "TheVulkanTemple/graphics_module_vulkan_app.h"
 #include <glm/glm.hpp>
+#include <glm/gtx/string_cast.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/polar_coordinates.hpp>
@@ -20,24 +21,25 @@ void resize_callback(GraphicsModuleVulkanApp *app) {
 void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     GLFWwindow *window = app->get_glfw_window();
 
+    float speed = 0.0003f;
     glm::vec4 camera_pos_diff = glm::vec4(0.0f);
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-        camera_pos_diff[2] = 0.003f;
+    	camera_pos_diff[2] = speed;
     }
     else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-        camera_pos_diff[2] = -0.003f;
+    	camera_pos_diff[2] = -speed;
     }
     else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-        camera_pos_diff[0] = 0.003f;
+    	camera_pos_diff[0] = speed;
     }
     else if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-        camera_pos_diff[0] = -0.003f;
+    	camera_pos_diff[0] = -speed;
     }
     else if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-        camera_pos_diff[1] -= 0.003f;
+    	camera_pos_diff[1] -= speed;
     }
     else if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
-        camera_pos_diff[1] += 0.003f;
+    	camera_pos_diff[1] += speed;
     }
     else if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -56,11 +58,11 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     app->get_camera_ptr()->dir = glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar)));
 
     // Other things
-    app->get_light_ptr(0)->set_color(glm::vec3(5.0f*glm::clamp(glm::cos(glfwGetTime()/2), 0.0, 1.0)));
+    //app->get_light_ptr(0)->set_color(glm::vec3(5.0f*glm::clamp(glm::cos(glfwGetTime()/2), 0.0, 1.0)));
 
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
-        glm::mat4 ball_3_m_matrix = glm::translate(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir)*glm::scale(glm::vec3(0.2f));
-        app->get_gltf_model_ptr(6)->set_model_matrix(ball_3_m_matrix);
+        glm::mat4 ball_3_m_matrix = glm::translate(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir)*glm::scale(glm::vec3(0.01f));
+        app->get_gltf_model_ptr(4)->set_model_matrix(ball_3_m_matrix);
     }
 
 	app->get_light_ptr(1)->set_pos(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir*0.1f);
@@ -71,6 +73,9 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
 	else {
 		app->get_light_ptr(1)->set_color({17.0f, 7.0f, 13.0f});
 	}
+
+	//std::cout << glm::to_string(app->get_camera_ptr()->pos) << std::endl;
+	//std::cout << glm::to_string(app->get_camera_ptr()->dir) << std::endl;
 }
 
 int main() {
@@ -79,37 +84,39 @@ int main() {
 	options.fsr_settings.precision = AmdFsr::Precision::FP16;
   
 	try {
-	    VkExtent2D screen_size = {800,800};
-		GraphicsModuleVulkanApp app("TheVulkanTemple", screen_size, false, options);
+	    VkExtent2D screen_size = {2560,1440};
+		GraphicsModuleVulkanApp app("TheVulkanTemple", screen_size, true, options);
 
-        glm::mat4 water_bottle_m_matrix = glm::translate(glm::vec3(-1.0f, 0.02f, -0.5f))*glm::scale(glm::vec3(0.4f,0.4f,0.4f));
+		glm::mat4 water_bottle_m_matrix = glm::translate(glm::vec3(0.296420, 0.45, 0.144471))*glm::scale(glm::vec3(0.05f));
         glm::mat4 table_m_matrix = glm::translate(glm::vec3(0.5f, -0.35f, 0.0f))*glm::rotate(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f))
                                    *glm::scale(glm::vec3(3.0f,3.0f,3.0f));
         glm::mat4 floor_m_matrix = glm::translate(glm::vec3(-0.8f, -1.5f, 0.0f))*glm::scale(glm::vec3(100.0f,100.0f,100.0f));
-        glm::mat4 chair_m_matrix = glm::translate(glm::vec3(-0.8f, -1.5f, 0.5f))*glm::rotate(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f))
-                *glm::scale(glm::vec3(1.5f,1.5f,1.5f));
+        glm::mat4 chair_m_matrix = glm::translate(glm::vec3(0.570383, 0.00, -0.065306))*glm::rotate(glm::radians(-30.0f), glm::vec3(0.0f, 1.0f, 0.0f))
+                *glm::scale(glm::vec3(0.1f));
 
-        glm::mat4 ball_1_m_matrix = glm::translate(glm::vec3(2.0f, 2.0f, 4.0f))*glm::scale(glm::vec3(0.2f));
-        glm::mat4 ball_2_m_matrix = glm::translate(glm::vec3(2.0f, 2.0f, -4.0f))*glm::scale(glm::vec3(0.2f));
-        glm::mat4 ball_3_m_matrix = glm::translate(glm::vec3(0.0f, 0.0f, 0.0f))*glm::scale(glm::vec3(0.2f));
+        glm::mat4 ball_3_m_matrix = glm::translate(glm::vec3(-0.516224, 1.217391, -0.000071))*glm::scale(glm::vec3(0.01f));
 
-		app.load_3d_objects({{"resources/models/WaterBottle/WaterBottle.glb", water_bottle_m_matrix},
-                             {"resources//models//Table//Table.glb", table_m_matrix},
-                             {"resources//models//MarbleFloor//MarbleFloor.glb", floor_m_matrix},
-                             {"resources//models//SchoolChair//SchoolChair.glb", chair_m_matrix},
-                             {"resources//models//EightBall/EightBall.glb", ball_1_m_matrix},
-                             {"resources//models//EightBall/EightBall.glb", ball_2_m_matrix},
-                             {"resources//models//EightBall/EightBall.glb", ball_3_m_matrix}
+        glm::mat4 sponza_m_matrix = glm::scale(glm::vec3(2.0f));
+
+		app.load_3d_objects({
+							{"resources/models/WaterBottle/WaterBottle.glb", water_bottle_m_matrix},
+							{"resources//models//Table//Table.glb", table_m_matrix},
+                            {"resources//models//MarbleFloor//MarbleFloor.glb", floor_m_matrix},
+                            {"resources//models//SchoolChair//SchoolChair.glb", chair_m_matrix},
+                            {"resources//models//EightBall/EightBall.glb", ball_3_m_matrix},
+                            {"resources//models//Sponza/Sponza.glb", sponza_m_matrix}
 		});
 		app.load_lights({
-		    {{2.0f, 2.0f, 4.0f}, glm::normalize(glm::vec3({-1.0f, -1.0f, -2.0f})), {10.0f, 10.0f, 10.0f}, Light::LightType::DIRECTIONAL,
-             0.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 1000, glm::radians(90.0f), 1.0f, 0.01, 10.0f},
+			{{-0.010837, 1.506811, -0.328537}, glm::normalize(glm::vec3({-0.004270, -0.702568, 0.711604})), {10.0f, 10.0f, 10.0f}, Light::LightType::SPOT,
+             0.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 2000, glm::radians(90.0f), 1.0f, 0.1, 100.0f},
             {{2.0f, 2.0f, -4.0f}, glm::normalize(glm::vec3({-2.0f, -2.0f, 4.0f})), {17.0f, 7.0f, 13.0f}, Light::LightType::SPOT,
-             30.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 0, glm::radians(90.0f), 1.0f, 0.01, 1000.0f}
+             30.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 0, glm::radians(90.0f), 1.0f, 0.01, 1000.0f},
+             {{-0.516224, 1.217391, -0.000071}, glm::normalize(glm::vec3({0.773662, -0.631123, -0.055959})), {0.0f, 0.34f, 11.4f}, Light::LightType::SPOT,
+			  20.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 2000, glm::radians(90.0f), 1.0f, 0.1, 100.0f}
 		});
-		app.set_camera({{-3.0f, 0.5f, 0.4f}, {-2.2f, -0.04f, 0.40f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.1f, 1000.0f});
+		app.set_camera({{0.0f, 0.0f, 0.0f}, {-2.2f, -0.04f, 0.40f}, glm::radians(90.0f), static_cast<float>(screen_size.width)/screen_size.height, 0.01f, 1000.0f});
 
-        //glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        glfwSetInputMode(app.get_glfw_window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         app.init_renderer();
 

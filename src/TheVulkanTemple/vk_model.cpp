@@ -83,9 +83,9 @@ void VkModel::vk_create_images(float mip_bias, VmaAllocator vma_allocator) {
 					VK_FILTER_LINEAR,
 					VK_FILTER_LINEAR,
 					VK_SAMPLER_MIPMAP_MODE_LINEAR,
-					VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-					VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-					VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+					VK_SAMPLER_ADDRESS_MODE_REPEAT,
+					VK_SAMPLER_ADDRESS_MODE_REPEAT,
+					VK_SAMPLER_ADDRESS_MODE_REPEAT,
 					mip_bias,
 					VK_TRUE,16.0f,
 					VK_FALSE,VK_COMPARE_OP_ALWAYS,
@@ -119,7 +119,7 @@ uint64_t VkModel::vk_init_images(VkCommandBuffer cb, VkBuffer host_image_transie
 	uint64_t image_data_offset = primitive_host_buffer_offset;
 	for (uint32_t i=0; i < this->device_primitives_data_info.size(); i++) {
 
-		image_data_offset += this->host_primitives_data_info[i].get_mesh_and_index_data_size();
+		image_data_offset += this->host_primitives_data_info[i].get_mesh_and_index_data_size() + this->host_primitives_data_info[i].image_alignment_size;
 		VkBufferImageCopy buffer_image_copy = {
 				image_data_offset,
 				0,
@@ -129,8 +129,7 @@ uint64_t VkModel::vk_init_images(VkCommandBuffer cb, VkBuffer host_image_transie
 				this->host_primitives_data_info[i].image_extent
 		};
 		image_data_offset += this->host_primitives_data_info[i].get_texture_size();
-		vkCmdCopyBufferToImage(cb, host_image_transient_buffer, this->device_primitives_data_info[i].image,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+		vkCmdCopyBufferToImage(cb, host_image_transient_buffer, this->device_primitives_data_info[i].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
 
 		VkImageMemoryBarrier image_memory_barrier;
 		image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -259,7 +258,7 @@ void VkModel::clean_descriptor_writes(std::span<VkWriteDescriptorSet> first_two_
 }
 
 void VkModel::vk_record_draw(VkCommandBuffer command_buffer, VkPipelineLayout pipeline_layout, uint32_t model_set_shader_index) const {
-	for (uint32_t i = 0; i < device_primitives_data_info.size(); i++) {
+	for (uint32_t i = 0; i < device_primitives_data_info.size(); i++) { //device_primitives_data_info.size()
 		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, model_set_shader_index, 1, &this->device_primitives_data_info[i].descriptor_set, 0, nullptr);
 		vkCmdBindVertexBuffers(command_buffer, 0, 1, &device_primitives_data_info[i].data_buffer, &device_primitives_data_info[i].primitive_vertices_data_offset);
 		vkCmdBindIndexBuffer(command_buffer, device_primitives_data_info[i].data_buffer, device_primitives_data_info[i].index_data_offset, device_primitives_data_info[i].index_data_type);
