@@ -308,7 +308,10 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
         gltf_models[i].copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true, true,
                                                 GltfModel::t_model_attributes::T_ALL, static_cast<uint8_t*>(model_host_data_pointer) + offset);
         offset += vk_models[i].get_all_primitives_total_size();
-        mesh_and_index_data_size += vk_models[i].get_all_primitives_mesh_and_indices_size();
+        // The mesh in the device buffer needs to be aligned to the attribute first size, which is always the position hence 12
+        for (const auto& host_info : vk_models[i].host_primitives_data_info) {
+        	mesh_and_index_data_size = vulkan_helper::get_aligned_memory_size(mesh_and_index_data_size, 12) + host_info.get_mesh_and_index_data_size();
+        }
     }
     vmaUnmapMemory(this->vma_allocator, host_model_data_transient_allocation);
 
@@ -342,6 +345,19 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
     };
     vkBeginCommandBuffer(command_buffers[0], &command_buffer_begin_info);
 
+    VkBufferMemoryBarrier buffer_memory_barrier = {
+    		VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+    		nullptr,
+    		0,
+    		VK_ACCESS_TRANSFER_WRITE_BIT,
+    		VK_QUEUE_FAMILY_IGNORED,
+    		VK_QUEUE_FAMILY_IGNORED,
+    		device_mesh_data_buffer,
+    		0,
+    		VK_WHOLE_SIZE
+    };
+    vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+
     // We calculate the offset for the mesh data both in the host and device buffers and register the copy
     uint64_t src_offset = 0;
     uint64_t dst_offset = 0;
@@ -354,6 +370,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
 			buffer_copy.srcOffset = src_offset;
 			src_offset += vk_models[i].host_primitives_data_info[j].get_total_size();
 
+			dst_offset = vulkan_helper::get_aligned_memory_size(dst_offset, 12);
 			buffer_copy.dstOffset = dst_offset;
 			vk_models[i].device_primitives_data_info[j].primitive_vertices_data_offset = dst_offset;
 			vk_models[i].device_primitives_data_info[j].index_data_offset = dst_offset + vk_models[i].host_primitives_data_info[j].interleaved_vertices_data_size;
@@ -366,11 +383,14 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
 	}
     vkCmdCopyBuffer(command_buffers[0], host_model_data_buffer, device_mesh_data_buffer, buffer_copies.size(), buffer_copies.data());
 
+	buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	buffer_memory_barrier.dstAccessMask = VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+	vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+
 	dst_offset = 0;
 	for (uint32_t i = 0; i < vk_models.size(); i++) {
 		dst_offset = vk_models[i].vk_init_images(command_buffers[0], host_model_data_buffer, dst_offset);
 	}
-
     vkEndCommandBuffer(command_buffers[0]);
 
     // After registering the command we create a fence and submit the command_buffer

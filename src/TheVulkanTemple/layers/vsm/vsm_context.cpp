@@ -274,18 +274,18 @@ void VSMContext::create_shadow_map_pipeline(VkDescriptorSetLayout pbr_model_set_
             VK_FALSE
     };
 
-    // we will set the viewport and scissor dynamically after pipeline binding
+    // for now we use a dummy value, the real value of the viewport and scissor is set dynamically after pipeline binding
     VkViewport viewport = {
             0.0f,
             0.0f,
-            static_cast<float>(lights_vsm.front().depth_image_res.width),
-            static_cast<float>(lights_vsm.front().depth_image_res.height),
+            800.0f,
+            800.0f,
             0.0f,
             1.0f
     };
     VkRect2D scissor = {
             {0,0},
-            lights_vsm.front().depth_image_res
+			{ 800, 800 }
     };
     VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
             VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,

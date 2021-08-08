@@ -258,7 +258,7 @@ void VkModel::clean_descriptor_writes(std::span<VkWriteDescriptorSet> first_two_
 }
 
 void VkModel::vk_record_draw(VkCommandBuffer command_buffer, VkPipelineLayout pipeline_layout, uint32_t model_set_shader_index) const {
-	for (uint32_t i = 0; i < device_primitives_data_info.size(); i++) { //device_primitives_data_info.size()
+	for (uint32_t i = 0; i < device_primitives_data_info.size(); i++) {
 		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, model_set_shader_index, 1, &this->device_primitives_data_info[i].descriptor_set, 0, nullptr);
 		vkCmdBindVertexBuffers(command_buffer, 0, 1, &device_primitives_data_info[i].data_buffer, &device_primitives_data_info[i].primitive_vertices_data_offset);
 		vkCmdBindIndexBuffer(command_buffer, device_primitives_data_info[i].data_buffer, device_primitives_data_info[i].index_data_offset, device_primitives_data_info[i].index_data_type);
