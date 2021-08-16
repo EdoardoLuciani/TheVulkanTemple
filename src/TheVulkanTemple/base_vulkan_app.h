@@ -24,13 +24,14 @@ class BaseVulkanApp {
 		// Vulkan attributes
 		VkInstance instance = VK_NULL_HANDLE;
 		#ifndef NDEBUG
-			VkDebugReportCallbackEXT debug_report_callback;
+			VkDebugUtilsMessengerEXT debug_report_callback;
 		#endif
 		GLFWwindow* window;
 		VkSurfaceKHR surface;
 		VkPhysicalDevice selected_physical_device = VK_NULL_HANDLE;
 		VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
         VkPhysicalDeviceProperties physical_device_properties;
+        uint32_t main_queue_family_index = -1;
 		VkDevice device = VK_NULL_HANDLE;
 		VkQueue queue;
 
@@ -39,12 +40,15 @@ class BaseVulkanApp {
 		std::vector<VkImage> swapchain_images;
 		std::vector<VkImageView> swapchain_images_views;
 
-		VkCommandPool command_pool;
-		std::vector<VkCommandBuffer> command_buffers;
+		struct command_record_info {
+			VkCommandPool command_pool = VK_NULL_HANDLE;
+			std::vector<VkCommandBuffer> command_buffers;
+		};
 
 		// Vulkan related private methods
 		void create_swapchain();
-		void create_cmd_pool_and_buffers(uint32_t queue_family_index);
+		void create_cmd_pool_and_buffers(uint32_t queue_family_index, VkCommandBufferLevel cb_level, uint32_t command_buffers_count, command_record_info& cr_info, uint32_t pool_flags = 0);
+		void delete_cmd_pool_and_buffers(command_record_info& cr_info);
 };
 
 #endif

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include <span>
+#include <thread>
 #include "layers/smaa/smaa_context.h"
 #include "layers/pbr/pbr_context.h"
 #include "layers/vsm/vsm_context.h"
@@ -62,28 +63,11 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     vma_allocator_create_info.preferredLargeHeapBlockSize = 512000000; // blocks larger than 512 MB get allocated in a separate VkDeviceMemory
 
     VmaVulkanFunctions vma_vulkan_functions = {
-            vkGetPhysicalDeviceProperties,
-            vkGetPhysicalDeviceMemoryProperties,
-            vkAllocateMemory,
-            vkFreeMemory,
-            vkMapMemory,
-            vkUnmapMemory,
-            vkFlushMappedMemoryRanges,
-            vkInvalidateMappedMemoryRanges,
-            vkBindBufferMemory,
-            vkBindImageMemory,
-            vkGetBufferMemoryRequirements,
-            vkGetImageMemoryRequirements,
-            vkCreateBuffer,
-            vkDestroyBuffer,
-            vkCreateImage,
-            vkDestroyImage,
-            vkCmdCopyBuffer,
-            vkGetBufferMemoryRequirements2,
-            vkGetImageMemoryRequirements2,
-            vkBindBufferMemory2,
-            vkBindImageMemory2,
-            vkGetPhysicalDeviceMemoryProperties2
+            vkGetPhysicalDeviceProperties, vkGetPhysicalDeviceMemoryProperties, vkAllocateMemory, vkFreeMemory,
+            vkMapMemory, vkUnmapMemory, vkFlushMappedMemoryRanges, vkInvalidateMappedMemoryRanges,
+            vkBindBufferMemory, vkBindImageMemory, vkGetBufferMemoryRequirements, vkGetImageMemoryRequirements,
+            vkCreateBuffer, vkDestroyBuffer, vkCreateImage, vkDestroyImage, vkCmdCopyBuffer,
+            vkGetBufferMemoryRequirements2, vkGetImageMemoryRequirements2, vkBindBufferMemory2,vkBindImageMemory2, vkGetPhysicalDeviceMemoryProperties2
     };
     vma_allocator_create_info.pVulkanFunctions = &vma_vulkan_functions;
     vma_allocator_create_info.instance = this->instance;
@@ -110,13 +94,26 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
             VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
             VK_FALSE,
     };
-    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &max_aniso_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
+    check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &shadow_map_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
 
+    // We create 3 copies of frame data
     VkSemaphoreCreateInfo semaphore_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
-    semaphores.resize(2);
-    for (uint32_t i = 0; i < semaphores.size(); i++) {
-        vkCreateSemaphore(device, &semaphore_create_info, nullptr, &semaphores[i]);
+    VkFenceCreateInfo fence_create_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,nullptr,VK_FENCE_CREATE_SIGNALED_BIT };
+    for (auto& frame : frames_data) {
+    	vkCreateFence(device, &fence_create_info, nullptr, &frame.after_execution_fence);
+    	frame.semaphores.resize(6);
+    	for (uint32_t i = 0; i < frame.semaphores.size(); i++) {
+    		vkCreateSemaphore(device, &semaphore_create_info, nullptr, &frame.semaphores[i]);
+    	}
+    	// Creating one pool for each thread
+    	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1, frame.vsm_command);
+    	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1, frame.pbr_command);
+    	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, swapchain_images.size(), frame.swapchain_copy_static_commands);
+    	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 2, frame.pre_and_post_static_commands);
     }
+
+    fence_create_info.flags = 0;
+    vkCreateFence(device, &fence_create_info, nullptr, &memory_update_fence);
 
     create_sets_layouts();
     pbr_context.create_pipeline("resources//shaders", pbr_model_data_set_layout, camera_data_set_layout, light_data_set_layout);
@@ -130,10 +127,10 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
 std::vector<const char*> GraphicsModuleVulkanApp::get_instance_extensions() {
     std::vector<const char*> instance_extensions = {"VK_KHR_surface"};
     #ifdef _WIN64
-        instance_extensions.push_back("VK_KHR_win32_surface")
+        instance_extensions.push_back("VK_KHR_win32_surface");
     #elif __linux__
         #ifdef VK_USE_PLATFORM_WAYLAND_KHR
-            instance_extensions.push_back("VK_KHR_wayland_surface")
+            instance_extensions.push_back("VK_KHR_wayland_surface");
         #else
             instance_extensions.push_back("VK_KHR_xlib_surface");
         #endif
@@ -337,13 +334,14 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
     }
 
     // After setting the required memory we register the command buffer to upload the data
+    VkCommandBuffer temporary_command_buffer = frames_data.front().pre_and_post_static_commands.command_buffers[0];
     VkCommandBufferBeginInfo command_buffer_begin_info = {
         VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         nullptr,
         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         nullptr
     };
-    vkBeginCommandBuffer(command_buffers[0], &command_buffer_begin_info);
+    vkBeginCommandBuffer(temporary_command_buffer, &command_buffer_begin_info);
 
     VkBufferMemoryBarrier buffer_memory_barrier = {
     		VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -356,7 +354,7 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
     		0,
     		VK_WHOLE_SIZE
     };
-    vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+    vkCmdPipelineBarrier(temporary_command_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
 
     // We calculate the offset for the mesh data both in the host and device buffers and register the copy
     uint64_t src_offset = 0;
@@ -381,30 +379,25 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
 			buffer_copies.push_back(buffer_copy);
 		}
 	}
-    vkCmdCopyBuffer(command_buffers[0], host_model_data_buffer, device_mesh_data_buffer, buffer_copies.size(), buffer_copies.data());
+	vkCmdCopyBuffer(temporary_command_buffer, host_model_data_buffer, device_mesh_data_buffer, buffer_copies.size(), buffer_copies.data());
 
 	buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 	buffer_memory_barrier.dstAccessMask = VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-	vkCmdPipelineBarrier(command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+	vkCmdPipelineBarrier(temporary_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
 
 	dst_offset = 0;
 	for (uint32_t i = 0; i < vk_models.size(); i++) {
-		dst_offset = vk_models[i].vk_init_images(command_buffers[0], host_model_data_buffer, dst_offset);
+		dst_offset = vk_models[i].vk_init_images(temporary_command_buffer, host_model_data_buffer, dst_offset);
 	}
-    vkEndCommandBuffer(command_buffers[0]);
+	vkEndCommandBuffer(temporary_command_buffer);
 
-    // After registering the command we create a fence and submit the command_buffer
-    VkFenceCreateInfo fence_create_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,nullptr,0 };
-    VkFence fence;
-    vkCreateFence(device, &fence_create_info, nullptr, &fence);
-
-    submit_command_buffers({command_buffers[0]}, VK_PIPELINE_STAGE_TRANSFER_BIT, {}, {}, fence);
-    vkWaitForFences(device, 1, &fence, VK_TRUE, 20000000);
+    // After registering the command we submit the command_buffer with a generic fence
+    submit_command_buffers({temporary_command_buffer}, VK_PIPELINE_STAGE_TRANSFER_BIT, {}, {}, memory_update_fence);
+    vkWaitForFences(device, 1, &memory_update_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
 
     // After the copy has finished we do cleanup
-    vkDeviceWaitIdle(device);
-    vkResetCommandPool(device, command_pool, 0);
-    vkDestroyFence(device, fence, nullptr);
+    vkResetCommandPool(device, frames_data.front().pre_and_post_static_commands.command_pool, 0);
+    vkResetFences(device, 1, &memory_update_fence);
     vkDestroyBuffer(device, host_model_data_buffer, nullptr);
     vmaFreeMemory(this->vma_allocator, host_model_data_transient_allocation);
 }
@@ -517,14 +510,17 @@ void GraphicsModuleVulkanApp::init_renderer() {
 	}
 
     vsm_context.init_resources();
-    smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1], command_pool, command_buffers[0], queue);
+	smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1],
+			frames_data.front().pre_and_post_static_commands.command_pool, frames_data.front().pre_and_post_static_commands.command_buffers[0], queue);
     pbr_context.set_output_images(rendering_resolution, device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view);
     hbao_context.init_resources();
     hbao_context.update_constants(camera.get_proj_matrix());
 
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
-    record_command_buffers();
+    for (auto& frame : frames_data) {
+    	record_static_command_buffers(frame.pre_and_post_static_commands, frame.swapchain_copy_static_commands);
+    }
 }
 
 void GraphicsModuleVulkanApp::write_descriptor_sets() {
@@ -623,9 +619,9 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     std::vector<VkDescriptorImageInfo> light_descriptor_image_infos(boost::size(shadowed_lights_it_range));
     for (const auto& [light, light_descriptor_image_info] : boost::combine(shadowed_lights_it_range, light_descriptor_image_infos)) {
         light_descriptor_image_info = {
-            max_aniso_linear_sampler,
-            vsm_context.get_image_view(light.light_params.shadow_map_index),
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+				shadow_map_linear_sampler,
+				vsm_context.get_image_view(light.light_params.shadow_map_index),
+				VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
     }
 
@@ -658,8 +654,7 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     auto it = descriptor_sets.begin() + 2;
     for (uint32_t i = 0, offset = 0; i < vk_models.size(); i++) {
     	auto vk_model_write_descriptor_sets = vk_models[i].get_descriptor_writes({ it, vk_models[i].device_primitives_data_info.size() },
-						device_model_uniform_buffer, offset,
-						physical_device_properties.limits.minUniformBufferOffsetAlignment);
+						device_model_uniform_buffer, offset, physical_device_properties.limits.minUniformBufferOffsetAlignment);
     	it += vk_models[i].device_primitives_data_info.size();
     	offset += vk_models[i].copy_uniform_data(nullptr);
     	write_descriptor_set.insert(write_descriptor_set.end(), vk_model_write_descriptor_sets.begin(), vk_model_write_descriptor_sets.end());
@@ -673,64 +668,64 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     }
 }
 
-void GraphicsModuleVulkanApp::record_command_buffers() {
-    vkResetCommandPool(device, command_pool, 0);
+void GraphicsModuleVulkanApp::record_static_command_buffers(command_record_info pre_and_post, command_record_info swapchain_copy_commands) {
+	vkResetCommandPool(device, pre_and_post.command_pool, 0);
+	VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, 0, nullptr};
 
-    for (uint32_t i = 0; i < swapchain_images.size(); i++) {
-        VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr };
-        vkBeginCommandBuffer(command_buffers[i], &command_buffer_begin_info);
+	// command buffer for copying the uniforms
+	vkBeginCommandBuffer(pre_and_post.command_buffers[0], &command_buffer_begin_info);
+	VkBufferCopy buffer_copy = { 0,0,vulkan_helper::get_aligned_memory_size(vk_models.front().copy_uniform_data(nullptr),
+								 physical_device_properties.limits.minUniformBufferOffsetAlignment) * vk_models.size()};
+	vkCmdCopyBuffer(pre_and_post.command_buffers[0], host_model_uniform_buffer, device_model_uniform_buffer, 1, &buffer_copy);
 
-        VkBufferCopy buffer_copy = { 0,0,vulkan_helper::get_aligned_memory_size(vk_models.front().copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) * vk_models.size()};
-        vkCmdCopyBuffer(command_buffers[i], host_model_uniform_buffer, device_model_uniform_buffer, 1, &buffer_copy);
+	buffer_copy = {0,0, vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
+				   lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()};
+	vkCmdCopyBuffer(pre_and_post.command_buffers[0], host_camera_lights_uniform_buffer, device_camera_lights_uniform_buffer, 1, &buffer_copy);
 
-        buffer_copy = {0,0, vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
-                            lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()};
-        vkCmdCopyBuffer(command_buffers[i], host_camera_lights_uniform_buffer, device_camera_lights_uniform_buffer, 1, &buffer_copy);
+	// Transitioning layout from write to shader read
+	std::array<VkBufferMemoryBarrier,2> buffer_memory_barriers;
+	buffer_memory_barriers[0] = {
+			VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+			nullptr,
+			VK_ACCESS_TRANSFER_WRITE_BIT,
+			VK_ACCESS_UNIFORM_READ_BIT,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			device_model_uniform_buffer,
+			0,
+			VK_WHOLE_SIZE
+	};
+	buffer_memory_barriers[1] = {
+			VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+			nullptr,
+			VK_ACCESS_TRANSFER_WRITE_BIT,
+			VK_ACCESS_UNIFORM_READ_BIT,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			device_camera_lights_uniform_buffer,
+			0,
+			VK_WHOLE_SIZE
+	};
+	vkCmdPipelineBarrier(pre_and_post.command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, nullptr, 2, buffer_memory_barriers.data(), 0, nullptr);
+	vkEndCommandBuffer(pre_and_post.command_buffers[0]);
 
-        // Transitioning layout from write to shader read
-        std::array<VkBufferMemoryBarrier,2> buffer_memory_barriers;
-        buffer_memory_barriers[0] = {
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                nullptr,
-                VK_ACCESS_TRANSFER_WRITE_BIT,
-                VK_ACCESS_UNIFORM_READ_BIT,
-                VK_QUEUE_FAMILY_IGNORED,
-                VK_QUEUE_FAMILY_IGNORED,
-                device_model_uniform_buffer,
-                0,
-                VK_WHOLE_SIZE
-        };
-        buffer_memory_barriers[1] = {
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                nullptr,
-                VK_ACCESS_TRANSFER_WRITE_BIT,
-                VK_ACCESS_UNIFORM_READ_BIT,
-                VK_QUEUE_FAMILY_IGNORED,
-                VK_QUEUE_FAMILY_IGNORED,
-                device_camera_lights_uniform_buffer,
-                0,
-                VK_WHOLE_SIZE
-        };
-        vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, nullptr, 2, buffer_memory_barriers.data(), 0, nullptr);
+	// command buffer for recording image post-processing
+	vkBeginCommandBuffer(pre_and_post.command_buffers[1], &command_buffer_begin_info);
+	smaa_context.record_into_command_buffer(pre_and_post.command_buffers[1]);
+	hbao_context.record_into_command_buffer(pre_and_post.command_buffers[1], rendering_resolution, camera.znear, camera.zfar, true);
+	hdr_tonemap_context.record_into_command_buffer(pre_and_post.command_buffers[1], 0, rendering_resolution);
+	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
+		amd_fsr->record_into_command_buffer(pre_and_post.command_buffers[1], device_tonemapped_image, device_upscaled_image);
+	}
+	vkEndCommandBuffer(pre_and_post.command_buffers[1]);
 
-        std::vector<VkDescriptorSet> object_descriptor_sets(descriptor_sets.begin() + 2, descriptor_sets.end());
-        vsm_context.record_into_command_buffer(command_buffers[i], descriptor_sets[1], vk_models);
-        pbr_context.record_into_command_buffer(command_buffers[i], descriptor_sets[0], descriptor_sets[1], vk_models);
-        smaa_context.record_into_command_buffer(command_buffers[i]);
+	// command buffers for each swapchain image, in which it registers the copy
+	vkResetCommandPool(device, swapchain_copy_commands.command_pool, 0);
+	for(uint32_t i = 0; i < swapchain_copy_commands.command_buffers.size(); i++) {
+		vkBeginCommandBuffer(swapchain_copy_commands.command_buffers[i], &command_buffer_begin_info);
 
-        // TODO: here remove the true and replace with attribute from the class
-        hbao_context.record_into_command_buffer(command_buffers[i], rendering_resolution, camera.znear, camera.zfar, true);
-        hdr_tonemap_context.record_into_command_buffer(command_buffers[i], 0, rendering_resolution);
-
-		VkImage image_to_copy;
-		if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
-			amd_fsr->record_into_command_buffer(command_buffers[i], device_tonemapped_image, device_upscaled_image);
-			image_to_copy = device_upscaled_image;
-		}
-		else {
-			image_to_copy = device_tonemapped_image;
-		}
-
+		VkImage image_to_copy = amd_fsr ? device_upscaled_image : device_tonemapped_image;
+		// Copying output image to the swapchain one
 		VkImageMemoryBarrier image_memory_barrier = {
 				VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 				nullptr,
@@ -743,33 +738,60 @@ void GraphicsModuleVulkanApp::record_command_buffers() {
 				swapchain_images[i],
 				{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
 		};
-		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
+		vkCmdPipelineBarrier(swapchain_copy_commands.command_buffers[i], VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
 
 		VkImageBlit image_blit = {
-			{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
-			{{0,0,0}, {static_cast<int32_t>(swapchain_create_info.imageExtent.width), static_cast<int32_t>(swapchain_create_info.imageExtent.height), 1}},
-			{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-			{{0,0,0}, {static_cast<int32_t>(swapchain_create_info.imageExtent.width), static_cast<int32_t>(swapchain_create_info.imageExtent.height), 1}},
-		};
-        vkCmdBlitImage(command_buffers[i], image_to_copy, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchain_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_blit, VK_FILTER_NEAREST);
+				{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+				{{0,0,0}, {static_cast<int32_t>(swapchain_create_info.imageExtent.width), static_cast<int32_t>(swapchain_create_info.imageExtent.height), 1}},
+				{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+				{{0,0,0}, {static_cast<int32_t>(swapchain_create_info.imageExtent.width), static_cast<int32_t>(swapchain_create_info.imageExtent.height), 1}},
+				};
+		vkCmdBlitImage(swapchain_copy_commands.command_buffers[i], image_to_copy, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchain_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_blit, VK_FILTER_NEAREST);
 
-        image_memory_barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+		image_memory_barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
 		image_memory_barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 		image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-		vkCmdPipelineBarrier(command_buffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
+		vkCmdPipelineBarrier(swapchain_copy_commands.command_buffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
+		vkEndCommandBuffer(swapchain_copy_commands.command_buffers[i]);
+	}
+}
 
-		vkEndCommandBuffer(command_buffers[i]);
-    }
+void GraphicsModuleVulkanApp::record_vsm_command_buffer(command_record_info vsm_to_record) {
+	// command buffer for the vsm draw commands
+	vkResetCommandPool(device, vsm_to_record.command_pool, 0);
+	VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, nullptr};
+	vkBeginCommandBuffer(vsm_to_record.command_buffers[0], &command_buffer_begin_info);
+	std::vector<VkDescriptorSet> object_descriptor_sets(descriptor_sets.begin() + 2, descriptor_sets.end());
+	vsm_context.record_into_command_buffer(vsm_to_record.command_buffers[0], descriptor_sets[1], vk_models);
+	vkEndCommandBuffer(vsm_to_record.command_buffers[0]);
+}
+
+void GraphicsModuleVulkanApp::record_pbr_command_buffer(command_record_info pbr_to_record) {
+	// command buffer for the pbr draw commands
+	vkResetCommandPool(device, pbr_to_record.command_pool, 0);
+	VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, nullptr};
+	vkBeginCommandBuffer(pbr_to_record.command_buffers[0], &command_buffer_begin_info);
+	pbr_context.record_into_command_buffer(pbr_to_record.command_buffers[0], descriptor_sets[0], descriptor_sets[1], vk_models);
+	vkEndCommandBuffer(pbr_to_record.command_buffers[0]);
 }
 
 void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModuleVulkanApp*)> resize_callback,
                                                std::function<void(GraphicsModuleVulkanApp*, uint32_t)> frame_start) {
     uint32_t rendered_frames = 0;
+    uint64_t all_rendered_frames = 0;
     std::chrono::steady_clock::time_point frames_time, current_frame, last_frame;
     uint32_t delta_time;
 
+    auto current_frame_data = &frames_data[all_rendered_frames % frames_data.size()];
+    auto next_frame_data = &frames_data[(all_rendered_frames + 1) % frames_data.size()];
+
+    vkResetFences(device, 1, &current_frame_data->after_execution_fence);
+    std::thread vsm_record_thread(&GraphicsModuleVulkanApp::record_vsm_command_buffer, this, current_frame_data->vsm_command);
+    std::thread pbr_record_thread(&GraphicsModuleVulkanApp::record_pbr_command_buffer, this, current_frame_data->pbr_command);
+
     while (!glfwWindowShouldClose(window)) {
+    	// Pre submit work
         current_frame = std::chrono::steady_clock::now();
         delta_time = std::chrono::duration_cast<std::chrono::milliseconds>(current_frame - last_frame).count();
         last_frame = current_frame;
@@ -788,8 +810,12 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
             offset += vulkan_helper::get_aligned_memory_size(vk_models[i].copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment);
         }
 
+        // Start of frame submission
+        current_frame_data = &frames_data[all_rendered_frames % frames_data.size()];
+        next_frame_data = &frames_data[(all_rendered_frames + 1) % frames_data.size()];
+
         uint32_t image_index = 0;
-        VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, semaphores[0], VK_NULL_HANDLE, &image_index);
+        VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, current_frame_data->semaphores[0], VK_NULL_HANDLE, &image_index);
         if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
             on_window_resize(resize_callback);
             continue;
@@ -798,28 +824,83 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
             check_error(res, vulkan_helper::Error::ACQUIRE_NEXT_IMAGE_FAILED);
         }
 
-        vkDeviceWaitIdle(device);
-        this->record_command_buffers();
-
-        VkPipelineStageFlags pipeline_stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        VkSubmitInfo submit_info = {
-                VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                nullptr,
-                1,
-                &semaphores[0],
-                &pipeline_stage_flags,
-                1,
-                &command_buffers[image_index],
-                1,
-                &semaphores[1]
+        std::array<VkSubmitInfo, 5> submit_infos;
+        submit_infos[0] = {
+        		VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        		nullptr,
+        		0,
+        		nullptr,
+        		nullptr,
+        		1,
+        		&current_frame_data->pre_and_post_static_commands.command_buffers[0],
+        		1,
+        		&current_frame_data->semaphores[1]
         };
-        check_error(vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE), vulkan_helper::Error::QUEUE_SUBMIT_FAILED);
+        VkPipelineStageFlags vertex_flag = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+        submit_infos[1] = {
+        		VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        		nullptr,
+        		1,
+        		&current_frame_data->semaphores[1],
+        		&vertex_flag,
+        		1,
+        		&current_frame_data->vsm_command.command_buffers[0],
+        		1,
+        		&current_frame_data->semaphores[2]
+        };
+        VkPipelineStageFlags fragment_flag = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        submit_infos[2] = {
+        		VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        		nullptr,
+        		1,
+        		&current_frame_data->semaphores[2],
+        		&fragment_flag,
+        		1,
+        		&current_frame_data->pbr_command.command_buffers[0],
+        		1,
+        		&current_frame_data->semaphores[3]
+        };
+        VkPipelineStageFlags color_attachment_stage_flag = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        submit_infos[3] = {
+        		VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        		nullptr,
+        		1,
+        		&current_frame_data->semaphores[3],
+        		&color_attachment_stage_flag,
+        		1,
+        		&current_frame_data->pre_and_post_static_commands.command_buffers[1],
+        		1,
+        		&current_frame_data->semaphores[4]
+        };
+        std::array<VkPipelineStageFlags, 2> stage_flags = {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT};
+        std::array<VkSemaphore, 2> semaphores_to_wait = {current_frame_data->semaphores[4], current_frame_data->semaphores[0]};
+        submit_infos[4] = {
+        		VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        		nullptr,
+        		semaphores_to_wait.size(),
+        		semaphores_to_wait.data(),
+        		stage_flags.data(),
+        		1,
+        		&current_frame_data->swapchain_copy_static_commands.command_buffers[image_index],
+        		1,
+        		&current_frame_data->semaphores[5]
+        };
+        vsm_record_thread.join();
+        pbr_record_thread.join();
+        check_error(vkQueueSubmit(queue, submit_infos.size(), submit_infos.data(), current_frame_data->after_execution_fence), vulkan_helper::Error::QUEUE_SUBMIT_FAILED);
 
+        // Start of current frame post-submit work for next frame
+        vkWaitForFences(device, 1, &next_frame_data->after_execution_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+        vkResetFences(device, 1, &next_frame_data->after_execution_fence);
+        vsm_record_thread = std::thread(&GraphicsModuleVulkanApp::record_vsm_command_buffer, this, next_frame_data->vsm_command);
+        pbr_record_thread = std::thread(&GraphicsModuleVulkanApp::record_pbr_command_buffer, this, next_frame_data->pbr_command);
+
+        // Start of frame present
         VkPresentInfoKHR present_info = {
                 VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
                 nullptr,
                 1,
-                &semaphores[1],
+                &current_frame_data->semaphores[5],
                 1,
                 &swapchain,
                 &image_index,
@@ -835,6 +916,7 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
         }
 
         rendered_frames++;
+        all_rendered_frames++;
         uint32_t time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - frames_time).count();
         if ( time_diff > 1000) {
             std::cout << "Msec/frame: " << ( time_diff / static_cast<float>(rendered_frames)) << std::endl;
@@ -842,27 +924,33 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
             frames_time = std::chrono::steady_clock::now();
         }
     }
+    // The thread need to be waited upon before exiting the function
+    vsm_record_thread.join();
+    pbr_record_thread.join();
 }
 
 void GraphicsModuleVulkanApp::on_window_resize(std::function<void(GraphicsModuleVulkanApp*)> resize_callback) {
     vkDeviceWaitIdle(device);
     create_swapchain();
-	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
-		rendering_resolution = amd_fsr->get_recommended_input_resolution(swapchain_create_info.imageExtent);
-	}
-	else {
-		rendering_resolution = swapchain_create_info.imageExtent;
-	}
+    rendering_resolution = amd_fsr ? amd_fsr->get_recommended_input_resolution(swapchain_create_info.imageExtent) : swapchain_create_info.imageExtent;
     init_renderer();
     resize_callback(this);
 }
 
 GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDeviceWaitIdle(device);
-    for (auto& semaphore : semaphores) {
-        vkDestroySemaphore(device, semaphore, nullptr);
+
+    for (auto& frame : frames_data) {
+    	for (auto & semaphore : frame.semaphores) {
+    		vkDestroySemaphore(device, semaphore, nullptr);
+    	}
+    	vkDestroyFence(device, frame.after_execution_fence, nullptr);
+        delete_cmd_pool_and_buffers(frame.swapchain_copy_static_commands);
+        delete_cmd_pool_and_buffers(frame.pre_and_post_static_commands);
+        delete_cmd_pool_and_buffers(frame.vsm_command);
+        delete_cmd_pool_and_buffers(frame.pbr_command);
     }
-    vkDestroySampler(device, max_aniso_linear_sampler, nullptr);
+    vkDestroySampler(device, shadow_map_linear_sampler, nullptr);
 
     // Model uniform related things freed
     vmaUnmapMemory(this->vma_allocator, host_model_uniform_allocation);

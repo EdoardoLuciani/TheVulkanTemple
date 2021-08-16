@@ -56,7 +56,19 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         EngineOptions engine_options;
 		VkExtent2D rendering_resolution;
         VmaAllocator vma_allocator;
-        VkSampler max_aniso_linear_sampler;
+        VkSampler shadow_map_linear_sampler;
+        VkFence memory_update_fence;
+
+        struct frame_data {
+        	std::vector<VkSemaphore> semaphores;
+        	VkFence after_execution_fence;
+        	command_record_info vsm_command;
+        	command_record_info pbr_command;
+        	command_record_info pre_and_post_static_commands;
+        	command_record_info swapchain_copy_static_commands;
+        };
+        // Using 3 copies of command pool, fences and semaphores for multithreaded cb recording
+        std::array<frame_data, 3> frames_data;
 
         std::vector<VkModel> vk_models;
         // Model uniform data
@@ -68,10 +80,6 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         // Models data
         VkBuffer device_mesh_data_buffer = VK_NULL_HANDLE;
         VmaAllocation device_mesh_data_allocation = VK_NULL_HANDLE;
-        //std::vector<VkImage> device_model_images;
-        //std::vector<VmaAllocation> device_model_images_allocations;
-        //std::vector<VkImageView> device_model_images_views;
-        //std::vector<VkSampler> model_image_samplers;
 
         // Conteiner that makes possible to iterate through shadowed and non-shadowed lights separately while also indexing them randomly
         typedef boost::multi_index_container<
@@ -109,7 +117,7 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         // Image for HDRTonemap output
         VkImage device_tonemapped_image = VK_NULL_HANDLE;
 		VkImageView device_tonemapped_image_view = VK_NULL_HANDLE;
-		// Image for AmdFSR
+		// Image for AmdFSR output
 		VkImage device_upscaled_image = VK_NULL_HANDLE;
 		VkImageView device_upscaled_image_view = VK_NULL_HANDLE;
 
@@ -135,12 +143,14 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         std::vector<VkDescriptorSet> descriptor_sets;
         VkDescriptorPool attachments_descriptor_pool = VK_NULL_HANDLE;
 
-        std::vector<VkSemaphore> semaphores;
-
         // Vulkan methods
         void create_sets_layouts();
         void write_descriptor_sets();
-        void record_command_buffers();
+
+        void record_static_command_buffers(command_record_info pre_and_post, command_record_info swapchain_copy_commands);
+        void record_vsm_command_buffer(command_record_info vsm_to_record);
+        void record_pbr_command_buffer(command_record_info pbr_to_record);
+
         void on_window_resize(std::function<void(GraphicsModuleVulkanApp*)> resize_callback);
 
         // Helper methods

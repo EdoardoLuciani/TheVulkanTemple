@@ -3,7 +3,6 @@
 #include <glm/glm.hpp>
 
 #define A_CPU 1
-#define A_GCC 1
 #include "ffx_a.h"
 #include "ffx_fsr1.h"
 

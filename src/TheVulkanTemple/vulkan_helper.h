@@ -14,7 +14,7 @@ namespace vulkan_helper {
         LOADED_MODEL_IS_NOT_PBR,
         VOLK_INITIALIZATION_FAILED,
         INSTANCE_CREATION_FAILED,
-        DEBUG_REPORT_CALLBACK_CREATION_FAILED,
+        DEBUG_UTILS_MESSANGER_CREATION_FAILED,
         GLFW_INITIALIZATION_FAILED,
         GLFW_WINDOW_CREATION_FAILED,
         SURFACE_CREATION_FAILED,
@@ -55,7 +55,8 @@ namespace vulkan_helper {
 	VkSurfaceTransformFlagBitsKHR select_surface_transform(const VkSurfaceCapabilitiesKHR& surface_capabilities, VkSurfaceTransformFlagBitsKHR desired_transform);
 	VkSurfaceFormatKHR select_surface_format(const std::vector<VkSurfaceFormatKHR>& surface_formats, VkSurfaceFormatKHR desired_surface_format);
 	uint32_t select_memory_index(const VkPhysicalDeviceMemoryProperties& physical_device_memory_properties, const VkMemoryRequirements& memory_requirements, VkMemoryPropertyFlags memory_properties);
-	VkBool32 debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject, size_t location, int32_t msgCode, const char* pLayerPrefix, const char* pMsg, void* pUserData);
+	VkBool32 debug_util_messanger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+			const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 
     VkBool32 compare_device_features_struct(const void* base, const void* requested, uint32_t size);
 

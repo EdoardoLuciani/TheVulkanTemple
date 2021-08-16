@@ -4,6 +4,7 @@
 #include "../../volk.h"
 #include "../../vulkan_helper.h"
 #include <unordered_map>
+#include <array>
 #include <string>
 
 class AmdFsr {

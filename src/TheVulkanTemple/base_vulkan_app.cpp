@@ -33,7 +33,6 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
         std::vector<const char*> desired_validation_layers = {};
     #else
         std::vector<const char*> desired_validation_layers = { "VK_LAYER_KHRONOS_validation" };
-        desired_instance_level_extensions.push_back("VK_EXT_debug_report");
         desired_instance_level_extensions.push_back("VK_EXT_debug_utils");
     #endif
 
@@ -53,14 +52,16 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 
 	// Debug Report (only in debug mode!)
 	#ifndef NDEBUG
-		VkDebugReportCallbackCreateInfoEXT debug_report_callback_create_info_EXT = {
-			VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
-			nullptr,
-			VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT,
-			vulkan_helper::debug_callback,
-			nullptr
+		VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info_ext = {
+				VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+				nullptr,
+				0,
+				VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT,
+				VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+				vulkan_helper::debug_util_messanger_callback,
+				nullptr
 		};
-		check_error(vkCreateDebugReportCallbackEXT(instance, &debug_report_callback_create_info_EXT, nullptr, &debug_report_callback), vulkan_helper::Error::DEBUG_REPORT_CALLBACK_CREATION_FAILED);
+		check_error(vkCreateDebugUtilsMessengerEXT(instance, &debug_utils_messenger_create_info_ext, nullptr, &debug_report_callback), vulkan_helper::Error::DEBUG_UTILS_MESSANGER_CREATION_FAILED);
 	#endif
 
 	// Window Creation
@@ -140,11 +141,9 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		}	
 	}
 
-	selected_physical_device = VK_NULL_HANDLE;
-	uint32_t selected_queue_family_index = -1;
 	if (plausible_devices_d_index_qf_index.size() == 1) {
 		selected_physical_device = devices[plausible_devices_d_index_qf_index[0].first];
-		selected_queue_family_index = plausible_devices_d_index_qf_index[0].second;
+		main_queue_family_index = plausible_devices_d_index_qf_index[0].second;
 	}
 	else if (plausible_devices_d_index_qf_index.size() > 1) {
 		std::cout << "Found multiple GPUs available, input index of desired device" << std::endl;
@@ -156,7 +155,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		size_t index;
 		std::cin >> index;
 		selected_physical_device = devices[plausible_devices_d_index_qf_index[index].first];
-		selected_queue_family_index = plausible_devices_d_index_qf_index[index].second;
+		main_queue_family_index = plausible_devices_d_index_qf_index[index].second;
 	}
 	else {
 		check_error(VK_ERROR_UNKNOWN, vulkan_helper::Error::NO_AVAILABLE_DEVICE_FOUND);
@@ -173,7 +172,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
 		nullptr,
 		0,
-		static_cast<uint32_t>(selected_queue_family_index),
+		static_cast<uint32_t>(main_queue_family_index),
 		static_cast<uint32_t>(queue_priorities.size()),
 		queue_priorities.data()
 		});
@@ -192,11 +191,10 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 	};
 
 	check_error(vkCreateDevice(selected_physical_device, &device_create_info, nullptr, &device), vulkan_helper::Error::DEVICE_CREATION_FAILED);
-	vkGetDeviceQueue(device, selected_queue_family_index, 0, &queue);
+	vkGetDeviceQueue(device, main_queue_family_index, 0, &queue);
 	volkLoadDevice(device);
 
 	create_swapchain();
-    create_cmd_pool_and_buffers(selected_queue_family_index);
 }
 
 BaseVulkanApp::~BaseVulkanApp() {
@@ -204,14 +202,12 @@ BaseVulkanApp::~BaseVulkanApp() {
 	for (auto& image_view : swapchain_images_views) {
 		vkDestroyImageView(device, image_view, nullptr);
 	}
-	vkFreeCommandBuffers(device, command_pool, command_buffers.size(), command_buffers.data());
-    vkDestroyCommandPool(device, command_pool, nullptr);
     vkDestroySwapchainKHR(device, swapchain, nullptr);
     vkDestroyDevice(device, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);
     glfwDestroyWindow(window);
 #ifndef NDEBUG
-    vkDestroyDebugReportCallbackEXT(instance, debug_report_callback, nullptr);
+    vkDestroyDebugUtilsMessengerEXT(instance, debug_report_callback, nullptr);
 #endif
     vkDestroyInstance(instance, nullptr);
 }
@@ -296,25 +292,29 @@ void BaseVulkanApp::create_swapchain() {
 	}
 }
 
-void BaseVulkanApp::create_cmd_pool_and_buffers(uint32_t queue_family_index) {
+void BaseVulkanApp::create_cmd_pool_and_buffers(uint32_t queue_family_index, VkCommandBufferLevel cb_level, uint32_t command_buffers_count, command_record_info& cr_info, uint32_t pool_flags) {
     VkCommandPoolCreateInfo command_pool_create_info = {
         VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         nullptr,
-        0,
+        pool_flags,
         queue_family_index
     };
-    check_error(vkCreateCommandPool(device, &command_pool_create_info, nullptr, &command_pool), vulkan_helper::Error::COMMAND_POOL_CREATION_FAILED);
+    check_error(vkCreateCommandPool(device, &command_pool_create_info, nullptr, &cr_info.command_pool), vulkan_helper::Error::COMMAND_POOL_CREATION_FAILED);
 
     VkCommandBufferAllocateInfo command_buffer_allocate_info = {
         VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         nullptr,
-        command_pool,
-        VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        static_cast<uint32_t>(swapchain_images.size())
+        cr_info.command_pool,
+        cb_level,
+        static_cast<uint32_t>(command_buffers_count)
     };
-    command_buffers.resize(swapchain_images.size());
-    check_error(vkAllocateCommandBuffers(device, &command_buffer_allocate_info, command_buffers.data()), vulkan_helper::Error::COMMAND_BUFFER_CREATION_FAILED);
+    cr_info.command_buffers.resize(command_buffers_count);
+    check_error(vkAllocateCommandBuffers(device, &command_buffer_allocate_info, cr_info.command_buffers.data()), vulkan_helper::Error::COMMAND_BUFFER_CREATION_FAILED);
 }
 
-
-
+void BaseVulkanApp::delete_cmd_pool_and_buffers(command_record_info& cr_info) {
+	vkFreeCommandBuffers(device, cr_info.command_pool, cr_info.command_buffers.size(), cr_info.command_buffers.data());
+	vkDestroyCommandPool(device, cr_info.command_pool, nullptr);
+	cr_info.command_buffers.clear();
+	cr_info.command_pool = VK_NULL_HANDLE;
+}

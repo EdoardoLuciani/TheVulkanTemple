@@ -55,7 +55,7 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     glfwGetCursorPos(window, &mouse_polar[1], &mouse_polar[0]);
     mouse_polar *= glm::dvec2(-0.001f, -0.001f);
 
-    app->get_camera_ptr()->dir = glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar)));
+    //app->get_camera_ptr()->dir = glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar)));
 
     // Other things
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
@@ -97,11 +97,11 @@ int main() {
         glm::mat4 sponza_m_matrix = glm::scale(glm::vec3(2.0f));
 
 		app.load_3d_objects({
-							//{"resources/models/WaterBottle/WaterBottle.glb", water_bottle_m_matrix},
-							//{"resources//models//Table//Table.glb", table_m_matrix},
-                            //{"resources//models//MarbleFloor//MarbleFloor.glb", floor_m_matrix},
-                            //{"resources//models//SchoolChair//SchoolChair.glb", chair_m_matrix},
-                            //{"resources//models//EightBall/EightBall.glb", ball_3_m_matrix},
+							{"resources/models/WaterBottle/WaterBottle.glb", water_bottle_m_matrix},
+							{"resources//models//Table//Table.glb", table_m_matrix},
+                            {"resources//models//MarbleFloor//MarbleFloor.glb", floor_m_matrix},
+                            {"resources//models//SchoolChair//SchoolChair.glb", chair_m_matrix},
+                            {"resources//models//EightBall/EightBall.glb", ball_3_m_matrix},
                             {"resources//models//Sponza/Sponza.glb", sponza_m_matrix}
 		});
 		app.load_lights({
