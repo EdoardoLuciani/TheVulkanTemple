@@ -46,7 +46,7 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         void init_renderer();
 
         void start_frame_loop(std::function<void(GraphicsModuleVulkanApp*)> resize_callback,
-                              std::function<void(GraphicsModuleVulkanApp*, uint32_t)> frame_start);
+                              std::function<void(GraphicsModuleVulkanApp*, uint32_t)> pre_submit_callback);
 
         // Methods to manage the scene objects
         Camera* get_camera_ptr() { return &camera; };

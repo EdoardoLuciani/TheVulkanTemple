@@ -777,18 +777,25 @@ void GraphicsModuleVulkanApp::record_pbr_command_buffer(command_record_info pbr_
 }
 
 void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModuleVulkanApp*)> resize_callback,
-                                               std::function<void(GraphicsModuleVulkanApp*, uint32_t)> frame_start) {
+                                               std::function<void(GraphicsModuleVulkanApp*, uint32_t)> pre_submit_callback) {
     uint32_t rendered_frames = 0;
     uint64_t all_rendered_frames = 0;
     std::chrono::steady_clock::time_point frames_time, current_frame, last_frame;
     uint32_t delta_time;
 
-    auto current_frame_data = &frames_data[all_rendered_frames % frames_data.size()];
-    auto next_frame_data = &frames_data[(all_rendered_frames + 1) % frames_data.size()];
-
+    frame_data* current_frame_data = &frames_data[all_rendered_frames % frames_data.size()];
+    frame_data* next_frame_data = &frames_data[(all_rendered_frames + 1) % frames_data.size()];
     vkResetFences(device, 1, &current_frame_data->after_execution_fence);
-    std::thread vsm_record_thread(&GraphicsModuleVulkanApp::record_vsm_command_buffer, this, current_frame_data->vsm_command);
-    std::thread pbr_record_thread(&GraphicsModuleVulkanApp::record_pbr_command_buffer, this, current_frame_data->pbr_command);
+    std::thread vsm_record_thread = std::thread(&GraphicsModuleVulkanApp::record_vsm_command_buffer, this, current_frame_data->vsm_command);
+    std::thread pbr_record_thread = std::thread(&GraphicsModuleVulkanApp::record_pbr_command_buffer, this, current_frame_data->pbr_command);
+
+    auto resize_lambda = [&](frame_data *frame_data_to_record) {
+    	on_window_resize(resize_callback);
+    	vsm_record_thread.join();
+    	pbr_record_thread.join();
+    	vsm_record_thread = std::thread(&GraphicsModuleVulkanApp::record_vsm_command_buffer, this, frame_data_to_record->vsm_command);
+    	pbr_record_thread = std::thread(&GraphicsModuleVulkanApp::record_pbr_command_buffer, this, frame_data_to_record->pbr_command);
+    };
 
     while (!glfwWindowShouldClose(window)) {
     	// Pre submit work
@@ -797,7 +804,7 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
         last_frame = current_frame;
 
         glfwPollEvents();
-        frame_start(this, delta_time);
+        pre_submit_callback(this, delta_time);
 
         camera.copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data));
         for(uint32_t i = 0, offset = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment);
@@ -817,7 +824,7 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
         uint32_t image_index = 0;
         VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, current_frame_data->semaphores[0], VK_NULL_HANDLE, &image_index);
         if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
-            on_window_resize(resize_callback);
+            resize_lambda(current_frame_data);
             continue;
         }
         else if (res != VK_SUCCESS) {
@@ -907,16 +914,16 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
                 nullptr
         };
         res = vkQueuePresentKHR(queue, &present_info);
+        rendered_frames++;
+        all_rendered_frames++;
         if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
-            on_window_resize(resize_callback);
+            resize_lambda(next_frame_data);
             continue;
         }
         else if (res != VK_SUCCESS) {
             check_error(res, vulkan_helper::Error::QUEUE_PRESENT_FAILED);
         }
 
-        rendered_frames++;
-        all_rendered_frames++;
         uint32_t time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - frames_time).count();
         if ( time_diff > 1000) {
             std::cout << "Msec/frame: " << ( time_diff / static_cast<float>(rendered_frames)) << std::endl;
@@ -951,6 +958,7 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
         delete_cmd_pool_and_buffers(frame.pbr_command);
     }
     vkDestroySampler(device, shadow_map_linear_sampler, nullptr);
+	vkDestroyFence(device, memory_update_fence, nullptr);
 
     // Model uniform related things freed
     vmaUnmapMemory(this->vma_allocator, host_model_uniform_allocation);

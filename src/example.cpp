@@ -55,7 +55,7 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     glfwGetCursorPos(window, &mouse_polar[1], &mouse_polar[0]);
     mouse_polar *= glm::dvec2(-0.001f, -0.001f);
 
-    //app->get_camera_ptr()->dir = glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar)));
+    app->get_camera_ptr()->dir = glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar)));
 
     // Other things
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
