@@ -78,7 +78,7 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
 
 int main() {
     EngineOptions options;
-    options.fsr_settings.preset = AmdFsr::Preset::NONE;
+    options.fsr_settings.preset = AmdFsr::Preset::ULTRA_QUALITY;
 	options.fsr_settings.precision = AmdFsr::Precision::FP16;
   
 	try {

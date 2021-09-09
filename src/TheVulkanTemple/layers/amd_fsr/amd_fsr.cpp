@@ -86,15 +86,6 @@ AmdFsr::AmdFsr(VkDevice device, Settings fsr_settings, std::string shader_dir_pa
         nullptr
     };
     check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &device_fsr_constants_buffer), vulkan_helper::Error::BUFFER_CREATION_FAILED);
-    VkMemoryRequirements2 memory_requirements {
-			VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2
-    };
-	VkBufferMemoryRequirementsInfo2 info = {
-			VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2,
-			nullptr,
-			device_fsr_constants_buffer
-	};
-    vkGetBufferMemoryRequirements2(device, &info, &memory_requirements);
 }
 
 VkExtent2D AmdFsr::get_recommended_input_resolution(VkExtent2D display_image_size) {
@@ -218,7 +209,6 @@ void AmdFsr::create_resources(VkExtent2D input_image_size, VkExtent2D output_ima
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_out_easu_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 
     // Updating the constants based on the resolutions and sharpness
-
 	FsrEasuCon(reinterpret_cast<AU1*>(&fsr_constants[0]), reinterpret_cast<AU1*>(&fsr_constants[1]),
 			reinterpret_cast<AU1*>(&fsr_constants[2]), reinterpret_cast<AU1*>(&fsr_constants[3]),
 			static_cast<AF1>(input_image_size.width), static_cast<AF1>(input_image_size.height),
@@ -227,7 +217,7 @@ void AmdFsr::create_resources(VkExtent2D input_image_size, VkExtent2D output_ima
 
 	this->set_rcas_sharpness(0.2);
 
-	// Setting the dispatch size of the compute shader
+	// Setting the dispatch size for the compute shader
 	dispatch_size.x = (output_image_size.width + (threadGroupWorkRegionDim - 1)) / threadGroupWorkRegionDim;
 	dispatch_size.y = (output_image_size.height + (threadGroupWorkRegionDim - 1)) / threadGroupWorkRegionDim;
 	dispatch_size.z = 1;
@@ -236,7 +226,6 @@ void AmdFsr::create_resources(VkExtent2D input_image_size, VkExtent2D output_ima
 void AmdFsr::set_rcas_sharpness(float sharpness) {
 	FsrRcasCon(reinterpret_cast<AU1*>(&fsr_constants[4]), sharpness);
 	fsr_constants_changed = true;
-	fsr_to_copy = 6;
 }
 
 void AmdFsr::create_image_views() {
@@ -384,8 +373,8 @@ void AmdFsr::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageV
 }
 
 void AmdFsr::record_into_command_buffer(VkCommandBuffer command_buffer, VkImage input_image, VkImage output_image) {
-	// todo: remove fsr_to_copy in favour of boolean when doing multithreding w/ secondary command buffers
-	if (fsr_to_copy) {
+	// todo: use push contants for the fsr_constants
+	if (fsr_constants_changed) {
 		VkBufferMemoryBarrier buffer_memory_barrier = {
 				VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
 				nullptr,
@@ -406,7 +395,7 @@ void AmdFsr::record_into_command_buffer(VkCommandBuffer command_buffer, VkImage 
 
 		vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
 
-		fsr_to_copy--;
+		fsr_constants_changed = false;
 	}
 
 	// EASU pass

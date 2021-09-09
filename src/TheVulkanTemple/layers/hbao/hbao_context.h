@@ -1,6 +1,6 @@
 #ifndef THEVULKANTEMPLE_HBAO_CONTEXT_H
 #define THEVULKANTEMPLE_HBAO_CONTEXT_H
-#include "../../volk.h"
+#include "../../external/volk.h"
 #include "../../vulkan_helper.h"
 #include <string>
 #include <array>

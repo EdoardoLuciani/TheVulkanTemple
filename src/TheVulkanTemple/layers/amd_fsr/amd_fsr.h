@@ -1,7 +1,7 @@
 #ifndef THEVULKANTEMPLE_AMD_FSR_H
 #define THEVULKANTEMPLE_AMD_FSR_H
 
-#include "../../volk.h"
+#include "../../external/volk.h"
 #include "../../vulkan_helper.h"
 #include <unordered_map>
 #include <array>
@@ -68,7 +68,6 @@ class AmdFsr {
 
         std::array<glm::uvec4, 5> fsr_constants;
         bool fsr_constants_changed = false;
-        int fsr_to_copy = 6;
         static constexpr int threadGroupWorkRegionDim = 16;
         glm::uvec3 dispatch_size;
 

@@ -26,7 +26,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 		VK_MAKE_VERSION(1,0,0),
 		"TheVulkanTemple",
 		VK_MAKE_VERSION(1,0,0),
-		VK_MAKE_VERSION(1,1,0)
+		vulkan_api_version
 	};
 
     #ifdef NDEBUG
@@ -58,7 +58,7 @@ BaseVulkanApp::BaseVulkanApp(const std::string &application_name,
 				0,
 				VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT,
 				VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-				vulkan_helper::debug_util_messanger_callback,
+				reinterpret_cast<PFN_vkDebugUtilsMessengerCallbackEXT>(vulkan_helper::debug_util_messanger_callback),
 				nullptr
 		};
 		check_error(vkCreateDebugUtilsMessengerEXT(instance, &debug_utils_messenger_create_info_ext, nullptr, &debug_report_callback), vulkan_helper::Error::DEBUG_UTILS_MESSANGER_CREATION_FAILED);

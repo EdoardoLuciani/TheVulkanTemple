@@ -98,6 +98,34 @@ void VkModel::vk_create_images(float mip_bias, VmaAllocator vma_allocator) {
 	}
 }
 
+void VkModel::vk_init_model(VkCommandBuffer cb, VkBuffer host_buffer, uint64_t host_buffer_offset,
+                            VkBuffer device_buffer, uint64_t device_buffer_offset) {
+    this->vk_record_buffer_copies_from_host_to_device(cb, host_buffer, host_buffer_offset, device_buffer, device_buffer_offset);
+    this->vk_init_images(cb, host_buffer, host_buffer_offset);
+}
+
+void VkModel::vk_record_buffer_copies_from_host_to_device(VkCommandBuffer cb, VkBuffer host_buffer, uint64_t host_buffer_offset, VkBuffer device_buffer, uint64_t device_buffer_offset) {
+	std::vector<VkBufferCopy> buffer_copies;
+	for (uint32_t j = 0; j < this->device_primitives_data_info.size(); j++) {
+		this->device_primitives_data_info[j].data_buffer = device_buffer;
+
+		VkBufferCopy buffer_copy;
+		buffer_copy.srcOffset = host_buffer_offset;
+		host_buffer_offset += this->host_primitives_data_info[j].get_total_size();
+
+		device_buffer_offset = vulkan_helper::get_aligned_memory_size(device_buffer_offset, 12);
+		buffer_copy.dstOffset = device_buffer_offset;
+		this->device_primitives_data_info[j].primitive_vertices_data_offset = device_buffer_offset;
+		this->device_primitives_data_info[j].index_data_offset = device_buffer_offset + this->host_primitives_data_info[j].interleaved_vertices_data_size;
+		device_buffer_offset += this->host_primitives_data_info[j].get_mesh_and_index_data_size();
+
+		buffer_copy.size = this->host_primitives_data_info[j].get_mesh_and_index_data_size();
+
+		buffer_copies.push_back(buffer_copy);
+	}
+	vkCmdCopyBuffer(cb, host_buffer, device_buffer, buffer_copies.size(), buffer_copies.data());
+}
+
 uint64_t VkModel::vk_init_images(VkCommandBuffer cb, VkBuffer host_image_transient_buffer, uint64_t primitive_host_buffer_offset) {
 	std::vector<VkImageMemoryBarrier> image_memory_barriers(this->device_primitives_data_info.size());
 	for (uint32_t i = 0; i < image_memory_barriers.size(); i++) {
@@ -200,8 +228,7 @@ uint64_t VkModel::vk_init_images(VkCommandBuffer cb, VkBuffer host_image_transie
 	return image_data_offset;
 }
 
-std::vector<VkWriteDescriptorSet> VkModel::get_descriptor_writes(std::span<VkDescriptorSet> descriptor_sets, VkBuffer uniform_buffer,
-		uint32_t uniform_buffer_offset, uint32_t uniform_buffer_alignment) {
+std::vector<VkWriteDescriptorSet> VkModel::get_descriptor_writes(std::span<VkDescriptorSet> descriptor_sets, VkBuffer uniform_buffer, uint32_t uniform_buffer_offset) {
 	std::vector<VkWriteDescriptorSet> writes_descriptor_set(device_primitives_data_info.size()*2); // 2 descriptor write per descriptor
 
 	// Same uniform variables are shared for all primitives
@@ -209,7 +236,7 @@ std::vector<VkWriteDescriptorSet> VkModel::get_descriptor_writes(std::span<VkDes
 	*descriptor_buffer_info = {
 			uniform_buffer,
 			uniform_buffer_offset,
-			vulkan_helper::get_aligned_memory_size(this->copy_uniform_data(nullptr), uniform_buffer_alignment) // index is not needed as all vk_models have the same uniform size
+			this->copy_uniform_data(nullptr)
 	};
 
 	// Each primitive has its own image

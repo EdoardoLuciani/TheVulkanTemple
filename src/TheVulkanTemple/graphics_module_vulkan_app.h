@@ -13,11 +13,12 @@
 #include "layers/hdr_tonemap/hdr_tonemap_context.h"
 #include "layers/amd_fsr/amd_fsr.h"
 #include "vulkan_helper.h"
-#include "external/vk_mem_alloc.h"
+#include "vma_wrapper.h"
 #include <glm/glm.hpp>
 #include "camera.h"
 #include "light.h"
 #include "gltf_model.h"
+#include "vk_buffers_suballocator.h"
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/random_access_index.hpp>
@@ -53,9 +54,12 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         const Light* get_light_ptr(uint32_t idx) { return &lights_container.at(idx); };
         VkModel* get_gltf_model_ptr(uint32_t idx) { return &vk_models.at(idx); };
     private:
+		VmaWrapper vma_wrapper;
         EngineOptions engine_options;
 		VkExtent2D rendering_resolution;
-        VmaAllocator vma_allocator;
+		std::unique_ptr<VkBuffersBuddySubAllocator> host_uniform_allocator;
+		std::unique_ptr<VkBuffersBuddySubAllocator> device_mesh_and_index_allocator;
+
         VkSampler shadow_map_linear_sampler;
         VkFence memory_update_fence;
 
@@ -64,7 +68,7 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         	VkFence after_execution_fence;
         	command_record_info vsm_command;
         	command_record_info pbr_command;
-        	command_record_info pre_and_post_static_commands;
+        	command_record_info post_processing_static_command;
         	command_record_info swapchain_copy_static_commands;
         };
         // Using 3 copies of command pool, fences and semaphores for multithreaded cb recording
@@ -72,35 +76,26 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
 
         std::vector<VkModel> vk_models;
         // Model uniform data
-        VkBuffer host_model_uniform_buffer = VK_NULL_HANDLE;
-        VmaAllocation host_model_uniform_allocation = VK_NULL_HANDLE;
-        void *host_model_uniform_buffer_ptr;
-        VkBuffer device_model_uniform_buffer = VK_NULL_HANDLE;
-        VmaAllocation device_model_uniform_allocation = VK_NULL_HANDLE;
-        // Models data
-        VkBuffer device_mesh_data_buffer = VK_NULL_HANDLE;
-        VmaAllocation device_mesh_data_allocation = VK_NULL_HANDLE;
+		std::vector<VkBuffersBuddySubAllocator::sub_allocation_data> model_uniform_allocation_data;
+        // Models mesh and index
+		std::vector<VkBuffersBuddySubAllocator::sub_allocation_data> device_model_mesh_and_index_allocation_data;
 
         // Conteiner that makes possible to iterate through shadowed and non-shadowed lights separately while also indexing them randomly
         typedef boost::multi_index_container<
             Light,
             boost::multi_index::indexed_by<
                 boost::multi_index::random_access<>,
-                boost::multi_index::ordered_non_unique<
-                    BOOST_MULTI_INDEX_MEMBER(Light, uint32_t, shadow_map_height)
-                >
+                boost::multi_index::ordered_non_unique<BOOST_MULTI_INDEX_MEMBER(Light, uint32_t, shadow_map_height)>
             >
         > LightsContainer;
         LightsContainer lights_container;
 
         const uint32_t MAX_SHADOWED_LIGHTS = 8;
         Camera camera;
-        // Host buffer and allocation for the camera and lights data
-        VkBuffer host_camera_lights_uniform_buffer = VK_NULL_HANDLE;
-        VmaAllocation host_camera_lights_allocation = VK_NULL_HANDLE;
-        void *host_camera_lights_data;
-        VkBuffer device_camera_lights_uniform_buffer = VK_NULL_HANDLE;
-        VmaAllocation device_camera_lights_uniform_allocation = VK_NULL_HANDLE;
+
+		// suballocation data for the camera and the lights
+		VkBuffersBuddySubAllocator::sub_allocation_data camera_allocation_data = {VK_NULL_HANDLE, 0, nullptr};
+		VkBuffersBuddySubAllocator::sub_allocation_data lights_allocation_data = {VK_NULL_HANDLE, 0, nullptr};
 
         // Image for depth comparison
         VkImage device_depth_image = VK_NULL_HANDLE;
@@ -147,7 +142,7 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         void create_sets_layouts();
         void write_descriptor_sets();
 
-        void record_static_command_buffers(command_record_info pre_and_post, command_record_info swapchain_copy_commands);
+        void record_static_command_buffers(command_record_info post_processing, command_record_info swapchain_copy_commands);
         void record_vsm_command_buffer(command_record_info vsm_to_record);
         void record_pbr_command_buffer(command_record_info pbr_to_record);
 

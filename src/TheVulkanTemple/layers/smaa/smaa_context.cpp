@@ -1,6 +1,6 @@
 #include "smaa_context.h"
 #include <string>
-#include "../../volk.h"
+#include "../../external/volk.h"
 #include "../../vulkan_helper.h"
 
 SmaaContext::SmaaContext(VkDevice device, VkFormat out_image_format) {
@@ -990,7 +990,7 @@ void SmaaContext::init_resources(std::string support_images_dir, const VkPhysica
 
     // We map the memory and copy the data
     void *dst_ptr;
-    check_error(vkMapMemory(device, host_transition_memory, 0, VK_WHOLE_SIZE, 0, &dst_ptr), vulkan_helper::Error::POINTER_REQUEST_FOR_HOST_MEMORY_FAILED);
+    check_error(vkMapMemory(device, host_transition_memory, 0, VK_WHOLE_SIZE, 0, &dst_ptr), vulkan_helper::Error::MEMORY_MAP_FAILED);
     vulkan_helper::get_binary_file_content(support_images_dir + "//AreaTexDX10.R8G8", area_tex_size, dst_ptr);
     vulkan_helper::get_binary_file_content(support_images_dir + "//SearchTex.R8", search_tex_size, static_cast<uint8_t*>(dst_ptr) + area_tex_size);
     vkUnmapMemory(device, host_transition_memory);

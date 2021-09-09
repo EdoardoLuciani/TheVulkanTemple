@@ -6,7 +6,7 @@
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 
-#include "volk.h"
+#include "external/volk.h"
 
 class BaseVulkanApp {
 	public:
@@ -22,6 +22,7 @@ class BaseVulkanApp {
 
 	protected:
 		// Vulkan attributes
+		const uint32_t vulkan_api_version = VK_MAKE_VERSION(1,1,0);
 		VkInstance instance = VK_NULL_HANDLE;
 		#ifndef NDEBUG
 			VkDebugUtilsMessengerEXT debug_report_callback;

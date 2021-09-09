@@ -1,6 +1,6 @@
 #ifndef BASE_VULKAN_APP_VSM_CONTEXT_H
 #define BASE_VULKAN_APP_VSM_CONTEXT_H
-#include "../../volk.h"
+#include "../../external/volk.h"
 #include <array>
 #include <unordered_map>
 #include <utility>

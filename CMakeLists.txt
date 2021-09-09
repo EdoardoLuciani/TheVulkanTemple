@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.2)
 project(TheVulkanTemple)
 
 # Checkbox to use wayland
@@ -26,7 +26,7 @@ target_compile_definitions(compiler_flags INTERFACE "GLM_FORCE_SSE4")
 
 # Compiling with SSE4 support
 if(MSVC)
-    target_compile_options(compiler_flags INTERFACE /arch:SSE4.1)
+    target_compile_options(compiler_flags INTERFACE)
 else()
     target_compile_options(compiler_flags INTERFACE -msse4.1)
     target_compile_options(compiler_flags INTERFACE -Wall)
@@ -38,10 +38,10 @@ set(SRC_DIR "${PROJECT_SOURCE_DIR}/src")
 set(ENGINE_SRC_DIR "${SRC_DIR}/TheVulkanTemple")
 
 # define location for external libraries
+find_package(Vulkan REQUIRED)
 set(GLFW_INCLUDE_DIR "" CACHE PATH "Include directories of GLFW")
 set(GLFW_LIB_DIR "" CACHE PATH "Lib dir of GLFW")
 set(GLM_INCLUDE_DIR "" CACHE PATH "Include dir for GLM")
-set(VULKAN_SDK_INCLUDE_DIR "$ENV{VULKAN_SDK}/include" CACHE PATH "Include dir for the vulkan SDK")
 set(BOOST_INCLUDE_DIR "" CACHE PATH "Include dir for boost")
 
 # Library for TheVulkanTemple engine
@@ -64,8 +64,8 @@ add_library(engine OBJECT
         ${ENGINE_SRC_DIR}/layers/pbr/pbr_context.h
         ${ENGINE_SRC_DIR}/layers/amd_fsr/amd_fsr.cpp
         ${ENGINE_SRC_DIR}/layers/amd_fsr/amd_fsr.h
-        ${ENGINE_SRC_DIR}/volk.c
-        ${ENGINE_SRC_DIR}/volk.h
+        ${ENGINE_SRC_DIR}/external/volk.c
+        ${ENGINE_SRC_DIR}/external/volk.h
         ${ENGINE_SRC_DIR}/camera.cpp
         ${ENGINE_SRC_DIR}/camera.h
         ${ENGINE_SRC_DIR}/light.cpp
@@ -73,12 +73,16 @@ add_library(engine OBJECT
         ${ENGINE_SRC_DIR}/gltf_model.cpp
         ${ENGINE_SRC_DIR}/gltf_model.h
         ${ENGINE_SRC_DIR}/vk_model.cpp
-        ${ENGINE_SRC_DIR}/vk_model.h)
+        ${ENGINE_SRC_DIR}/vk_model.h
+        ${ENGINE_SRC_DIR}/vk_buffers_suballocator.cpp
+        ${ENGINE_SRC_DIR}/vk_buffers_suballocator.h
+        ${ENGINE_SRC_DIR}/vma_wrapper.cpp
+        ${ENGINE_SRC_DIR}/vma_wrapper.h)
 
+target_include_directories(engine PUBLIC ${Vulkan_INCLUDE_DIR})
 target_include_directories(engine PUBLIC ${GLFW_INCLUDE_DIR})
 target_link_directories(engine PUBLIC ${GLFW_LIB_DIR})
 target_include_directories(engine PUBLIC ${GLM_INCLUDE_DIR})
-target_include_directories(engine PUBLIC ${VULKAN_SDK_INCLUDE_DIR})
 target_include_directories(engine PUBLIC ${BOOST_INCLUDE_DIR})
 
 if (WIN32)
@@ -107,11 +111,7 @@ add_custom_command(TARGET sample POST_BUILD
         )
 
 # SPIR-V Shader compilation
-if (WIN32)
-    set(GLSL_VALIDATOR "$ENV{VULKAN_SDK}/Bin/glslc.exe")
-elseif(UNIX)
-    set(GLSL_VALIDATOR "$ENV{VULKAN_SDK}/bin/glslc")
-endif()
+set(GLSL_VALIDATOR ${Vulkan_GLSLC_EXECUTABLE})
 
 file(GLOB_RECURSE GLSL_SOURCE_FILES
         "${ENGINE_SRC_DIR}/shaders/*/*.comp"

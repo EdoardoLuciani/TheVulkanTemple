@@ -6,7 +6,7 @@
 #include <glm/glm.hpp>
 #include "external/tiny_gltf.h"
 #include "vk_model.h"
-#include "volk.h"
+#include "external/volk.h"
 
 class GltfModel {
     public:

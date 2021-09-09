@@ -3,11 +3,11 @@
 
 #include <vector>
 #include <string>
-#include <stdint.h>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <unordered_map>
-#include "volk.h"
+#include "external/volk.h"
 
 namespace vulkan_helper {
     enum class Error {
@@ -33,7 +33,7 @@ namespace vulkan_helper {
         MEMORY_ALLOCATION_FAILED,
         BIND_BUFFER_MEMORY_FAILED,
         BIND_IMAGE_MEMORY_FAILED,
-        POINTER_REQUEST_FOR_HOST_MEMORY_FAILED,
+		MEMORY_MAP_FAILED,
         MAPPED_MEMORY_FLUSH_FAILED,
         IMAGE_CREATION_FAILED,
         IMAGE_VIEW_CREATION_FAILED,

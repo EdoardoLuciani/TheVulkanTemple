@@ -31,18 +31,19 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                                  VkExtent2D window_size,
                                                  bool fullscreen,
                                                  EngineOptions options) :
-                         BaseVulkanApp(application_name,
-                                       get_instance_extensions(),
-                                       window_size,
-                                       fullscreen,
-                                       get_device_extensions(),
-                                       get_required_physical_device_features(false, options),
-                                       VK_TRUE),
-                         vsm_context(device, "resources//shaders"),
-                         pbr_context(device, physical_device_memory_properties, VK_FORMAT_D32_SFLOAT, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8G8B8A8_UNORM),
-                         smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
-                         hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
-                         hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8B8A8_UNORM) {
+						BaseVulkanApp(application_name,
+                                      get_instance_extensions(),
+                                      window_size,
+                                      fullscreen,
+                                      get_device_extensions(),
+                                      get_required_physical_device_features(false, options),
+                                      VK_TRUE),
+						vma_wrapper(instance, selected_physical_device, device, vulkan_api_version, VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT, 512000000),
+                        vsm_context(device, "resources//shaders"),
+                        pbr_context(device, physical_device_memory_properties, VK_FORMAT_D32_SFLOAT, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8G8B8A8_UNORM),
+                        smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
+                        hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
+						hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8B8A8_UNORM) {
     engine_options = options;
 
 	// Deleting the physical device feature
@@ -55,24 +56,6 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     else {
 		rendering_resolution = swapchain_create_info.imageExtent;
     }
-
-    VmaAllocatorCreateInfo vma_allocator_create_info = {0};
-    vma_allocator_create_info.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
-    vma_allocator_create_info.physicalDevice = this->selected_physical_device;
-    vma_allocator_create_info.device = this->device;
-    vma_allocator_create_info.preferredLargeHeapBlockSize = 512000000; // blocks larger than 512 MB get allocated in a separate VkDeviceMemory
-
-    VmaVulkanFunctions vma_vulkan_functions = {
-            vkGetPhysicalDeviceProperties, vkGetPhysicalDeviceMemoryProperties, vkAllocateMemory, vkFreeMemory,
-            vkMapMemory, vkUnmapMemory, vkFlushMappedMemoryRanges, vkInvalidateMappedMemoryRanges,
-            vkBindBufferMemory, vkBindImageMemory, vkGetBufferMemoryRequirements, vkGetImageMemoryRequirements,
-            vkCreateBuffer, vkDestroyBuffer, vkCreateImage, vkDestroyImage, vkCmdCopyBuffer,
-            vkGetBufferMemoryRequirements2, vkGetImageMemoryRequirements2, vkBindBufferMemory2,vkBindImageMemory2, vkGetPhysicalDeviceMemoryProperties2
-    };
-    vma_allocator_create_info.pVulkanFunctions = &vma_vulkan_functions;
-    vma_allocator_create_info.instance = this->instance;
-    vma_allocator_create_info.vulkanApiVersion = VK_MAKE_VERSION(1, 1, 0);
-    vmaCreateAllocator(&vma_allocator_create_info, &vma_allocator);
 
     VkSamplerCreateInfo sampler_create_info = {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -96,12 +79,20 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     };
     check_error(vkCreateSampler(device, &sampler_create_info, nullptr, &shadow_map_linear_sampler), vulkan_helper::Error::SAMPLER_CREATION_FAILED);
 
+	host_uniform_allocator = std::make_unique<VkBuffersBuddySubAllocator>(vma_wrapper.get_allocator(),
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VMA_MEMORY_USAGE_CPU_TO_GPU, 65536);
+
+	device_mesh_and_index_allocator = std::make_unique<VkBuffersBuddySubAllocator>(vma_wrapper.get_allocator(),
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+			VMA_MEMORY_USAGE_GPU_ONLY, std::exp2(29)); // close to half a GB, precisely 536870912
+
     // We create 3 copies of frame data
     VkSemaphoreCreateInfo semaphore_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
     VkFenceCreateInfo fence_create_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,nullptr,VK_FENCE_CREATE_SIGNALED_BIT };
     for (auto& frame : frames_data) {
     	vkCreateFence(device, &fence_create_info, nullptr, &frame.after_execution_fence);
-    	frame.semaphores.resize(6);
+    	frame.semaphores.resize(5);
     	for (uint32_t i = 0; i < frame.semaphores.size(); i++) {
     		vkCreateSemaphore(device, &semaphore_create_info, nullptr, &frame.semaphores[i]);
     	}
@@ -109,7 +100,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1, frame.vsm_command);
     	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1, frame.pbr_command);
     	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, swapchain_images.size(), frame.swapchain_copy_static_commands);
-    	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 2, frame.pre_and_post_static_commands);
+    	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1, frame.post_processing_static_command);
     }
 
     fence_create_info.flags = 0;
@@ -231,7 +222,7 @@ void GraphicsModuleVulkanApp::create_sets_layouts() {
     };
     vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, nullptr, &pbr_model_data_set_layout);
 
-    // Creating the descriptor set layout for the light
+    // Creating the descriptor set layout for the camera
     descriptor_set_layout_binding[0] = {
             0,
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -280,7 +271,6 @@ void GraphicsModuleVulkanApp::create_sets_layouts() {
 
 void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string, glm::mat4>> model_file_matrix) {
     std::vector<GltfModel> gltf_models;
-
     // Get the total size of the models to allocate a buffer for it and copy them to host memory
     uint64_t models_total_size = 0;
     for (uint32_t i = 0; i < model_file_matrix.size(); i++) {
@@ -291,50 +281,34 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
 		vk_models.emplace_back(VkModel(device, model_file_matrix[i].first, infos, model_file_matrix[i].second));
         models_total_size += vk_models.back().get_all_primitives_total_size();
     }
-    VkBuffer host_model_data_buffer = VK_NULL_HANDLE;
-    create_buffer(host_model_data_buffer, models_total_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    VmaAllocation host_model_data_transient_allocation = VK_NULL_HANDLE;
-    allocate_and_bind_to_memory_buffer(host_model_data_transient_allocation, host_model_data_buffer, VMA_MEMORY_USAGE_CPU_ONLY);
-    void *model_host_data_pointer;
-    vmaMapMemory(this->vma_allocator, host_model_data_transient_allocation, &model_host_data_pointer);
+	VkBuffersBuddySubAllocator host_model_data_allocator(this->vma_wrapper.get_allocator(),
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, models_total_size);
 
-    // After getting a pointer for the host memory, we iterate once again in the models to copy them to memory and store some information about them
-    uint64_t offset = 0;
-    uint64_t mesh_and_index_data_size = 0;
+	// After getting a pointer for the host memory, we iterate once again in the models to copy them to memory and store some information about them
+    std::vector<VkBuffersBuddySubAllocator::sub_allocation_data> host_models_sub_allocation_data;
+	host_models_sub_allocation_data.resize(gltf_models.size());
+	device_model_mesh_and_index_allocation_data.resize(gltf_models.size());
     for (uint32_t i=0; i < gltf_models.size(); i++) {
+		host_models_sub_allocation_data[i] = host_model_data_allocator.suballocate(vk_models[i].get_all_primitives_total_size());
         gltf_models[i].copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true, true,
-                                                GltfModel::t_model_attributes::T_ALL, static_cast<uint8_t*>(model_host_data_pointer) + offset);
-        offset += vk_models[i].get_all_primitives_total_size();
-        // The mesh in the device buffer needs to be aligned to the attribute first size, which is always the position hence 12
-        for (const auto& host_info : vk_models[i].host_primitives_data_info) {
-        	mesh_and_index_data_size = vulkan_helper::get_aligned_memory_size(mesh_and_index_data_size, 12) + host_info.get_mesh_and_index_data_size();
-        }
+                                                GltfModel::t_model_attributes::T_ALL, host_models_sub_allocation_data[i].allocation_host_ptr);
+		// The mesh in the device buffer needs to be aligned to the attribute first size, which is always the position hence 12
+		device_model_mesh_and_index_allocation_data[i] = device_mesh_and_index_allocator->suballocate(vk_models[i].get_all_primitives_mesh_and_indices_size(), 12);
     }
-    vmaUnmapMemory(this->vma_allocator, host_model_data_transient_allocation);
 
-    // After creating memory and buffer for the model data, we need to create a uniform buffer and their memory
-    uint64_t uniform_size = vulkan_helper::get_aligned_memory_size(vk_models.front().copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment) * vk_models.size();
-    create_buffer(host_model_uniform_buffer, uniform_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    allocate_and_bind_to_memory_buffer(host_model_uniform_allocation, host_model_uniform_buffer, VMA_MEMORY_USAGE_CPU_ONLY);
-    vmaMapMemory(this->vma_allocator, host_model_uniform_allocation, &host_model_uniform_buffer_ptr);
-
-    // After copying the data to host memory, we create a device buffer to hold the mesh and index data
-    create_buffer(device_mesh_data_buffer, mesh_and_index_data_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-
-    // We also need to create a device buffer for the model's uniform
-    create_buffer(device_model_uniform_buffer, uniform_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-
-	std::vector<VmaAllocation> out_allocations = {device_mesh_data_allocation, device_model_uniform_allocation};
-    allocate_and_bind_to_memory(out_allocations, {device_mesh_data_buffer, device_model_uniform_buffer}, {}, VMA_MEMORY_USAGE_GPU_ONLY);
-    device_mesh_data_allocation = out_allocations[0];
-    device_model_uniform_allocation = out_allocations[1];
+    // Suballocating the memory for the uniforms
+	model_uniform_allocation_data.resize(vk_models.size());
+	for (uint32_t i = 0; i < vk_models.size(); i++) {
+		model_uniform_allocation_data[i] = host_uniform_allocator->suballocate(vk_models[i].copy_uniform_data(nullptr),
+				physical_device_properties.limits.minUniformBufferOffsetAlignment);
+	}
 
     for (uint32_t i = 0; i < vk_models.size(); i++) {
-    	vk_models[i].vk_create_images(amd_fsr ? amd_fsr->get_negative_mip_bias() : 0.0f, vma_allocator);
+    	vk_models[i].vk_create_images(amd_fsr ? amd_fsr->get_negative_mip_bias() : 0.0f, vma_wrapper.get_allocator());
     }
 
     // After setting the required memory we register the command buffer to upload the data
-    VkCommandBuffer temporary_command_buffer = frames_data.front().pre_and_post_static_commands.command_buffers[0];
+    VkCommandBuffer temporary_command_buffer = frames_data.front().post_processing_static_command.command_buffers[0];
     VkCommandBufferBeginInfo command_buffer_begin_info = {
         VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         nullptr,
@@ -343,52 +317,19 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
     };
     vkBeginCommandBuffer(temporary_command_buffer, &command_buffer_begin_info);
 
-    VkBufferMemoryBarrier buffer_memory_barrier = {
-    		VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-    		nullptr,
-    		0,
-    		VK_ACCESS_TRANSFER_WRITE_BIT,
-    		VK_QUEUE_FAMILY_IGNORED,
-    		VK_QUEUE_FAMILY_IGNORED,
-    		device_mesh_data_buffer,
-    		0,
-    		VK_WHOLE_SIZE
-    };
-    vkCmdPipelineBarrier(temporary_command_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+	device_mesh_and_index_allocator->vk_record_buffers_pipeline_barrier(temporary_command_buffer, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
-    // We calculate the offset for the mesh data both in the host and device buffers and register the copy
-    uint64_t src_offset = 0;
-    uint64_t dst_offset = 0;
-    std::vector<VkBufferCopy> buffer_copies;
+    // We copy the model data to the device buffers and images
 	for (uint32_t i = 0; i < vk_models.size(); i++) {
-		for (uint32_t j = 0; j < vk_models[i].device_primitives_data_info.size(); j++) {
-			vk_models[i].device_primitives_data_info[j].data_buffer = device_mesh_data_buffer;
-
-			VkBufferCopy buffer_copy;
-			buffer_copy.srcOffset = src_offset;
-			src_offset += vk_models[i].host_primitives_data_info[j].get_total_size();
-
-			dst_offset = vulkan_helper::get_aligned_memory_size(dst_offset, 12);
-			buffer_copy.dstOffset = dst_offset;
-			vk_models[i].device_primitives_data_info[j].primitive_vertices_data_offset = dst_offset;
-			vk_models[i].device_primitives_data_info[j].index_data_offset = dst_offset + vk_models[i].host_primitives_data_info[j].interleaved_vertices_data_size;
-			dst_offset += vk_models[i].host_primitives_data_info[j].get_mesh_and_index_data_size();
-
-			buffer_copy.size = vk_models[i].host_primitives_data_info[j].get_mesh_and_index_data_size();
-
-			buffer_copies.push_back(buffer_copy);
-		}
+        vk_models[i].vk_init_model(temporary_command_buffer, host_models_sub_allocation_data[i].buffer, host_models_sub_allocation_data[i].buffer_offset,
+                                   device_model_mesh_and_index_allocation_data[i].buffer, device_model_mesh_and_index_allocation_data[i].buffer_offset);
 	}
-	vkCmdCopyBuffer(temporary_command_buffer, host_model_data_buffer, device_mesh_data_buffer, buffer_copies.size(), buffer_copies.data());
 
-	buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	buffer_memory_barrier.dstAccessMask = VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-	vkCmdPipelineBarrier(temporary_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+	device_mesh_and_index_allocator->vk_record_buffers_pipeline_barrier(temporary_command_buffer, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
 
-	dst_offset = 0;
-	for (uint32_t i = 0; i < vk_models.size(); i++) {
-		dst_offset = vk_models[i].vk_init_images(temporary_command_buffer, host_model_data_buffer, dst_offset);
-	}
 	vkEndCommandBuffer(temporary_command_buffer);
 
     // After registering the command we submit the command_buffer with a generic fence
@@ -396,10 +337,11 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
     vkWaitForFences(device, 1, &memory_update_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
 
     // After the copy has finished we do cleanup
-    vkResetCommandPool(device, frames_data.front().pre_and_post_static_commands.command_pool, 0);
+    vkResetCommandPool(device, frames_data.front().post_processing_static_command.command_pool, 0);
     vkResetFences(device, 1, &memory_update_fence);
-    vkDestroyBuffer(device, host_model_data_buffer, nullptr);
-    vmaFreeMemory(this->vma_allocator, host_model_data_transient_allocation);
+	for (auto& sub_allocation_data : host_models_sub_allocation_data) {
+		host_model_data_allocator.free(sub_allocation_data);
+	}
 }
 
 void GraphicsModuleVulkanApp::load_lights(std::vector<Light> &&lights) {
@@ -411,22 +353,19 @@ void GraphicsModuleVulkanApp::set_camera(Camera &&camera) {
 }
 
 void GraphicsModuleVulkanApp::init_renderer() {
-    // We calculate the size needed for the buffer
-    uint64_t camera_lights_data_size = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
-            lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size();
+	// We check if the camera has been already allocated and if not we allocate it, while for the lights we free and reallocate directly
+	if (camera_allocation_data.allocation_host_ptr == nullptr) {
+		camera_allocation_data = host_uniform_allocator->suballocate(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment);
+	}
 
-    // We create and allocate a host buffer for holding the camera and lights
-    create_buffer(host_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-
-    allocate_and_bind_to_memory_buffer(host_camera_lights_allocation, host_camera_lights_uniform_buffer, VMA_MEMORY_USAGE_CPU_ONLY);
-    vmaMapMemory(vma_allocator, host_camera_lights_allocation, &host_camera_lights_data);
+	if (lights_allocation_data.allocation_host_ptr != nullptr) {
+		host_uniform_allocator->free(lights_allocation_data);
+	}
+	lights_allocation_data = host_uniform_allocator->suballocate(lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size(),
+                                                                 physical_device_properties.limits.minStorageBufferOffsetAlignment);
 
     std::vector<VkBuffer> device_buffers_to_allocate;
     std::vector<VkImage> device_images_to_allocate;
-
-    // We create the device buffer that is going to hold camera and lights information
-    create_buffer(device_camera_lights_uniform_buffer, camera_lights_data_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-    device_buffers_to_allocate.push_back(device_camera_lights_uniform_buffer);
 
     // Iterator range that goes only through shadowed lights
     auto shadowed_lights_it_range = boost::make_iterator_range(this->lights_container.get<1>().upper_bound(0),
@@ -492,11 +431,10 @@ void GraphicsModuleVulkanApp::init_renderer() {
 	}
 
     // We then allocate all needed images and buffers in the gpu, freeing the others first
-	std::vector<VmaAllocation> out_allocations = { device_camera_lights_uniform_allocation};
+	std::vector<VmaAllocation> out_allocations = {};
 	out_allocations.insert(out_allocations.begin(), device_attachments_allocations.begin(), device_attachments_allocations.end());
     allocate_and_bind_to_memory(out_allocations, device_buffers_to_allocate, device_images_to_allocate, VMA_MEMORY_USAGE_GPU_ONLY);
-	device_camera_lights_uniform_allocation = out_allocations[0];
-    device_attachments_allocations = std::vector<VmaAllocation>(out_allocations.begin() + 1, out_allocations.end());
+    device_attachments_allocations = std::vector<VmaAllocation>(out_allocations.begin(), out_allocations.end());
 
     // We then create the image views
     create_image_view(device_depth_image_view, device_depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 0,1);
@@ -511,7 +449,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
 
     vsm_context.init_resources();
 	smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1],
-			frames_data.front().pre_and_post_static_commands.command_pool, frames_data.front().pre_and_post_static_commands.command_buffers[0], queue);
+			frames_data.front().post_processing_static_command.command_pool, frames_data.front().post_processing_static_command.command_buffers[0], queue);
     pbr_context.set_output_images(rendering_resolution, device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view);
     hbao_context.init_resources();
     hbao_context.update_constants(camera.get_proj_matrix());
@@ -519,7 +457,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
     for (auto& frame : frames_data) {
-    	record_static_command_buffers(frame.pre_and_post_static_commands, frame.swapchain_copy_static_commands);
+    	record_static_command_buffers(frame.post_processing_static_command, frame.swapchain_copy_static_commands);
     }
 }
 
@@ -590,8 +528,8 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
 
     // First we do the camera
     VkDescriptorBufferInfo camera_descriptor_buffer_info = {
-            device_camera_lights_uniform_buffer,
-            0,
+            camera_allocation_data.buffer,
+			camera_allocation_data.buffer_offset,
             camera.copy_data_to_ptr(nullptr)
     };
     write_descriptor_set[0] = {
@@ -608,14 +546,15 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     };
 
     // Then the lights
-    VkDescriptorBufferInfo light_descriptor_buffer_info = {
-        device_camera_lights_uniform_buffer,
-        vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment),
-        lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()
-    };
+	VkDescriptorBufferInfo light_descriptor_buffer_info = {
+			lights_allocation_data.buffer,
+			lights_allocation_data.buffer_offset,
+			lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()
+	};
 
     auto shadowed_lights_it_range = boost::make_iterator_range(this->lights_container.get<1>().upper_bound(0),
                                                                this->lights_container.get<1>().end());
+
     std::vector<VkDescriptorImageInfo> light_descriptor_image_infos(boost::size(shadowed_lights_it_range));
     for (const auto& [light, light_descriptor_image_info] : boost::combine(shadowed_lights_it_range, light_descriptor_image_infos)) {
         light_descriptor_image_info = {
@@ -652,11 +591,10 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
 
     // Lastly, the objects
     auto it = descriptor_sets.begin() + 2;
-    for (uint32_t i = 0, offset = 0; i < vk_models.size(); i++) {
+    for (uint32_t i = 0; i < vk_models.size(); i++) {
     	auto vk_model_write_descriptor_sets = vk_models[i].get_descriptor_writes({ it, vk_models[i].device_primitives_data_info.size() },
-						device_model_uniform_buffer, offset, physical_device_properties.limits.minUniformBufferOffsetAlignment);
+						model_uniform_allocation_data[i].buffer, model_uniform_allocation_data[i].buffer_offset);
     	it += vk_models[i].device_primitives_data_info.size();
-    	offset += vk_models[i].copy_uniform_data(nullptr);
     	write_descriptor_set.insert(write_descriptor_set.end(), vk_model_write_descriptor_sets.begin(), vk_model_write_descriptor_sets.end());
     }
     vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
@@ -668,56 +606,19 @@ void GraphicsModuleVulkanApp::write_descriptor_sets() {
     }
 }
 
-void GraphicsModuleVulkanApp::record_static_command_buffers(command_record_info pre_and_post, command_record_info swapchain_copy_commands) {
-	vkResetCommandPool(device, pre_and_post.command_pool, 0);
+void GraphicsModuleVulkanApp::record_static_command_buffers(command_record_info post_processing, command_record_info swapchain_copy_commands) {
+	vkResetCommandPool(device, post_processing.command_pool, 0);
 	VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, 0, nullptr};
 
-	// command buffer for copying the uniforms
-	vkBeginCommandBuffer(pre_and_post.command_buffers[0], &command_buffer_begin_info);
-	VkBufferCopy buffer_copy = { 0,0,vulkan_helper::get_aligned_memory_size(vk_models.front().copy_uniform_data(nullptr),
-								 physical_device_properties.limits.minUniformBufferOffsetAlignment) * vk_models.size()};
-	vkCmdCopyBuffer(pre_and_post.command_buffers[0], host_model_uniform_buffer, device_model_uniform_buffer, 1, &buffer_copy);
-
-	buffer_copy = {0,0, vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment) +
-				   lights_container.front().copy_data_to_ptr(nullptr) * lights_container.size()};
-	vkCmdCopyBuffer(pre_and_post.command_buffers[0], host_camera_lights_uniform_buffer, device_camera_lights_uniform_buffer, 1, &buffer_copy);
-
-	// Transitioning layout from write to shader read
-	std::array<VkBufferMemoryBarrier,2> buffer_memory_barriers;
-	buffer_memory_barriers[0] = {
-			VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			nullptr,
-			VK_ACCESS_TRANSFER_WRITE_BIT,
-			VK_ACCESS_UNIFORM_READ_BIT,
-			VK_QUEUE_FAMILY_IGNORED,
-			VK_QUEUE_FAMILY_IGNORED,
-			device_model_uniform_buffer,
-			0,
-			VK_WHOLE_SIZE
-	};
-	buffer_memory_barriers[1] = {
-			VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			nullptr,
-			VK_ACCESS_TRANSFER_WRITE_BIT,
-			VK_ACCESS_UNIFORM_READ_BIT,
-			VK_QUEUE_FAMILY_IGNORED,
-			VK_QUEUE_FAMILY_IGNORED,
-			device_camera_lights_uniform_buffer,
-			0,
-			VK_WHOLE_SIZE
-	};
-	vkCmdPipelineBarrier(pre_and_post.command_buffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, nullptr, 2, buffer_memory_barriers.data(), 0, nullptr);
-	vkEndCommandBuffer(pre_and_post.command_buffers[0]);
-
 	// command buffer for recording image post-processing
-	vkBeginCommandBuffer(pre_and_post.command_buffers[1], &command_buffer_begin_info);
-	smaa_context.record_into_command_buffer(pre_and_post.command_buffers[1]);
-	hbao_context.record_into_command_buffer(pre_and_post.command_buffers[1], rendering_resolution, camera.znear, camera.zfar, true);
-	hdr_tonemap_context.record_into_command_buffer(pre_and_post.command_buffers[1], 0, rendering_resolution);
+	vkBeginCommandBuffer(post_processing.command_buffers[0], &command_buffer_begin_info);
+	smaa_context.record_into_command_buffer(post_processing.command_buffers[0]);
+	hbao_context.record_into_command_buffer(post_processing.command_buffers[0], rendering_resolution, camera.znear, camera.zfar, true);
+	hdr_tonemap_context.record_into_command_buffer(post_processing.command_buffers[0], 0, rendering_resolution);
 	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
-		amd_fsr->record_into_command_buffer(pre_and_post.command_buffers[1], device_tonemapped_image, device_upscaled_image);
+		amd_fsr->record_into_command_buffer(post_processing.command_buffers[0], device_tonemapped_image, device_upscaled_image);
 	}
-	vkEndCommandBuffer(pre_and_post.command_buffers[1]);
+	vkEndCommandBuffer(post_processing.command_buffers[0]);
 
 	// command buffers for each swapchain image, in which it registers the copy
 	vkResetCommandPool(device, swapchain_copy_commands.command_pool, 0);
@@ -806,15 +707,13 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
         glfwPollEvents();
         pre_submit_callback(this, delta_time);
 
-        camera.copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data));
-        for(uint32_t i = 0, offset = vulkan_helper::get_aligned_memory_size(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minStorageBufferOffsetAlignment);
-            i<lights_container.size(); i++) {
-            offset += lights_container[i].copy_data_to_ptr(static_cast<uint8_t*>(host_camera_lights_data) + offset);
+        camera.copy_data_to_ptr(static_cast<uint8_t*>(camera_allocation_data.allocation_host_ptr));
+        for(uint32_t i = 0, offset = 0; i < lights_container.size(); i++) {
+            offset += lights_container[i].copy_data_to_ptr(static_cast<uint8_t*>(lights_allocation_data.allocation_host_ptr) + offset);
         }
 
-        for(uint32_t i = 0, offset = 0; i < vk_models.size(); i++) {
-            vk_models[i].copy_uniform_data(static_cast<uint8_t*>(host_model_uniform_buffer_ptr) + offset);
-            offset += vulkan_helper::get_aligned_memory_size(vk_models[i].copy_uniform_data(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment);
+        for(uint32_t i = 0; i < vk_models.size(); i++) {
+            vk_models[i].copy_uniform_data(static_cast<uint8_t*>(model_uniform_allocation_data[i].allocation_host_ptr));
         }
 
         // Start of frame submission
@@ -824,6 +723,9 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
         uint32_t image_index = 0;
         VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, current_frame_data->semaphores[0], VK_NULL_HANDLE, &image_index);
         if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
+			/* TODO: if vkAcquireNextImageKHR fails, current_frame_data->semaphores[0] is still signaled so when the loop resets,
+			vkAcquireNextImageKHR will be met by a signaled semaphore and vulkan will complain. Either solve this with a timeline semaphore or
+			just ignore this until it becomes a serious issue. */
             resize_lambda(current_frame_data);
             continue;
         }
@@ -831,7 +733,7 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
             check_error(res, vulkan_helper::Error::ACQUIRE_NEXT_IMAGE_FAILED);
         }
 
-        std::array<VkSubmitInfo, 5> submit_infos;
+        std::array<VkSubmitInfo, 4> submit_infos;
         submit_infos[0] = {
         		VK_STRUCTURE_TYPE_SUBMIT_INFO,
         		nullptr,
@@ -839,49 +741,37 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
         		nullptr,
         		nullptr,
         		1,
-        		&current_frame_data->pre_and_post_static_commands.command_buffers[0],
+        		&current_frame_data->vsm_command.command_buffers[0],
         		1,
         		&current_frame_data->semaphores[1]
         };
-        VkPipelineStageFlags vertex_flag = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+        VkPipelineStageFlags fragment_flag = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         submit_infos[1] = {
         		VK_STRUCTURE_TYPE_SUBMIT_INFO,
         		nullptr,
         		1,
         		&current_frame_data->semaphores[1],
-        		&vertex_flag,
+        		&fragment_flag,
         		1,
-        		&current_frame_data->vsm_command.command_buffers[0],
+        		&current_frame_data->pbr_command.command_buffers[0],
         		1,
         		&current_frame_data->semaphores[2]
         };
-        VkPipelineStageFlags fragment_flag = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        VkPipelineStageFlags color_attachment_stage_flag = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         submit_infos[2] = {
         		VK_STRUCTURE_TYPE_SUBMIT_INFO,
         		nullptr,
         		1,
         		&current_frame_data->semaphores[2],
-        		&fragment_flag,
+        		&color_attachment_stage_flag,
         		1,
-        		&current_frame_data->pbr_command.command_buffers[0],
+        		&current_frame_data->post_processing_static_command.command_buffers[0],
         		1,
         		&current_frame_data->semaphores[3]
         };
-        VkPipelineStageFlags color_attachment_stage_flag = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        submit_infos[3] = {
-        		VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        		nullptr,
-        		1,
-        		&current_frame_data->semaphores[3],
-        		&color_attachment_stage_flag,
-        		1,
-        		&current_frame_data->pre_and_post_static_commands.command_buffers[1],
-        		1,
-        		&current_frame_data->semaphores[4]
-        };
         std::array<VkPipelineStageFlags, 2> stage_flags = {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT};
-        std::array<VkSemaphore, 2> semaphores_to_wait = {current_frame_data->semaphores[4], current_frame_data->semaphores[0]};
-        submit_infos[4] = {
+        std::array<VkSemaphore, 2> semaphores_to_wait = {current_frame_data->semaphores[3], current_frame_data->semaphores[0]};
+        submit_infos[3] = {
         		VK_STRUCTURE_TYPE_SUBMIT_INFO,
         		nullptr,
         		semaphores_to_wait.size(),
@@ -890,7 +780,7 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
         		1,
         		&current_frame_data->swapchain_copy_static_commands.command_buffers[image_index],
         		1,
-        		&current_frame_data->semaphores[5]
+        		&current_frame_data->semaphores[4]
         };
         vsm_record_thread.join();
         pbr_record_thread.join();
@@ -907,7 +797,7 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
                 VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
                 nullptr,
                 1,
-                &current_frame_data->semaphores[5],
+                &current_frame_data->semaphores[4],
                 1,
                 &swapchain,
                 &image_index,
@@ -921,8 +811,8 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
             continue;
         }
         else if (res != VK_SUCCESS) {
-            check_error(res, vulkan_helper::Error::QUEUE_PRESENT_FAILED);
-        }
+			check_error(res, vulkan_helper::Error::QUEUE_PRESENT_FAILED);
+		}
 
         uint32_t time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - frames_time).count();
         if ( time_diff > 1000) {
@@ -953,30 +843,24 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     	}
     	vkDestroyFence(device, frame.after_execution_fence, nullptr);
         delete_cmd_pool_and_buffers(frame.swapchain_copy_static_commands);
-        delete_cmd_pool_and_buffers(frame.pre_and_post_static_commands);
+        delete_cmd_pool_and_buffers(frame.post_processing_static_command);
         delete_cmd_pool_and_buffers(frame.vsm_command);
         delete_cmd_pool_and_buffers(frame.pbr_command);
     }
     vkDestroySampler(device, shadow_map_linear_sampler, nullptr);
 	vkDestroyFence(device, memory_update_fence, nullptr);
 
-    // Model uniform related things freed
-    vmaUnmapMemory(this->vma_allocator, host_model_uniform_allocation);
-    vkDestroyBuffer(device, host_model_uniform_buffer, nullptr);
-    vmaFreeMemory(this->vma_allocator, host_model_uniform_allocation);
+	// camera and lights uniform freed
+	host_uniform_allocator->free(camera_allocation_data);
+	host_uniform_allocator->free(lights_allocation_data);
 
     // Model related things freed
-    vk_models.clear();
-
-    vkDestroyBuffer(device, device_mesh_data_buffer, nullptr);
-    vmaFreeMemory(this->vma_allocator, device_mesh_data_allocation);
-    vkDestroyBuffer(device, device_model_uniform_buffer, nullptr);
-    vmaFreeMemory(this->vma_allocator, device_model_uniform_allocation);
-
-    // Camera and light uniform related things freed
-    vmaUnmapMemory(this->vma_allocator, host_camera_lights_allocation);
-    vkDestroyBuffer(device, host_camera_lights_uniform_buffer, nullptr);
-    vmaFreeMemory(this->vma_allocator, host_camera_lights_allocation);
+    for (auto& allocation_data : model_uniform_allocation_data) {
+		host_uniform_allocator->free(allocation_data);
+	}
+	for (auto& allocation_data : device_model_mesh_and_index_allocation_data) {
+		device_mesh_and_index_allocator->free(allocation_data);
+	}
 
     vkDestroyImageView(device, device_depth_image_view, nullptr);
     vkDestroyImage(device, device_depth_image, nullptr);
@@ -995,9 +879,8 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
 	vkDestroyImageView(device, device_upscaled_image_view, nullptr);
 	vkDestroyImage(device, device_upscaled_image, nullptr);
 
-	vkDestroyBuffer(device, device_camera_lights_uniform_buffer, nullptr);
     for (const auto& allocation : device_attachments_allocations) {
-        vmaFreeMemory(this->vma_allocator, allocation);
+        vmaFreeMemory(this->vma_wrapper.get_allocator(), allocation);
     }
 
     vkDestroyDescriptorSetLayout(device, pbr_model_data_set_layout, nullptr);
@@ -1005,8 +888,7 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyDescriptorSetLayout(device, camera_data_set_layout, nullptr);
     vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
 
-	vmaFreeMemory(vma_allocator, amd_fsr_uniform_allocation);
-    vmaDestroyAllocator(vma_allocator);
+	vmaFreeMemory(vma_wrapper.get_allocator(), amd_fsr_uniform_allocation);
 }
 
 // ----------------- Helper methods -----------------
@@ -1064,7 +946,7 @@ void GraphicsModuleVulkanApp::create_image_view(VkImageView &image_view, VkImage
 
 void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(std::vector<VmaAllocation> &out_allocations, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VmaMemoryUsage vma_memory_usage) {
     for (auto& allocation : out_allocations) {
-		vmaFreeMemory(vma_allocator, allocation);
+		vmaFreeMemory(vma_wrapper.get_allocator(), allocation);
     }
 	out_allocations.resize(buffers.size() + images.size());
 
@@ -1080,20 +962,20 @@ void GraphicsModuleVulkanApp::allocate_and_bind_to_memory(std::vector<VmaAllocat
 void GraphicsModuleVulkanApp::allocate_and_bind_to_memory_buffer(VmaAllocation &out_allocation, VkBuffer buffer, VmaMemoryUsage vma_memory_usage) {
     VmaAllocationCreateInfo vma_allocation_create_info = {0};
     vma_allocation_create_info.usage = vma_memory_usage;
-    check_error(vmaAllocateMemoryForBuffer(this->vma_allocator, buffer, &vma_allocation_create_info, &out_allocation, nullptr),
+    check_error(vmaAllocateMemoryForBuffer(this->vma_wrapper.get_allocator(), buffer, &vma_allocation_create_info, &out_allocation, nullptr),
                 vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
 
-    check_error(vmaBindBufferMemory(this->vma_allocator, out_allocation, buffer), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
+    check_error(vmaBindBufferMemory(this->vma_wrapper.get_allocator(), out_allocation, buffer), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
 
 }
 
 void GraphicsModuleVulkanApp::allocate_and_bind_to_memory_image(VmaAllocation &out_allocation, VkImage image, VmaMemoryUsage vma_memory_usage) {
     VmaAllocationCreateInfo vma_allocation_create_info = {0};
     vma_allocation_create_info.usage = vma_memory_usage;
-    check_error(vmaAllocateMemoryForImage(this->vma_allocator, image, &vma_allocation_create_info, &out_allocation, nullptr),
+    check_error(vmaAllocateMemoryForImage(this->vma_wrapper.get_allocator(), image, &vma_allocation_create_info, &out_allocation, nullptr),
                 vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
 
-    check_error(vmaBindImageMemory(this->vma_allocator, out_allocation, image), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
+    check_error(vmaBindImageMemory(this->vma_wrapper.get_allocator(), out_allocation, image), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
 }
 
 void GraphicsModuleVulkanApp::submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags pipeline_stage_flags,
