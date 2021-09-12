@@ -15,7 +15,7 @@
 void resize_callback(GraphicsModuleVulkanApp *app) {
     int width, height;
     glfwGetWindowSize(app->get_glfw_window(), &width, &height);
-    app->get_camera_ptr()->aspect = (static_cast<float>(width)/height);
+    app->get_camera_ptr()->set_aspect(static_cast<float>(width)/height);
 }
 
 void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
@@ -48,28 +48,28 @@ void frame_start(GraphicsModuleVulkanApp *app, uint32_t delta_time) {
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
         camera_pos_diff *= glm::vec4(3.0f);
     }
-    app->get_camera_ptr()->pos += glm::mat3(glm::transpose(app->get_camera_ptr()->get_view_matrix())) * camera_pos_diff * static_cast<float>(delta_time);
+    app->get_camera_ptr()->set_pos(app->get_camera_ptr()->get_pos() + glm::mat3(glm::transpose(app->get_camera_ptr()->get_view_matrix())) * camera_pos_diff * static_cast<float>(delta_time));
 
     // CAMERA MOUSE CONTROL
     glm::dvec2 mouse_polar;
     glfwGetCursorPos(window, &mouse_polar[1], &mouse_polar[0]);
     mouse_polar *= glm::dvec2(-0.001f, -0.001f);
 
-    app->get_camera_ptr()->dir = glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar)));
+    app->get_camera_ptr()->set_dir(glm::normalize(static_cast<glm::vec3>(glm::euclidean(mouse_polar))));
 
     // Other things
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
-        glm::mat4 ball_3_m_matrix = glm::translate(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir)*glm::scale(glm::vec3(0.01f));
+        glm::mat4 ball_3_m_matrix = glm::translate(app->get_camera_ptr()->get_pos() + app->get_camera_ptr()->get_dir())*glm::scale(glm::vec3(0.01f));
         app->get_gltf_model_ptr(4)->set_model_matrix(ball_3_m_matrix);
     }
 
-	app->get_light_ptr(1)->set_pos(app->get_camera_ptr()->pos + app->get_camera_ptr()->dir*0.1f);
-	app->get_light_ptr(1)->set_dir(app->get_camera_ptr()->dir);
+	app->get_light_ptr(1)->set_pos(app->get_camera_ptr()->get_pos() + app->get_camera_ptr()->get_dir()*0.1f);
+	app->get_light_ptr(1)->set_dir(app->get_camera_ptr()->get_dir());
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
-		app->get_light_ptr(1)->set_color(glm::vec3(0.0f));
+		app->get_light_ptr(1)->set_color(glm::vec3(10.0f));
 	}
 	else {
-		app->get_light_ptr(1)->set_color({17.0f, 7.0f, 13.0f});
+		app->get_light_ptr(1)->set_color(glm::vec3(0.0f));
 	}
 
 	//std::cout << glm::to_string(app->get_camera_ptr()->pos) << std::endl;
@@ -96,6 +96,8 @@ int main() {
 
         glm::mat4 sponza_m_matrix = glm::scale(glm::vec3(2.0f));
 
+        glm::mat4 rifle_m_matrix = glm::scale(glm::vec3(1.0f));
+
 		app.load_3d_objects({
 							{"resources/models/WaterBottle/WaterBottle.glb", water_bottle_m_matrix},
 							{"resources//models//Table//Table.glb", table_m_matrix},
@@ -105,9 +107,9 @@ int main() {
                             {"resources//models//Sponza/Sponza.glb", sponza_m_matrix}
 		});
 		app.load_lights({
-			{{-0.010837, 1.506811, -0.328537}, glm::normalize(glm::vec3({-0.004270, -0.702568, 0.711604})), {10.0f, 10.0f, 10.0f}, Light::LightType::SPOT,
+			{{-0.010837, 1.506811, -0.328537}, glm::normalize(glm::vec3({-0.004270, -0.702568, 0.711604})), {10.0f, 8.0f, 4.58f}, Light::LightType::SPOT,
              0.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 2000, glm::radians(90.0f), 1.0f, 0.1, 100.0f},
-            {{2.0f, 2.0f, -4.0f}, glm::normalize(glm::vec3({-2.0f, -2.0f, 4.0f})), {17.0f, 7.0f, 13.0f}, Light::LightType::SPOT,
+            {{2.0f, 2.0f, -4.0f}, glm::normalize(glm::vec3({-2.0f, -2.0f, 4.0f})), {0.0f, 0.0f, 0.0f}, Light::LightType::SPOT,
              30.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 0, glm::radians(90.0f), 1.0f, 0.01, 1000.0f},
              {{-0.516224, 1.217391, -0.000071}, glm::normalize(glm::vec3({0.773662, -0.631123, -0.055959})), {0.0f, 0.34f, 11.4f}, Light::LightType::SPOT,
 			  20.0f, glm::radians(glm::vec2(30.0f, 45.0f)), 2000, glm::radians(90.0f), 1.0f, 0.1, 100.0f}

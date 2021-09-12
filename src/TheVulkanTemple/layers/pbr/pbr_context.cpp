@@ -331,7 +331,7 @@ void PbrContext::set_output_images(VkExtent2D screen_res, VkImageView out_depth_
 }
 
 void PbrContext::record_into_command_buffer(VkCommandBuffer command_buffer, VkDescriptorSet camera_descriptor_set, VkDescriptorSet light_descriptor_set,
-		const std::vector<VkModel> &vk_models) {
+		const std::vector<VkModel> &vk_models, const Camera &camera) {
     std::array<VkClearValue,3> clear_values;
     clear_values[0].depthStencil = {1.0f, 0};
     clear_values[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -368,7 +368,7 @@ void PbrContext::record_into_command_buffer(VkCommandBuffer command_buffer, VkDe
     std::vector<VkDescriptorSet> to_bind = { light_descriptor_set, camera_descriptor_set };
     for (uint32_t j=0; j<vk_models.size(); j++) {
         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pbr_pipeline_layout, 1, to_bind.size(), to_bind.data(), 0, nullptr);
-        vk_models[j].vk_record_draw(command_buffer, pbr_pipeline_layout, 0);
+        vk_models[j].vk_record_draw(command_buffer, pbr_pipeline_layout, 0, &camera);
     }
     vkCmdEndRenderPass(command_buffer);
 }

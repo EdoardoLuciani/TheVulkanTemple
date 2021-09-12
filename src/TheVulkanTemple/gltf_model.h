@@ -41,7 +41,8 @@ class GltfModel {
         // - Only one buffer
         GltfModel() = default;
         GltfModel(std::string model_path);
-		std::vector<VkModel::primitive_host_data_info> copy_model_data_in_ptr(uint8_t v_attributes_to_copy, bool vertex_normalize, bool index_resolve, uint8_t t_attributes_to_copy, void *dst_ptr);
+		std::vector<VkModel::primitive_host_data_info> copy_model_data_in_ptr(uint8_t v_attributes_to_copy, bool vertex_normalize, bool index_resolve, uint8_t t_attributes_to_copy, void *dst_ptr,
+                                                                              bool compute_bounding_spheres);
 
     private:
         tinygltf::TinyGLTF loader;
@@ -78,5 +79,7 @@ class GltfModel {
         std::vector<attributes> primitive_attributes;
 
         void normalize_positions();
+        void compute_all_primitives_bounding_spheres(std::vector<VkModel::primitive_host_data_info> &infos);
+        VkModel::primitive_host_data_info::bounding_sphere compute_bounding_sphere(glm::vec3 *vertices, uint64_t vertices_count);
 };
 #endif //BASE_VULKAN_APP_GLTF_MODEL_H

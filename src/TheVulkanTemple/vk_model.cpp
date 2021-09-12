@@ -1,4 +1,8 @@
 #include "vk_model.h"
+#include <glm/gtx/norm.hpp>
+#include <glm/gtx/component_wise.hpp>
+#include <glm/gtx/string_cast.hpp>
+#include <iostream>
 
 VkModel::VkModel(VkDevice device, std::string model_file_path, std::vector<primitive_host_data_info> infos, glm::mat4 model_matrix) :
 		model_file_path{model_file_path}, device{device}, host_primitives_data_info{infos} {
@@ -284,11 +288,21 @@ void VkModel::clean_descriptor_writes(std::span<VkWriteDescriptorSet> first_two_
 	delete[] first_two_write_descriptor_set[1].pImageInfo;
 }
 
-void VkModel::vk_record_draw(VkCommandBuffer command_buffer, VkPipelineLayout pipeline_layout, uint32_t model_set_shader_index) const {
+void VkModel::vk_record_draw(VkCommandBuffer command_buffer, VkPipelineLayout pipeline_layout, uint32_t model_set_shader_index, const Camera *camera) const {
 	for (uint32_t i = 0; i < device_primitives_data_info.size(); i++) {
-		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, model_set_shader_index, 1, &this->device_primitives_data_info[i].descriptor_set, 0, nullptr);
-		vkCmdBindVertexBuffers(command_buffer, 0, 1, &device_primitives_data_info[i].data_buffer, &device_primitives_data_info[i].primitive_vertices_data_offset);
-		vkCmdBindIndexBuffer(command_buffer, device_primitives_data_info[i].data_buffer, device_primitives_data_info[i].index_data_offset, device_primitives_data_info[i].index_data_type);
-		vkCmdDrawIndexed(command_buffer, host_primitives_data_info[i].indices, 1, 0, 0, 0);
+        bool is_object_visible = true;
+        if (camera) {
+            glm::vec3 scale(glm::length2(glm::vec3(model_matrix[0])), glm::length2(glm::vec3(model_matrix[1])), glm::length2(glm::vec3(model_matrix[2])));
+            float max_scale = glm::sqrt(glm::compMax(scale));
+            is_object_visible = camera->is_sphere_visible(glm::vec3(model_matrix * glm::vec4(host_primitives_data_info[i].b_sphere.center, 1.0f)),
+                                                          max_scale * host_primitives_data_info[i].b_sphere.radius);
+        }
+
+        if (is_object_visible) {
+            vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, model_set_shader_index, 1, &this->device_primitives_data_info[i].descriptor_set, 0, nullptr);
+            vkCmdBindVertexBuffers(command_buffer, 0, 1, &device_primitives_data_info[i].data_buffer, &device_primitives_data_info[i].primitive_vertices_data_offset);
+            vkCmdBindIndexBuffer(command_buffer, device_primitives_data_info[i].data_buffer, device_primitives_data_info[i].index_data_offset, device_primitives_data_info[i].index_data_type);
+            vkCmdDrawIndexed(command_buffer, host_primitives_data_info[i].indices, 1, 0, 0, 0);
+        }
 	}
 }

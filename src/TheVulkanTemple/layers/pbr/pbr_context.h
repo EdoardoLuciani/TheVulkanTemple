@@ -2,6 +2,7 @@
 #define THEVULKANTEMPLE_PBR_CONTEXT_H
 
 #include "../../external/volk.h"
+#include "../../camera.h"
 #include "../../vulkan_helper.h"
 #include "../../gltf_model.h"
 
@@ -16,7 +17,7 @@ class PbrContext {
 
         void set_output_images(VkExtent2D screen_res, VkImageView out_depth_image, VkImageView out_color_image, VkImageView out_normal_image);
         void record_into_command_buffer(VkCommandBuffer command_buffer, VkDescriptorSet camera_descriptor_set, VkDescriptorSet light_descriptor_set,
-				const std::vector<VkModel> &vk_models);
+				const std::vector<VkModel> &vk_models, const Camera &camera);
 
     private:
         VkDevice device = VK_NULL_HANDLE;

@@ -4,6 +4,7 @@
 #define TINYGLTF_USE_CPP14
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <glm/gtx/norm.hpp>
 #include "external/tiny_gltf.h"
 #include <array>
 
@@ -66,14 +67,19 @@ GltfModel::GltfModel(std::string model_path) {
     }
 }
 
-std::vector<VkModel::primitive_host_data_info> GltfModel::copy_model_data_in_ptr(uint8_t v_attributes_to_copy, bool vertex_normalize, bool index_resolve, uint8_t t_attributes_to_copy, void *dst_ptr) {
+std::vector<VkModel::primitive_host_data_info> GltfModel::copy_model_data_in_ptr(uint8_t v_attributes_to_copy, bool vertex_normalize, bool index_resolve, uint8_t t_attributes_to_copy, void *dst_ptr,
+                                                                                 bool compute_bounding_spheres) {
     std::vector<VkModel::primitive_host_data_info> last_copied_data_infos(primitive_attributes.size());
     // Clear all contents of the vector
     memset(last_copied_data_infos.data(), 0, last_copied_data_infos.size()*sizeof(VkModel::primitive_host_data_info));
 
     // Normalize vectors on request
-    if (vertex_normalize && dst_ptr != nullptr) {
+    if (vertex_normalize) {
     	this->normalize_positions();
+    }
+
+    if (compute_bounding_spheres) {
+        this->compute_all_primitives_bounding_spheres(last_copied_data_infos);
     }
 
     uint32_t written_data_size = 0;
@@ -168,4 +174,99 @@ void GltfModel::normalize_positions() {
 			attrib.geom_attributes.at("POSITION").byte_offset + model.buffers[0].data.data()) /= max_len;
 		}
 	}
+}
+
+void GltfModel::compute_all_primitives_bounding_spheres(std::vector<VkModel::primitive_host_data_info> &infos) {
+    for (uint32_t i = 0; i < infos.size(); i++) {
+        infos[i].b_sphere = this->compute_bounding_sphere(reinterpret_cast<glm::vec3*>(primitive_attributes[i].geom_attributes.at("POSITION").byte_offset + model.buffers[0].data.data()),
+                                                          primitive_attributes[i].geom_attributes.at("POSITION").element_count);
+    }
+}
+
+VkModel::primitive_host_data_info::bounding_sphere GltfModel::compute_bounding_sphere(glm::vec3 *vertices, uint64_t vertices_count) {
+    VkModel::primitive_host_data_info::bounding_sphere return_sphere;
+    float mRadius;
+    float mRadius2;
+
+    glm::vec3 xmin(std::numeric_limits<float>::max());
+    glm::vec3 xmax(std::numeric_limits<float>::min());
+    glm::vec3 ymin(std::numeric_limits<float>::max());
+    glm::vec3 ymax(std::numeric_limits<float>::min());
+    glm::vec3 zmin(std::numeric_limits<float>::max());
+    glm::vec3 zmax(std::numeric_limits<float>::min());
+    glm::vec3 dia1;
+    glm::vec3 dia2;
+
+    for (uint64_t i = 0; i < vertices_count; i++) {
+        if (vertices[i][0] < xmin[0])
+            xmin = vertices[i];
+        if (vertices[i][0] > xmax[0])
+            xmax = vertices[i];
+        if (vertices[i][1] < ymin[1])
+            ymin = vertices[i];
+        if (vertices[i][1] > ymax[1])
+            ymax = vertices[i];
+        if (vertices[i][2] < zmin[2])
+            zmin = vertices[i];
+        if (vertices[i][2] > zmax[2])
+            zmax = vertices[i];
+    }
+
+    /* Set xspan = distance between the 2 points xmin & xmax (squared) */
+    glm::vec3 delta = xmax - xmin;
+    float xspan = glm::dot(delta, delta);
+
+    /* Same for y & z spans */
+    delta = ymax - ymin;
+    float yspan = glm::dot(delta, delta);
+
+    delta = zmax - zmin;
+    float zspan = glm::dot(delta, delta);
+
+    /* Set points dia1 & dia2 to the maximally separated pair */
+    dia1 = xmin;
+    dia2 = xmax;
+
+    /* assume xspan biggest */
+    float maxspan = xspan;
+
+    if (yspan > maxspan) {
+        maxspan = yspan;
+        dia1 = ymin;
+        dia2 = ymax;
+    }
+
+    if (zspan > maxspan) {
+        dia1 = zmin;
+        dia2 = zmax;
+    }
+
+    /* dia1,dia2 is a diameter of initial sphere */
+    /* calc initial center */
+    return_sphere.center = (dia1 + dia2) * 0.5f;
+
+    /* calculate initial radius**2 and radius */
+    delta = dia2 - return_sphere.center;
+
+    mRadius2 = glm::dot(delta, delta);
+    mRadius = std::sqrt(mRadius2);
+
+    /* SECOND PASS: increment current sphere */
+    for (uint64_t i = 0; i < vertices_count; i++) {
+        delta = vertices[i] - return_sphere.center;
+
+        float old_to_p_sq = glm::dot(delta, delta);
+        if (old_to_p_sq > mRadius2) /* do r**2 test first */{                           /* this point is outside of current sphere */
+            float old_to_p = float(sqrt(old_to_p_sq));
+            /* calc radius of new sphere */
+            mRadius = (mRadius + old_to_p) * 0.5f;
+            mRadius2 = mRadius * mRadius; /* for next r**2 compare */
+            float old_to_new = old_to_p - mRadius;
+            /* calc center of new sphere */
+            float recip = 1.0f / old_to_p;
+            return_sphere.center = (mRadius * return_sphere.center + old_to_new *vertices[i]) * recip;
+        }
+    }
+    return_sphere.radius = mRadius;
+    return return_sphere;
 }

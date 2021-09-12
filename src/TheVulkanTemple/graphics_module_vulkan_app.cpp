@@ -275,8 +275,8 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
     uint64_t models_total_size = 0;
     for (uint32_t i = 0; i < model_file_matrix.size(); i++) {
 		gltf_models.push_back(GltfModel(model_file_matrix[i].first));
-		auto infos = gltf_models.back().copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, false, true,
-                                              GltfModel::t_model_attributes::T_ALL, nullptr);
+		auto infos = gltf_models.back().copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true, true,
+                                              GltfModel::t_model_attributes::T_ALL, nullptr, true);
 
 		vk_models.emplace_back(VkModel(device, model_file_matrix[i].first, infos, model_file_matrix[i].second));
         models_total_size += vk_models.back().get_all_primitives_total_size();
@@ -290,8 +290,8 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
 	device_model_mesh_and_index_allocation_data.resize(gltf_models.size());
     for (uint32_t i=0; i < gltf_models.size(); i++) {
 		host_models_sub_allocation_data[i] = host_model_data_allocator.suballocate(vk_models[i].get_all_primitives_total_size());
-        gltf_models[i].copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, true, true,
-                                                GltfModel::t_model_attributes::T_ALL, host_models_sub_allocation_data[i].allocation_host_ptr);
+        gltf_models[i].copy_model_data_in_ptr(GltfModel::v_model_attributes::V_ALL, false, true,
+                                                GltfModel::t_model_attributes::T_ALL, host_models_sub_allocation_data[i].allocation_host_ptr, false);
 		// The mesh in the device buffer needs to be aligned to the attribute first size, which is always the position hence 12
 		device_model_mesh_and_index_allocation_data[i] = device_mesh_and_index_allocator->suballocate(vk_models[i].get_all_primitives_mesh_and_indices_size(), 12);
     }
@@ -613,7 +613,7 @@ void GraphicsModuleVulkanApp::record_static_command_buffers(command_record_info 
 	// command buffer for recording image post-processing
 	vkBeginCommandBuffer(post_processing.command_buffers[0], &command_buffer_begin_info);
 	smaa_context.record_into_command_buffer(post_processing.command_buffers[0]);
-	hbao_context.record_into_command_buffer(post_processing.command_buffers[0], rendering_resolution, camera.znear, camera.zfar, true);
+	hbao_context.record_into_command_buffer(post_processing.command_buffers[0], rendering_resolution, camera.get_znear(), camera.get_zfar(), true);
 	hdr_tonemap_context.record_into_command_buffer(post_processing.command_buffers[0], 0, rendering_resolution);
 	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
 		amd_fsr->record_into_command_buffer(post_processing.command_buffers[0], device_tonemapped_image, device_upscaled_image);
@@ -673,7 +673,7 @@ void GraphicsModuleVulkanApp::record_pbr_command_buffer(command_record_info pbr_
 	vkResetCommandPool(device, pbr_to_record.command_pool, 0);
 	VkCommandBufferBeginInfo command_buffer_begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, nullptr};
 	vkBeginCommandBuffer(pbr_to_record.command_buffers[0], &command_buffer_begin_info);
-	pbr_context.record_into_command_buffer(pbr_to_record.command_buffers[0], descriptor_sets[0], descriptor_sets[1], vk_models);
+	pbr_context.record_into_command_buffer(pbr_to_record.command_buffers[0], descriptor_sets[0], descriptor_sets[1], vk_models, camera);
 	vkEndCommandBuffer(pbr_to_record.command_buffers[0]);
 }
 

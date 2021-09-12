@@ -3,6 +3,7 @@
 
 #include "vulkan_helper.h"
 #include <span>
+#include "camera.h"
 #include "external/vk_mem_alloc.h"
 
 // Class that manages and acts on a model from a vulkan perspective,
@@ -21,6 +22,12 @@ class VkModel {
 			uint32_t image_alignment_size;
 			VkExtent3D image_extent;
 			uint32_t image_layers;
+
+            struct bounding_sphere {
+                glm::vec3 center;
+                float radius;
+            };
+            bounding_sphere b_sphere;
 
 			uint64_t get_total_size() const {
 				return get_mesh_and_index_data_size() + image_alignment_size + get_texture_size();
@@ -70,7 +77,7 @@ class VkModel {
 		void clean_descriptor_writes(std::span<VkWriteDescriptorSet> first_two_write_descriptor_set);
 
 		// Before recording the draw, all fields of device_data_info needs to be set
-		void vk_record_draw(VkCommandBuffer command_buffer, VkPipelineLayout pipeline_layout, uint32_t model_set_shader_index) const;
+		void vk_record_draw(VkCommandBuffer command_buffer, VkPipelineLayout pipeline_layout, uint32_t model_set_shader_index, const Camera *camera = nullptr) const;
 	private:
 
         // Copies data from a host buffer to the images and creates all mipmaps level from them
