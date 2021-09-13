@@ -7,6 +7,7 @@
 #include <utility>
 #include <unordered_map>
 #include <random>
+#include <memory>
 
 class HbaoContext {
     public:
@@ -14,15 +15,17 @@ class HbaoContext {
                     VkFormat depth_image_format, VkFormat out_ao_image_format, std::string shader_dir_path, bool generate_normals);
         ~HbaoContext();
 
+        VkBuffer get_permanent_device_buffer();
         std::vector<VkImage> get_device_images();
         std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();
 
         void create_resources(VkExtent2D screen_res);
         void init_resources();
 
-        void update_constants(glm::mat4 proj);
+        void update_constants(glm::mat4 proj, float radius, float intensity, float bias, float blur_sharpness);
 
         void allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView depth_image_view, VkImageView normal_g_buffer_image_view, VkImageView out_ao_image_view);
+        void record_constants_update(VkCommandBuffer command_buffer);
         void record_into_command_buffer(VkCommandBuffer command_buffer, VkExtent2D out_image_size, float znear, float zfar, bool is_perspective);
 
     private:
@@ -48,6 +51,8 @@ class HbaoContext {
             glm::vec4    float2Offsets[16];
             glm::vec4    jitters[16];
         };
+        std::unique_ptr<HbaoData> hbao_data;
+        float blur_sharpness;
 
         struct pipeline_common_structures {
             VkPipelineShaderStageCreateInfo vertex_shader_stage;
@@ -66,7 +71,6 @@ class HbaoContext {
         VkExtent2D screen_extent;
         VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
         bool generate_normals;
-        float blur_sharpness;
 
         VkSampler do_nothing_sampler = VK_NULL_HANDLE;
 
@@ -86,13 +90,8 @@ class HbaoContext {
         VkImage device_reinterleaved_hbao_image = VK_NULL_HANDLE;
         std::array<VkImageView, 2> device_reinterleaved_hbao_image_view = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
-        // Buffer that holds the HbaoData both in host and device memory
-        VkBuffer host_hbao_data_buffer = VK_NULL_HANDLE;
-        VkDeviceMemory host_hbao_data_memory = VK_NULL_HANDLE;
-        HbaoData* hbao_data;
-
+        // Buffer that holds the HbaoData in device memory
         VkBuffer device_hbao_data_buffer = VK_NULL_HANDLE;
-        VkDeviceMemory device_hbao_data_memory = VK_NULL_HANDLE;
 
         // depth_linearize, deinterleave, hbao_calc, hbao_reinterleave, view_normal(!)
         enum stage_name {
@@ -133,7 +132,7 @@ class HbaoContext {
         void create_hbao_blur_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
         void create_hbao_blur_2_pipeline(const pipeline_common_structures &structures, VkExtent2D render_target_extent, std::string frag_shader_path);
 
-        void create_hbao_data_buffers();
+        void create_hbao_device_buffer();
 
         void create_image_views();
         void create_framebuffers(VkImageView depth_image_view, VkImageView out_ao_image_view);

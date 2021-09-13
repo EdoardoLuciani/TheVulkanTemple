@@ -61,7 +61,9 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
 		std::unique_ptr<VkBuffersBuddySubAllocator> device_mesh_and_index_allocator;
 
         VkSampler shadow_map_linear_sampler;
-        VkFence memory_update_fence;
+
+        command_record_info general_operation_command;
+        VkFence general_operation_fence;
 
         struct frame_data {
         	std::vector<VkSemaphore> semaphores;
@@ -125,6 +127,7 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         std::unique_ptr<AmdFsr> amd_fsr = nullptr;
 
         // Static allocations for the layers
+        VmaAllocation hbao_uniform_allocation = VK_NULL_HANDLE;
         VmaAllocation amd_fsr_uniform_allocation = VK_NULL_HANDLE;
 
         // Allocations in which all attachment reside
@@ -155,8 +158,8 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         void allocate_and_bind_to_memory(std::vector<VmaAllocation> &out_allocations, const std::vector<VkBuffer> &buffers, const std::vector<VkImage> &images, VmaMemoryUsage vma_memory_usage);
         void allocate_and_bind_to_memory_buffer(VmaAllocation &out_allocation, VkBuffer buffer, VmaMemoryUsage vma_memory_usage);
         void allocate_and_bind_to_memory_image(VmaAllocation &out_allocation, VkImage image, VmaMemoryUsage vma_memory_usage);
-        void submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags stage_flags,
-                                    std::vector<VkSemaphore> wait_semaphores, std::vector<VkSemaphore> signal_semaphores, VkFence fence = VK_NULL_HANDLE);
+        void start_one_time_command_submit(VkCommandBuffer cb);
+        void end_submit_block_and_reset_command_submit(VkCommandPool cp, VkCommandBuffer cb, VkPipelineStageFlags pipeline_stage_flags, VkFence fence);
 
         // Static methods used for filling the BaseVulkanApp structure
         static std::vector<const char*> get_instance_extensions();

@@ -449,7 +449,8 @@ HbaoContext::HbaoContext(VkDevice device, VkPhysicalDeviceMemoryProperties memor
     // We don't need the vertex shader module anymore
     vkDestroyShaderModule(device, structures.vertex_shader_stage.module, nullptr);
 
-    create_hbao_data_buffers();
+    hbao_data = std::make_unique<HbaoData>();
+    create_hbao_device_buffer();
 }
 
 void HbaoContext::fill_full_screen_pipeline_common_structures(std::string vertex_shader_path, pipeline_common_structures &structures) {
@@ -1302,52 +1303,19 @@ void HbaoContext::create_hbao_blur_2_pipeline(const pipeline_common_structures &
     vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
-void HbaoContext::create_hbao_data_buffers() {
-    // Buffer and allocation for the host memory part of HbaoData
-    VkBufferCreateInfo buffer_create_info = {
-        VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        nullptr,
-        0,
-        sizeof(HbaoData),
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_SHARING_MODE_EXCLUSIVE,
-        0,
-        nullptr
-    };
-    vkCreateBuffer(device, &buffer_create_info, nullptr, &host_hbao_data_buffer);
-
-    VkMemoryRequirements memory_requirements;
-    vkGetBufferMemoryRequirements(device, host_hbao_data_buffer, &memory_requirements);
-
-    VkMemoryAllocateInfo memory_allocate_info = {
-            VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            nullptr,
-            memory_requirements.size,
-            vulkan_helper::select_memory_index(physical_device_memory_properties, memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-    };
-    check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &host_hbao_data_memory), vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
-
-    vkBindBufferMemory(device, host_hbao_data_buffer, host_hbao_data_memory, 0);
-
-    void *ptr;
-    vkMapMemory(device, host_hbao_data_memory, 0, sizeof(HbaoData), 0, &ptr);
-    hbao_data = reinterpret_cast<HbaoData*>(ptr);
-
+void HbaoContext::create_hbao_device_buffer() {
     // Buffer for the device memory part of HbaoData
-    buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    vkCreateBuffer(device, &buffer_create_info, nullptr, &device_hbao_data_buffer);
-
-    vkGetBufferMemoryRequirements(device, device_hbao_data_buffer, &memory_requirements);
-
-    memory_allocate_info = {
-            VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+    VkBufferCreateInfo buffer_create_info = {
+            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             nullptr,
-            memory_requirements.size,
-            vulkan_helper::select_memory_index(physical_device_memory_properties, memory_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+            0,
+            sizeof(HbaoData),
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_SHARING_MODE_EXCLUSIVE,
+            0,
+            nullptr
     };
-    check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &device_hbao_data_memory), vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
-
-    vkBindBufferMemory(device, device_hbao_data_buffer, device_hbao_data_memory, 0);
+    vkCreateBuffer(device, &buffer_create_info, nullptr, &device_hbao_data_buffer);
 }
 
 HbaoContext::~HbaoContext() {
@@ -1396,10 +1364,10 @@ HbaoContext::~HbaoContext() {
     }
 
     vkDestroyBuffer(device, device_hbao_data_buffer, nullptr);
-    vkFreeMemory(device, device_hbao_data_memory, nullptr);
+}
 
-    vkDestroyBuffer(device, host_hbao_data_buffer, nullptr);
-    vkFreeMemory(device, host_hbao_data_memory, nullptr);
+VkBuffer HbaoContext::get_permanent_device_buffer() {
+    return device_hbao_data_buffer;
 }
 
 std::vector<VkImage> HbaoContext::get_device_images() {
@@ -1670,7 +1638,7 @@ void HbaoContext::create_framebuffers(VkImageView depth_image_view, VkImageView 
     check_error(vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &hbao_blur_framebuffers[1]), vulkan_helper::Error::FRAMEBUFFER_CREATION_FAILED);
 }
 
-void HbaoContext::update_constants(glm::mat4 proj) {
+void HbaoContext::update_constants(glm::mat4 proj, float radius, float intensity, float bias, float blur_sharpness) {
     glm::vec4 projInfoPerspective = {
             2.0f / (proj[0][0]),                  // (x) * (R - L)/N
             2.0f / (proj[1][1]),                  // (y) * (T - B)/N
@@ -1699,10 +1667,7 @@ void HbaoContext::update_constants(glm::mat4 proj) {
     }
 
     // radius
-    float radius = 0.4f;
-    float blur_intensity = 3.0f;
-    float bias = 0.7f;
-    blur_sharpness = 3.0f;
+    this->blur_sharpness = blur_sharpness;
 
     float meters2viewspace   = 1.0f;
     float R                  = radius * meters2viewspace;
@@ -1711,7 +1676,7 @@ void HbaoContext::update_constants(glm::mat4 proj) {
     hbao_data->RadiusToScreen = R * 0.5f * projScale;
 
     // ao
-    hbao_data->PowExponent  = std::max(blur_intensity, 0.0f);
+    hbao_data->PowExponent  = std::max(intensity, 0.0f);
     hbao_data->NDotVBias    = std::min(std::max(0.0f, bias), 1.0f);
     hbao_data->AOMultiplier = 1.0f / (1.0f - hbao_data->NDotVBias);
 
@@ -1958,6 +1923,23 @@ void HbaoContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkI
     vkUpdateDescriptorSets(device, write_descriptor_sets.size(), write_descriptor_sets.data(), 0, nullptr);
 }
 
+void HbaoContext::record_constants_update(VkCommandBuffer command_buffer) {
+    vkCmdUpdateBuffer(command_buffer, device_hbao_data_buffer, 0, sizeof(HbaoData), hbao_data.get());
+    // Transitioning layout from write to shader read
+    VkBufferMemoryBarrier buffer_memory_barrier = {
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            nullptr,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_UNIFORM_READ_BIT,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_hbao_data_buffer,
+            0,
+            VK_WHOLE_SIZE
+    };
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+}
+
 void HbaoContext::record_into_command_buffer(VkCommandBuffer command_buffer, VkExtent2D out_image_size, float znear, float zfar, bool is_perspective) {
     // Common structures for all the binded pipelines
     VkViewport viewport = {
@@ -2002,24 +1984,6 @@ void HbaoContext::record_into_command_buffer(VkCommandBuffer command_buffer, VkE
 
     // view_normal pass
     // We copy the constants
-
-    VkBufferCopy buffer_copy = { 0,0, sizeof(HbaoData)};
-    vkCmdCopyBuffer(command_buffer, host_hbao_data_buffer, device_hbao_data_buffer, 1, &buffer_copy);
-
-    // Transitioning layout from the write to the shader read
-    VkBufferMemoryBarrier buffer_memory_barrier = {
-            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            nullptr,
-            VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_ACCESS_UNIFORM_READ_BIT,
-            VK_QUEUE_FAMILY_IGNORED,
-            VK_QUEUE_FAMILY_IGNORED,
-            device_hbao_data_buffer,
-            0,
-            VK_WHOLE_SIZE
-    };
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
-
     if (generate_normals) {
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, stages[VIEW_NORMAL].pipeline);
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);

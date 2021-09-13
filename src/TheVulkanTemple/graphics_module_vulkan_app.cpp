@@ -103,15 +103,17 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     	create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1, frame.post_processing_static_command);
     }
 
+    create_cmd_pool_and_buffers(main_queue_family_index, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1, general_operation_command);
     fence_create_info.flags = 0;
-    vkCreateFence(device, &fence_create_info, nullptr, &memory_update_fence);
+    vkCreateFence(device, &fence_create_info, nullptr, &general_operation_fence);
 
     create_sets_layouts();
     pbr_context.create_pipeline("resources//shaders", pbr_model_data_set_layout, camera_data_set_layout, light_data_set_layout);
 
     // We perform allocations that are not dependent on screen resolutions
+    allocate_and_bind_to_memory_buffer(hbao_uniform_allocation, hbao_context.get_permanent_device_buffer(), VMA_MEMORY_USAGE_GPU_ONLY);
     if (amd_fsr) {
-		allocate_and_bind_to_memory_buffer(amd_fsr_uniform_allocation, amd_fsr->get_device_buffer(), VMA_MEMORY_USAGE_GPU_ONLY);
+		allocate_and_bind_to_memory_buffer(amd_fsr_uniform_allocation, amd_fsr->get_permanent_device_buffer(), VMA_MEMORY_USAGE_GPU_ONLY);
     }
 }
 
@@ -308,37 +310,24 @@ void GraphicsModuleVulkanApp::load_3d_objects(std::vector<std::pair<std::string,
     }
 
     // After setting the required memory we register the command buffer to upload the data
-    VkCommandBuffer temporary_command_buffer = frames_data.front().post_processing_static_command.command_buffers[0];
-    VkCommandBufferBeginInfo command_buffer_begin_info = {
-        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        nullptr,
-        VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        nullptr
-    };
-    vkBeginCommandBuffer(temporary_command_buffer, &command_buffer_begin_info);
+    start_one_time_command_submit(general_operation_command.command_buffers.front());
 
-	device_mesh_and_index_allocator->vk_record_buffers_pipeline_barrier(temporary_command_buffer, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+	device_mesh_and_index_allocator->vk_record_buffers_pipeline_barrier(general_operation_command.command_buffers.front(), 0, VK_ACCESS_TRANSFER_WRITE_BIT,
 			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     // We copy the model data to the device buffers and images
 	for (uint32_t i = 0; i < vk_models.size(); i++) {
-        vk_models[i].vk_init_model(temporary_command_buffer, host_models_sub_allocation_data[i].buffer, host_models_sub_allocation_data[i].buffer_offset,
+        vk_models[i].vk_init_model(general_operation_command.command_buffers.front(), host_models_sub_allocation_data[i].buffer, host_models_sub_allocation_data[i].buffer_offset,
                                    device_model_mesh_and_index_allocation_data[i].buffer, device_model_mesh_and_index_allocation_data[i].buffer_offset);
 	}
 
-	device_mesh_and_index_allocator->vk_record_buffers_pipeline_barrier(temporary_command_buffer, VK_ACCESS_TRANSFER_WRITE_BIT,
+	device_mesh_and_index_allocator->vk_record_buffers_pipeline_barrier(general_operation_command.command_buffers.front(), VK_ACCESS_TRANSFER_WRITE_BIT,
             VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
 
-	vkEndCommandBuffer(temporary_command_buffer);
+    end_submit_block_and_reset_command_submit(general_operation_command.command_pool, general_operation_command.command_buffers.front(),
+                                              VK_PIPELINE_STAGE_TRANSFER_BIT, general_operation_fence);
 
-    // After registering the command we submit the command_buffer with a generic fence
-    submit_command_buffers({temporary_command_buffer}, VK_PIPELINE_STAGE_TRANSFER_BIT, {}, {}, memory_update_fence);
-    vkWaitForFences(device, 1, &memory_update_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
-
-    // After the copy has finished we do cleanup
-    vkResetCommandPool(device, frames_data.front().post_processing_static_command.command_pool, 0);
-    vkResetFences(device, 1, &memory_update_fence);
 	for (auto& sub_allocation_data : host_models_sub_allocation_data) {
 		host_model_data_allocator.free(sub_allocation_data);
 	}
@@ -451,8 +440,14 @@ void GraphicsModuleVulkanApp::init_renderer() {
 	smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1],
 			frames_data.front().post_processing_static_command.command_pool, frames_data.front().post_processing_static_command.command_buffers[0], queue);
     pbr_context.set_output_images(rendering_resolution, device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view);
+
     hbao_context.init_resources();
-    hbao_context.update_constants(camera.get_proj_matrix());
+    hbao_context.update_constants(camera.get_proj_matrix(), 0.4f, 3.0f, 0.7f, 3.0f);
+
+    start_one_time_command_submit(general_operation_command.command_buffers.front());
+    hbao_context.record_constants_update(general_operation_command.command_buffers.front());
+    end_submit_block_and_reset_command_submit(general_operation_command.command_pool, general_operation_command.command_buffers.front(),
+                                              VK_PIPELINE_STAGE_TRANSFER_BIT, general_operation_fence);
 
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
@@ -848,7 +843,9 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
         delete_cmd_pool_and_buffers(frame.pbr_command);
     }
     vkDestroySampler(device, shadow_map_linear_sampler, nullptr);
-	vkDestroyFence(device, memory_update_fence, nullptr);
+
+    delete_cmd_pool_and_buffers(general_operation_command);
+	vkDestroyFence(device, general_operation_fence, nullptr);
 
 	// camera and lights uniform freed
 	host_uniform_allocator->free(camera_allocation_data);
@@ -889,6 +886,7 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
 
 	vmaFreeMemory(vma_wrapper.get_allocator(), amd_fsr_uniform_allocation);
+    vmaFreeMemory(vma_wrapper.get_allocator(), hbao_uniform_allocation);
 }
 
 // ----------------- Helper methods -----------------
@@ -978,18 +976,31 @@ void GraphicsModuleVulkanApp::allocate_and_bind_to_memory_image(VmaAllocation &o
     check_error(vmaBindImageMemory(this->vma_wrapper.get_allocator(), out_allocation, image), vulkan_helper::Error::BIND_IMAGE_MEMORY_FAILED);
 }
 
-void GraphicsModuleVulkanApp::submit_command_buffers(std::vector<VkCommandBuffer> command_buffers, VkPipelineStageFlags pipeline_stage_flags,
-                                                     std::vector<VkSemaphore> wait_semaphores, std::vector<VkSemaphore> signal_semaphores, VkFence fence) {
+void GraphicsModuleVulkanApp::start_one_time_command_submit(VkCommandBuffer cb) {
+    VkCommandBufferBeginInfo command_buffer_begin_info = {
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            nullptr,
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            nullptr
+    };
+    vkBeginCommandBuffer(cb, &command_buffer_begin_info);
+}
+
+void GraphicsModuleVulkanApp::end_submit_block_and_reset_command_submit(VkCommandPool cp, VkCommandBuffer cb, VkPipelineStageFlags pipeline_stage_flags, VkFence fence) {
+    vkEndCommandBuffer(cb);
     VkSubmitInfo submit_info = {
             VK_STRUCTURE_TYPE_SUBMIT_INFO,
             nullptr,
-            static_cast<uint32_t>(wait_semaphores.size()),
-            wait_semaphores.data(),
+            0,
+            nullptr,
             &pipeline_stage_flags,
-            static_cast<uint32_t>(command_buffers.size()),
-            command_buffers.data(),
-            static_cast<uint32_t>(signal_semaphores.size()),
-            signal_semaphores.data(),
+            1,
+            &cb,
+            0,
+            nullptr,
     };
     check_error(vkQueueSubmit(queue, 1, &submit_info, fence), vulkan_helper::Error::QUEUE_SUBMIT_FAILED);
+    vkWaitForFences(device, 1, &fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+    vkResetCommandPool(device, cp, 0);
+    vkResetFences(device, 1, &fence);
 }

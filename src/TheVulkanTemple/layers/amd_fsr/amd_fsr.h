@@ -32,7 +32,7 @@ class AmdFsr {
 
 	VkExtent2D get_recommended_input_resolution(VkExtent2D display_image_size);
 	float get_negative_mip_bias();
-    VkBuffer get_device_buffer() { return device_fsr_constants_buffer; };
+    VkBuffer get_permanent_device_buffer() { return device_fsr_constants_buffer; };
     VkImage get_device_image() { return device_out_easu_image; };
     std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> get_required_descriptor_pool_size_and_sets();
 
