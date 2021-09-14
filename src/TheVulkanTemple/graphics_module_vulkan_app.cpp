@@ -41,7 +41,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
 						vma_wrapper(instance, selected_physical_device, device, vulkan_api_version, VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT, 512000000),
                         vsm_context(device, "resources//shaders"),
                         pbr_context(device, physical_device_memory_properties, VK_FORMAT_D32_SFLOAT, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8G8B8A8_UNORM),
-                        smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32),
+                        smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, "resources//shaders", "resources//textures", physical_device_memory_properties),
                         hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
 						hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8B8A8_UNORM) {
     engine_options = options;
@@ -112,9 +112,18 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
 
     // We perform allocations that are not dependent on screen resolutions
     allocate_and_bind_to_memory_buffer(hbao_uniform_allocation, hbao_context.get_permanent_device_buffer(), VMA_MEMORY_USAGE_GPU_ONLY);
+    std::array<VkImage, 2> to_allocate = smaa_context.get_permanent_device_images();
+    allocate_and_bind_to_memory(smaa_static_images_allocations, {}, {to_allocate.begin(), to_allocate.end()}, VMA_MEMORY_USAGE_GPU_ONLY);
     if (amd_fsr) {
 		allocate_and_bind_to_memory_buffer(amd_fsr_uniform_allocation, amd_fsr->get_permanent_device_buffer(), VMA_MEMORY_USAGE_GPU_ONLY);
     }
+
+    // Operations that do not depend on screen resolution so need to be done only once
+    start_one_time_command_submit(general_operation_command.command_buffers.front());
+    smaa_context.record_permanent_resources_copy_to_device_memory(general_operation_command.command_buffers.front());
+    end_submit_block_and_reset_command_submit(general_operation_command.command_pool, general_operation_command.command_buffers.front(),
+                                              VK_PIPELINE_STAGE_TRANSFER_BIT, general_operation_fence);
+    smaa_context.clean_copy_resources();
 }
 
 std::vector<const char*> GraphicsModuleVulkanApp::get_instance_extensions() {
@@ -371,7 +380,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     }
 
     vsm_context.create_resources(shadow_map_resolutions, ssbo_indices, pbr_model_data_set_layout, light_data_set_layout);
-    smaa_context.create_resources(rendering_resolution, "resources//shaders");
+    smaa_context.create_resources(rendering_resolution);
     hbao_context.create_resources(rendering_resolution);
     hdr_tonemap_context.create_resources(rendering_resolution, "resources//shaders");
     if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
@@ -437,8 +446,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
 	}
 
     vsm_context.init_resources();
-	smaa_context.init_resources("resources//textures", physical_device_memory_properties, device_render_target_image_views[1],
-			frames_data.front().post_processing_static_command.command_pool, frames_data.front().post_processing_static_command.command_buffers[0], queue);
+	smaa_context.init_resources(device_render_target_image_views[1]);
     pbr_context.set_output_images(rendering_resolution, device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view);
 
     hbao_context.init_resources();
@@ -451,6 +459,8 @@ void GraphicsModuleVulkanApp::init_renderer() {
 
     // After creating all resources we proceed to create the descriptor sets
     write_descriptor_sets();
+
+    // Then we record the command buffers that need to be recorded only one time
     for (auto& frame : frames_data) {
     	record_static_command_buffers(frame.post_processing_static_command, frame.swapchain_copy_static_commands);
     }
@@ -885,6 +895,9 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyDescriptorSetLayout(device, camera_data_set_layout, nullptr);
     vkDestroyDescriptorPool(device, attachments_descriptor_pool, nullptr);
 
+    for (auto& allocation : smaa_static_images_allocations) {
+        vmaFreeMemory(vma_wrapper.get_allocator(), allocation);
+    }
 	vmaFreeMemory(vma_wrapper.get_allocator(), amd_fsr_uniform_allocation);
     vmaFreeMemory(vma_wrapper.get_allocator(), hbao_uniform_allocation);
 }

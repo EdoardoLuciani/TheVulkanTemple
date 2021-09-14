@@ -128,6 +128,7 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
 
         // Static allocations for the layers
         VmaAllocation hbao_uniform_allocation = VK_NULL_HANDLE;
+        std::vector<VmaAllocation> smaa_static_images_allocations;
         VmaAllocation amd_fsr_uniform_allocation = VK_NULL_HANDLE;
 
         // Allocations in which all attachment reside

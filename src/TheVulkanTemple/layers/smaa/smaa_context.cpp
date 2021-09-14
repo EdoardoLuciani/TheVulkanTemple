@@ -3,7 +3,8 @@
 #include "../../external/volk.h"
 #include "../../vulkan_helper.h"
 
-SmaaContext::SmaaContext(VkDevice device, VkFormat out_image_format) {
+SmaaContext::SmaaContext(VkDevice device, VkFormat out_image_format, std::string shader_dir_path,
+                         std::string resource_images_dir_path, const VkPhysicalDeviceMemoryProperties &memory_properties) {
     this->device = device;
 
     // Sampler we will use with the smaa images
@@ -217,6 +218,529 @@ SmaaContext::SmaaContext(VkDevice device, VkFormat out_image_format) {
             nullptr
     };
     vkCreateRenderPass(device, &render_pass_create_info, nullptr, &render_passes[2]);
+
+    // filling the structure that contains all the common pipeline structures
+    pipeline_common_structures common_structures;
+    common_structures.vertex_input = {
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            0,
+            nullptr,
+            0,
+            nullptr
+    };
+
+    common_structures.input_assembly = {
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            VK_FALSE
+    };
+
+    // random values for the viewport and scissors since the real values will be set dynamically
+    common_structures.viewport = {
+            0.0f,
+            0.0f,
+            800.0f,
+            800.0f,
+            0.0f,
+            1.0f
+    };
+    common_structures.scissor = {
+            {0,0},
+            {800, 800}
+    };
+    common_structures.pipeline_viewport_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &common_structures.viewport,
+            1,
+            &common_structures.scissor
+    };
+
+    common_structures.rasterization = {
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_FALSE,
+            VK_POLYGON_MODE_FILL,
+            VK_CULL_MODE_NONE,
+            VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            VK_FALSE,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f
+    };
+
+    common_structures.multisample = {
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_FALSE,
+            1.0f,
+            nullptr,
+            VK_FALSE,
+            VK_FALSE
+    };
+
+    common_structures.color_blend_attachment_state = {
+            VK_FALSE,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_BLEND_FACTOR_ONE,
+            VK_BLEND_FACTOR_ZERO,
+            VK_BLEND_OP_ADD,
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+    common_structures.color_blend_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_LOGIC_OP_COPY,
+            1,
+            &common_structures.color_blend_attachment_state,
+            {0.0f,0.0f,0.0f,0.0f}
+    };
+
+    // We set the viewport and scissor dynamically
+    common_structures.dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT ,VK_DYNAMIC_STATE_SCISSOR };
+    common_structures.pipeline_dynamic_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            common_structures.dynamic_states.size(),
+            common_structures.dynamic_states.data()
+    };
+
+    create_edge_pipeline(common_structures, shader_dir_path);
+    create_weight_pipeline(common_structures, shader_dir_path);
+    create_blend_pipeline(common_structures, shader_dir_path);
+
+    // reading the resources images from the disk and uploading them to a host buffer
+    this->load_resource_images_to_host_memory(resource_images_dir_path, memory_properties);
+
+    // Creating the static images for smaa
+    VkImageCreateInfo image_create_info = {
+            VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_IMAGE_TYPE_2D,
+            smaa_area_image_format,
+            smaa_area_image_extent,
+            1,
+            1,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            VK_SHARING_MODE_EXCLUSIVE,
+            0,
+            nullptr,
+            VK_IMAGE_LAYOUT_UNDEFINED
+    };
+    check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_area_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
+
+    image_create_info.format = smaa_search_image_format;
+    image_create_info.extent = smaa_search_image_extent;
+    vkDestroyImage(device, device_smaa_search_image, nullptr);
+    check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_search_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
+}
+
+void SmaaContext::create_edge_pipeline(const pipeline_common_structures &common_structures, std::string shader_dir_path) {
+    std::vector<uint8_t> shader_contents;
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_edge.vert.spv", shader_contents);
+    VkShaderModuleCreateInfo shader_module_create_info = {
+            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            nullptr,
+            0,
+            shader_contents.size(),
+            reinterpret_cast<uint32_t*>(shader_contents.data())
+    };
+    VkShaderModule vertex_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED );
+
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_edge.frag.spv", shader_contents);
+    shader_module_create_info.codeSize = shader_contents.size();
+    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+    VkShaderModule fragment_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED );
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
+        {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            vertex_shader_module,
+            "main",
+            nullptr
+            },
+            {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            fragment_shader_module,
+            "main",
+            nullptr
+            }
+    }};
+
+    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_FALSE,
+            VK_COMPARE_OP_LESS,
+            VK_FALSE,
+            VK_TRUE,
+            {VK_STENCIL_OP_ZERO, VK_STENCIL_OP_INCREMENT_AND_CLAMP, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_GREATER, 0xff, 0xff, 1},
+            {VK_STENCIL_OP_ZERO, VK_STENCIL_OP_INCREMENT_AND_CLAMP, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_GREATER, 0xff, 0xff, 1},
+            0.0f,
+            1.0f
+    };
+
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &smaa_descriptor_sets_layout[0],
+            0,
+            nullptr
+    };
+    vkDestroyPipelineLayout(device, smaa_pipelines_layout[0], nullptr);
+    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &smaa_pipelines_layout[0]);
+
+    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            nullptr,
+            0,
+            pipeline_shaders_stage_create_info.size(),
+            pipeline_shaders_stage_create_info.data(),
+            &common_structures.vertex_input,
+            &common_structures.input_assembly,
+            nullptr,
+            &common_structures.pipeline_viewport_state_create_info,
+            &common_structures.rasterization,
+            &common_structures.multisample,
+            &pipeline_depth_stencil_state_create_info,
+            &common_structures.color_blend_state_create_info,
+            &common_structures.pipeline_dynamic_state_create_info,
+            smaa_pipelines_layout[0],
+            render_passes[0],
+            0,
+            VK_NULL_HANDLE,
+            -1
+    };
+    vkDestroyPipeline(device, smaa_pipelines[0], nullptr);
+    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &smaa_pipelines[0]);
+    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
+    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
+}
+
+void SmaaContext::create_weight_pipeline(const pipeline_common_structures &common_structures, std::string shader_dir_path) {
+    std::vector<uint8_t> shader_contents;
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_weight.vert.spv", shader_contents);
+    VkShaderModuleCreateInfo shader_module_create_info = {
+            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            nullptr,
+            0,
+            shader_contents.size(),
+            reinterpret_cast<uint32_t*>(shader_contents.data())
+    };
+    VkShaderModule vertex_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_weight.frag.spv", shader_contents);
+    shader_module_create_info.codeSize = shader_contents.size();
+    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+    VkShaderModule fragment_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
+        {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            vertex_shader_module,
+            "main",
+            nullptr
+            },
+            {
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            fragment_shader_module,
+            "main",
+            nullptr
+            }
+    }};
+
+    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_FALSE,
+            VK_COMPARE_OP_LESS,
+            VK_FALSE,
+            VK_TRUE,
+            {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0xff, 0xff, 1 },
+            {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0xff, 0xff, 1 },
+            0.0f,
+            1.0f
+    };
+
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &smaa_descriptor_sets_layout[1],
+            0,
+            nullptr
+    };
+    vkDestroyPipelineLayout(device, smaa_pipelines_layout[1], nullptr);
+    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &smaa_pipelines_layout[1]);
+
+    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            nullptr,
+            0,
+            pipeline_shaders_stage_create_info.size(),
+            pipeline_shaders_stage_create_info.data(),
+            &common_structures.vertex_input,
+            &common_structures.input_assembly,
+            nullptr,
+            &common_structures.pipeline_viewport_state_create_info,
+            &common_structures.rasterization,
+            &common_structures.multisample,
+            &pipeline_depth_stencil_state_create_info,
+            &common_structures.color_blend_state_create_info,
+            &common_structures.pipeline_dynamic_state_create_info,
+            smaa_pipelines_layout[1],
+            render_passes[1],
+            0,
+            VK_NULL_HANDLE,
+            -1
+    };
+    vkDestroyPipeline(device, smaa_pipelines[1], nullptr);
+    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &smaa_pipelines[1]);
+
+    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
+    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
+}
+
+void SmaaContext::create_blend_pipeline(const pipeline_common_structures &common_structures, std::string shader_dir_path) {
+    std::vector<uint8_t> shader_contents;
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_blend.vert.spv", shader_contents);
+    VkShaderModuleCreateInfo shader_module_create_info = {
+            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            nullptr,
+            0,
+            shader_contents.size(),
+            reinterpret_cast<uint32_t*>(shader_contents.data())
+    };
+    VkShaderModule vertex_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_blend.frag.spv", shader_contents);
+    shader_module_create_info.codeSize = shader_contents.size();
+    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
+    VkShaderModule fragment_shader_module;
+    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
+        {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                nullptr,
+                0,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                vertex_shader_module,
+                "main",
+                nullptr
+        },
+        {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                nullptr,
+                0,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                fragment_shader_module,
+                "main",
+                nullptr
+        }
+    }};
+
+    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            nullptr,
+            0,
+            VK_FALSE,
+            VK_FALSE,
+            VK_COMPARE_OP_LESS,
+            VK_FALSE,
+            VK_FALSE,
+            {},
+            {},
+            0.0f,
+            1.0f
+    };
+
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &smaa_descriptor_sets_layout[2],
+            0,
+            nullptr
+    };
+    vkDestroyPipelineLayout(device, smaa_pipelines_layout[2], nullptr);
+    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &smaa_pipelines_layout[2]);
+
+    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            nullptr,
+            0,
+            pipeline_shaders_stage_create_info.size(),
+            pipeline_shaders_stage_create_info.data(),
+            &common_structures.vertex_input,
+            &common_structures.input_assembly,
+            nullptr,
+            &common_structures.pipeline_viewport_state_create_info,
+            &common_structures.rasterization,
+            &common_structures.multisample,
+            &pipeline_depth_stencil_state_create_info,
+            &common_structures.color_blend_state_create_info,
+            &common_structures.pipeline_dynamic_state_create_info,
+            smaa_pipelines_layout[2],
+            render_passes[2],
+            0,
+            VK_NULL_HANDLE,
+            -1
+    };
+    vkDestroyPipeline(device, smaa_pipelines[2], nullptr);
+    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &smaa_pipelines[2]);
+
+    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
+    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
+}
+
+void SmaaContext::load_resource_images_to_host_memory(std::string resource_images_dir_path, const VkPhysicalDeviceMemoryProperties &memory_properties) {
+    // We need to get the smaa resource images from disk and upload them to VRAM
+    vulkan_helper::get_binary_file_content(resource_images_dir_path + "//AreaTexDX10.R8G8", area_tex_size, nullptr);
+    vulkan_helper::get_binary_file_content(resource_images_dir_path + "//SearchTex.R8", search_tex_size, nullptr);
+
+    // First we create the buffer and allocate it
+    VkBufferCreateInfo buffer_create_info = {
+            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            nullptr,
+            0,
+            area_tex_size + search_tex_size,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_SHARING_MODE_EXCLUSIVE,
+            0,
+            nullptr
+    };
+    check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &host_resource_images_transition_buffer), vulkan_helper::Error::BUFFER_CREATION_FAILED);
+    VkMemoryRequirements host_transition_buffer_memory_requirements;
+    vkGetBufferMemoryRequirements(device, host_resource_images_transition_buffer, &host_transition_buffer_memory_requirements);
+
+    VkMemoryAllocateInfo memory_allocate_info = {
+            VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            nullptr,
+            host_transition_buffer_memory_requirements.size,
+            vulkan_helper::select_memory_index(memory_properties, host_transition_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+    };
+    check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &host_resource_images_transition_memory), vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
+    check_error(vkBindBufferMemory(device, host_resource_images_transition_buffer, host_resource_images_transition_memory, 0), vulkan_helper::Error::BIND_BUFFER_MEMORY_FAILED);
+
+    // We map the memory and copy the data
+    void *dst_ptr;
+    check_error(vkMapMemory(device, host_resource_images_transition_memory, 0, VK_WHOLE_SIZE, 0, &dst_ptr), vulkan_helper::Error::MEMORY_MAP_FAILED);
+    vulkan_helper::get_binary_file_content(resource_images_dir_path + "//AreaTexDX10.R8G8", area_tex_size, dst_ptr);
+    vulkan_helper::get_binary_file_content(resource_images_dir_path + "//SearchTex.R8", search_tex_size, static_cast<uint8_t*>(dst_ptr) + area_tex_size);
+    vkUnmapMemory(device, host_resource_images_transition_memory);
+}
+
+std::array<VkImage, 2> SmaaContext::get_permanent_device_images() {
+    return std::array<VkImage, 2>{device_smaa_area_image, device_smaa_search_image};
+}
+
+void SmaaContext::record_permanent_resources_copy_to_device_memory(VkCommandBuffer cb) {
+    // We need to upload the smaa resource images from RAM to VRAM
+    std::array<VkImageMemoryBarrier, 2> image_memory_barriers;
+    image_memory_barriers[0] = {
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            nullptr,
+            0,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_smaa_area_image,
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+    };
+    image_memory_barriers[1] = image_memory_barriers[0];
+    image_memory_barriers[1].image = device_smaa_search_image;
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
+
+    // We perform the copy from the host buffer to the device images
+    VkBufferImageCopy buffer_image_copy = {
+            0,
+            0,
+            0,
+            {VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+            {0,0,0},
+            smaa_area_image_extent
+    };
+    vkCmdCopyBufferToImage(cb, host_resource_images_transition_buffer, device_smaa_area_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+    buffer_image_copy = {
+            area_tex_size,
+            0,
+            0,
+            {VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+            {0,0,0},
+            smaa_search_image_extent
+    };
+    vkCmdCopyBufferToImage(cb, host_resource_images_transition_buffer, device_smaa_search_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+
+
+    // After the copy we need to transition the images to be shader ready
+    image_memory_barriers[0] = {
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            nullptr,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_smaa_area_image,
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+    };
+    image_memory_barriers[1] = image_memory_barriers[0];
+    image_memory_barriers[1].image = device_smaa_search_image;
+
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
+}
+
+void SmaaContext::clean_copy_resources() {
+    vkDestroyBuffer(device, host_resource_images_transition_buffer, nullptr);
+    vkFreeMemory(device, host_resource_images_transition_memory, nullptr);
 }
 
 SmaaContext::~SmaaContext() {
@@ -254,8 +778,8 @@ SmaaContext::~SmaaContext() {
     }
 }
 
-std::array<VkImage, 4> SmaaContext::get_device_images() {
-    return std::array<VkImage, 4>{device_smaa_area_image, device_smaa_search_image, device_smaa_stencil_image, device_smaa_data_image};
+std::array<VkImage, 2> SmaaContext::get_device_images() {
+    return std::array<VkImage, 2>{device_smaa_stencil_image, device_smaa_data_image};
 }
 
 std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> SmaaContext::get_required_descriptor_pool_size_and_sets() {
@@ -265,11 +789,8 @@ std::pair<std::unordered_map<VkDescriptorType, uint32_t>, uint32_t> SmaaContext:
     };
 }
 
-void SmaaContext::create_resources(VkExtent2D screen_res, std::string shader_dir_path) {
+void SmaaContext::create_resources(VkExtent2D screen_res) {
     screen_extent = {screen_res.width, screen_res.height, 1};
-    create_edge_pipeline(shader_dir_path);
-    create_weight_pipeline(shader_dir_path);
-    create_blend_pipeline(shader_dir_path);
 
     // Then we create the device images for the resources
     VkImageCreateInfo image_create_info = {
@@ -277,30 +798,19 @@ void SmaaContext::create_resources(VkExtent2D screen_res, std::string shader_dir
             nullptr,
             0,
             VK_IMAGE_TYPE_2D,
-            smaa_area_image_format,
-            smaa_area_image_extent,
+            VK_FORMAT_S8_UINT,
+            screen_extent,
             1,
             1,
             VK_SAMPLE_COUNT_1_BIT,
             VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
             VK_SHARING_MODE_EXCLUSIVE,
             0,
             nullptr,
             VK_IMAGE_LAYOUT_UNDEFINED
     };
-    vkDestroyImage(device, device_smaa_area_image, nullptr);
-    check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_area_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
-
-    image_create_info.format = smaa_search_image_format;
-    image_create_info.extent = smaa_search_image_extent;
-    vkDestroyImage(device, device_smaa_search_image, nullptr);
-    check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_search_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
-
     // We create the images required for the smaa, first the stencil image
-    image_create_info.format = VK_FORMAT_S8_UINT;
-    image_create_info.extent = screen_extent;
-    image_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     vkDestroyImage(device, device_smaa_stencil_image, nullptr);
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_stencil_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 
@@ -312,579 +822,36 @@ void SmaaContext::create_resources(VkExtent2D screen_res, std::string shader_dir
     check_error(vkCreateImage(device, &image_create_info, nullptr, &device_smaa_data_image), vulkan_helper::Error::IMAGE_CREATION_FAILED);
 }
 
-void SmaaContext::create_edge_pipeline(std::string shader_dir_path) {
-    std::vector<uint8_t> shader_contents;
-    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_edge.vert.spv", shader_contents);
-    VkShaderModuleCreateInfo shader_module_create_info = {
-            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            nullptr,
-            0,
-            shader_contents.size(),
-            reinterpret_cast<uint32_t*>(shader_contents.data())
-    };
-    VkShaderModule vertex_shader_module;
-    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED );
-
-    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_edge.frag.spv", shader_contents);
-    shader_module_create_info.codeSize = shader_contents.size();
-    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
-    VkShaderModule fragment_shader_module;
-    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED );
-
-    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
-            {
-                    VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    nullptr,
-                    0,
-                    VK_SHADER_STAGE_VERTEX_BIT,
-                    vertex_shader_module,
-                    "main",
-                    nullptr
-            },
-            {
-                    VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    nullptr,
-                    0,
-                    VK_SHADER_STAGE_FRAGMENT_BIT,
-                    fragment_shader_module,
-                    "main",
-                    nullptr
-            }
-    }};
-
-    VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            0,
-            nullptr,
-            0,
-            nullptr
-    };
-
-    VkPipelineInputAssemblyStateCreateInfo pipeline_input_assembly_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-            VK_FALSE
-    };
-
-    VkViewport viewport = {
-            0.0f,
-            0.0f,
-            static_cast<float>(screen_extent.width),
-            static_cast<float>(screen_extent.height),
-            0.0f,
-            1.0f
-    };
-    VkRect2D scissor = {
-            {0,0},
-            {screen_extent.width, screen_extent.height}
-    };
-    VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            1,
-            &viewport,
-            1,
-            &scissor
-    };
-
-    VkPipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_FALSE,
-            VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_NONE,
-            VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            VK_FALSE,
-            0.0f,
-            0.0f,
-            0.0f,
-            1.0f
-    };
-
-    VkPipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SAMPLE_COUNT_1_BIT,
-            VK_FALSE,
-            1.0f,
-            nullptr,
-            VK_FALSE,
-            VK_FALSE
-    };
-
-    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_FALSE,
-            VK_COMPARE_OP_LESS,
-            VK_FALSE,
-            VK_TRUE,
-            {VK_STENCIL_OP_ZERO, VK_STENCIL_OP_INCREMENT_AND_CLAMP, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_GREATER, 0xff, 0xff, 1},
-            {VK_STENCIL_OP_ZERO, VK_STENCIL_OP_INCREMENT_AND_CLAMP, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_GREATER, 0xff, 0xff, 1},
-            0.0f,
-            1.0f
-    };
-
-    VkPipelineColorBlendAttachmentState pipeline_color_blend_attachment_state = {
-            VK_FALSE,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-    };
-    VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_LOGIC_OP_COPY,
-            1,
-            &pipeline_color_blend_attachment_state,
-            {0.0f,0.0f,0.0f,0.0f}
-    };
-
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            nullptr,
-            0,
-            1,
-            &smaa_descriptor_sets_layout[0],
-            0,
-            nullptr
-    };
-    vkDestroyPipelineLayout(device, smaa_pipelines_layout[0], nullptr);
-    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &smaa_pipelines_layout[0]);
-
-    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
-            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-            nullptr,
-            0,
-            pipeline_shaders_stage_create_info.size(),
-            pipeline_shaders_stage_create_info.data(),
-            &pipeline_vertex_input_state_create_info,
-            &pipeline_input_assembly_create_info,
-            nullptr,
-            &pipeline_viewport_state_create_info,
-            &pipeline_rasterization_state_create_info,
-            &pipeline_multisample_state_create_info,
-            &pipeline_depth_stencil_state_create_info,
-            &pipeline_color_blend_state_create_info,
-            nullptr,
-            smaa_pipelines_layout[0],
-            render_passes[0],
-            0,
-            VK_NULL_HANDLE,
-            -1
-    };
-    vkDestroyPipeline(device, smaa_pipelines[0], nullptr);
-    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &smaa_pipelines[0]);
-    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
-    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
-}
-
-void SmaaContext::create_weight_pipeline(std::string shader_dir_path) {
-    std::vector<uint8_t> shader_contents;
-    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_weight.vert.spv", shader_contents);
-    VkShaderModuleCreateInfo shader_module_create_info = {
-            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            nullptr,
-            0,
-            shader_contents.size(),
-            reinterpret_cast<uint32_t*>(shader_contents.data())
-    };
-    VkShaderModule vertex_shader_module;
-    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
-
-    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_weight.frag.spv", shader_contents);
-    shader_module_create_info.codeSize = shader_contents.size();
-    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
-    VkShaderModule fragment_shader_module;
-    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
-
-    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
-    {
-            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SHADER_STAGE_VERTEX_BIT,
-            vertex_shader_module,
-            "main",
-            nullptr
-    },
-    {
-            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            fragment_shader_module,
-            "main",
-            nullptr
-    }
-    }};
-
-    VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            0,
-            nullptr,
-            0,
-            nullptr
-    };
-
-    VkPipelineInputAssemblyStateCreateInfo pipeline_input_assembly_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-            VK_FALSE
-    };
-
-    VkViewport viewport = {
-            0.0f,
-            0.0f,
-            static_cast<float>(screen_extent.width),
-            static_cast<float>(screen_extent.height),
-            0.0f,
-            1.0f
-    };
-    VkRect2D scissor = {
-            {0,0},
-            {screen_extent.width, screen_extent.height}
-    };
-    VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            1,
-            &viewport,
-            1,
-            &scissor
-    };
-
-    VkPipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_FALSE,
-            VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_NONE,
-            VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            VK_FALSE,
-            0.0f,
-            0.0f,
-            0.0f,
-            1.0f
-    };
-
-    VkPipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SAMPLE_COUNT_1_BIT,
-            VK_FALSE,
-            1.0f,
-            nullptr,
-            VK_FALSE,
-            VK_FALSE
-    };
-
-    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_FALSE,
-            VK_COMPARE_OP_LESS,
-            VK_FALSE,
-            VK_TRUE,
-            {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0xff, 0xff, 1 },
-            {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0xff, 0xff, 1 },
-            0.0f,
-            1.0f
-    };
-
-    VkPipelineColorBlendAttachmentState pipeline_color_blend_attachment_state = {
-            VK_FALSE,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-    };
-    VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_LOGIC_OP_COPY,
-            1,
-            &pipeline_color_blend_attachment_state,
-            {0.0f,0.0f,0.0f,0.0f}
-    };
-
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            nullptr,
-            0,
-            1,
-            &smaa_descriptor_sets_layout[1],
-            0,
-            nullptr
-    };
-    vkDestroyPipelineLayout(device, smaa_pipelines_layout[1], nullptr);
-    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &smaa_pipelines_layout[1]);
-
-    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
-            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-            nullptr,
-            0,
-            pipeline_shaders_stage_create_info.size(),
-            pipeline_shaders_stage_create_info.data(),
-            &pipeline_vertex_input_state_create_info,
-            &pipeline_input_assembly_create_info,
-            nullptr,
-            &pipeline_viewport_state_create_info,
-            &pipeline_rasterization_state_create_info,
-            &pipeline_multisample_state_create_info,
-            &pipeline_depth_stencil_state_create_info,
-            &pipeline_color_blend_state_create_info,
-            nullptr,
-            smaa_pipelines_layout[1],
-            render_passes[1],
-            0,
-            VK_NULL_HANDLE,
-            -1
-    };
-    vkDestroyPipeline(device, smaa_pipelines[1], nullptr);
-    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &smaa_pipelines[1]);
-
-    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
-    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
-}
-
-void SmaaContext::create_blend_pipeline(std::string shader_dir_path) {
-    std::vector<uint8_t> shader_contents;
-    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_blend.vert.spv", shader_contents);
-    VkShaderModuleCreateInfo shader_module_create_info = {
-            VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            nullptr,
-            0,
-            shader_contents.size(),
-            reinterpret_cast<uint32_t*>(shader_contents.data())
-    };
-    VkShaderModule vertex_shader_module;
-    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &vertex_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
-
-    vulkan_helper::get_binary_file_content(shader_dir_path + "//smaa_blend.frag.spv", shader_contents);
-    shader_module_create_info.codeSize = shader_contents.size();
-    shader_module_create_info.pCode = reinterpret_cast<uint32_t*>(shader_contents.data());
-    VkShaderModule fragment_shader_module;
-    check_error(vkCreateShaderModule(device, &shader_module_create_info, nullptr, &fragment_shader_module), vulkan_helper::Error::SHADER_MODULE_CREATION_FAILED);
-
-    std::array<VkPipelineShaderStageCreateInfo, 2> pipeline_shaders_stage_create_info {{
-    {
-            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SHADER_STAGE_VERTEX_BIT,
-            vertex_shader_module,
-            "main",
-            nullptr
-    },
-    {
-            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            fragment_shader_module,
-            "main",
-            nullptr
-    }
-    }};
-
-    VkPipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            0,
-            nullptr,
-            0,
-            nullptr
-    };
-
-    VkPipelineInputAssemblyStateCreateInfo pipeline_input_assembly_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-            VK_FALSE
-    };
-
-    VkViewport viewport = {
-            0.0f,
-            0.0f,
-            static_cast<float>(screen_extent.width),
-            static_cast<float>(screen_extent.height),
-            0.0f,
-            1.0f
-    };
-    VkRect2D scissor = {
-            {0,0},
-            {screen_extent.width, screen_extent.height}
-    };
-    VkPipelineViewportStateCreateInfo pipeline_viewport_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            1,
-            &viewport,
-            1,
-            &scissor
-    };
-
-    VkPipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_FALSE,
-            VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_NONE,
-            VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            VK_FALSE,
-            0.0f,
-            0.0f,
-            0.0f,
-            1.0f
-    };
-
-    VkPipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_SAMPLE_COUNT_1_BIT,
-            VK_FALSE,
-            1.0f,
-            nullptr,
-            VK_FALSE,
-            VK_FALSE
-    };
-
-    VkPipelineDepthStencilStateCreateInfo pipeline_depth_stencil_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_FALSE,
-            VK_COMPARE_OP_LESS,
-            VK_FALSE,
-            VK_FALSE,
-            {},
-            {},
-            0.0f,
-            1.0f
-    };
-
-    VkPipelineColorBlendAttachmentState pipeline_color_blend_attachment_state = {
-            VK_FALSE,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-    };
-    VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-            nullptr,
-            0,
-            VK_FALSE,
-            VK_LOGIC_OP_COPY,
-            1,
-            &pipeline_color_blend_attachment_state,
-            {0.0f,0.0f,0.0f,0.0f}
-    };
-
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
-            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            nullptr,
-            0,
-            1,
-            &smaa_descriptor_sets_layout[2],
-            0,
-            nullptr
-    };
-    vkDestroyPipelineLayout(device, smaa_pipelines_layout[2], nullptr);
-    vkCreatePipelineLayout(device, &pipeline_layout_create_info, nullptr, &smaa_pipelines_layout[2]);
-
-    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
-            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-            nullptr,
-            0,
-            pipeline_shaders_stage_create_info.size(),
-            pipeline_shaders_stage_create_info.data(),
-            &pipeline_vertex_input_state_create_info,
-            &pipeline_input_assembly_create_info,
-            nullptr,
-            &pipeline_viewport_state_create_info,
-            &pipeline_rasterization_state_create_info,
-            &pipeline_multisample_state_create_info,
-            &pipeline_depth_stencil_state_create_info,
-            &pipeline_color_blend_state_create_info,
-            nullptr,
-            smaa_pipelines_layout[2],
-            render_passes[2],
-            0,
-            VK_NULL_HANDLE,
-            -1
-    };
-    vkDestroyPipeline(device, smaa_pipelines[2], nullptr);
-    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &smaa_pipelines[2]);
-
-    vkDestroyShaderModule(device, vertex_shader_module, nullptr);
-    vkDestroyShaderModule(device, fragment_shader_module, nullptr);
-}
-
 void SmaaContext::create_image_views() {
-    VkImageViewCreateInfo image_view_create_info = {
+    VkImageViewCreateInfo image_view_create_info;
+    if (device_smaa_area_image_view == VK_NULL_HANDLE || device_smaa_search_image_view == VK_NULL_HANDLE) {
+        image_view_create_info = {
+                VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                nullptr,
+                0,
+                device_smaa_area_image,
+                VK_IMAGE_VIEW_TYPE_2D,
+                smaa_area_image_format,
+                {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
+                { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0 , 1 }
+        };
+        vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_area_image_view);
+
+        image_view_create_info.image = device_smaa_search_image;
+        image_view_create_info.format = smaa_search_image_format;
+        vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_search_image_view);
+    }
+
+    image_view_create_info = {
             VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             nullptr,
             0,
-            device_smaa_area_image,
+            device_smaa_stencil_image,
             VK_IMAGE_VIEW_TYPE_2D,
-            smaa_area_image_format,
+            VK_FORMAT_S8_UINT,
             {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
-            { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0 , 1 }
+            { VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0 , 1 }
     };
-    vkDestroyImageView(device, device_smaa_area_image_view, nullptr);
-    vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_area_image_view);
-
-    image_view_create_info.image = device_smaa_search_image;
-    image_view_create_info.format = smaa_search_image_format;
-    vkDestroyImageView(device, device_smaa_search_image_view, nullptr);
-    vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_search_image_view);
-
-    image_view_create_info.image = device_smaa_stencil_image;
-    image_view_create_info.format = VK_FORMAT_S8_UINT;
-    image_view_create_info.subresourceRange = { VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0 , 1 };
     vkDestroyImageView(device, device_smaa_stencil_image_view, nullptr);
     vkCreateImageView(device, &image_view_create_info, nullptr, &device_smaa_stencil_image_view);
 
@@ -950,139 +917,10 @@ void SmaaContext::create_framebuffers(VkImageView out_image_view) {
     vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffers[2]);
 }
 
-void SmaaContext::init_resources(std::string support_images_dir, const VkPhysicalDeviceMemoryProperties &memory_properties,
-                                 VkImageView out_image_view, VkCommandPool command_pool, VkCommandBuffer command_buffer, VkQueue queue) {
-    // We know that the images have already been allocated so we create the views and the sampler
+void SmaaContext::init_resources(VkImageView out_image_view) {
+    // We know that the images have already been allocated so we create the views and the framebuffers
     create_image_views();
     create_framebuffers(out_image_view);
-
-    // We need to get the smaa resource images from disk and upload them to VRAM
-    uint64_t area_tex_size, search_tex_size;
-
-    vulkan_helper::get_binary_file_content(support_images_dir + "//AreaTexDX10.R8G8", area_tex_size, nullptr);
-    vulkan_helper::get_binary_file_content(support_images_dir + "//SearchTex.R8", search_tex_size, nullptr);
-
-    // First we create the buffer and allocate it
-    VkBufferCreateInfo buffer_create_info = {
-            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            nullptr,
-            0,
-            area_tex_size + search_tex_size,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_SHARING_MODE_EXCLUSIVE,
-            0,
-            nullptr
-    };
-    VkBuffer host_transition_buffer;
-    check_error(vkCreateBuffer(device, &buffer_create_info, nullptr, &host_transition_buffer), vulkan_helper::Error::BUFFER_CREATION_FAILED);
-    VkMemoryRequirements host_transition_buffer_memory_requirements;
-    vkGetBufferMemoryRequirements(device, host_transition_buffer, &host_transition_buffer_memory_requirements);
-
-    VkDeviceMemory host_transition_memory;
-    VkMemoryAllocateInfo memory_allocate_info = {
-            VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            nullptr,
-            host_transition_buffer_memory_requirements.size,
-            vulkan_helper::select_memory_index(memory_properties, host_transition_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-    };
-    check_error(vkAllocateMemory(device, &memory_allocate_info, nullptr, &host_transition_memory), vulkan_helper::Error::MEMORY_ALLOCATION_FAILED);
-    check_error(vkBindBufferMemory(device, host_transition_buffer, host_transition_memory, 0), vulkan_helper::Error::BIND_BUFFER_MEMORY_FAILED);
-
-    // We map the memory and copy the data
-    void *dst_ptr;
-    check_error(vkMapMemory(device, host_transition_memory, 0, VK_WHOLE_SIZE, 0, &dst_ptr), vulkan_helper::Error::MEMORY_MAP_FAILED);
-    vulkan_helper::get_binary_file_content(support_images_dir + "//AreaTexDX10.R8G8", area_tex_size, dst_ptr);
-    vulkan_helper::get_binary_file_content(support_images_dir + "//SearchTex.R8", search_tex_size, static_cast<uint8_t*>(dst_ptr) + area_tex_size);
-    vkUnmapMemory(device, host_transition_memory);
-
-    // Then we record the command buffer to submit the command
-    vkDeviceWaitIdle(device);
-    vkResetCommandPool(device, command_pool, 0);
-    VkCommandBufferBeginInfo command_buffer_begin_info = {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,nullptr,
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,nullptr
-    };
-    vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
-    std::array<VkImageMemoryBarrier, 2> image_memory_barriers;
-    image_memory_barriers[0] = {
-        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        nullptr,
-        0,
-        VK_ACCESS_TRANSFER_WRITE_BIT,
-        VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_QUEUE_FAMILY_IGNORED,
-        VK_QUEUE_FAMILY_IGNORED,
-        device_smaa_area_image,
-        {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
-    };
-    image_memory_barriers[1] = image_memory_barriers[0];
-    image_memory_barriers[1].image = device_smaa_search_image;
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
-
-    // We perform the copy from the host buffer to the device images
-    VkBufferImageCopy buffer_image_copy = {
-            0,
-            0,
-            0,
-            {VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
-            {0,0,0},
-            smaa_area_image_extent
-    };
-    vkCmdCopyBufferToImage(command_buffer, host_transition_buffer, device_smaa_area_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
-    buffer_image_copy = {
-            area_tex_size,
-            0,
-            0,
-            {VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
-            {0,0,0},
-            smaa_search_image_extent
-    };
-    vkCmdCopyBufferToImage(command_buffer, host_transition_buffer, device_smaa_search_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
-
-
-    // After the copy we need to transition the images to be shader ready
-    image_memory_barriers[0] = {
-            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            nullptr,
-            VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_ACCESS_SHADER_READ_BIT,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_QUEUE_FAMILY_IGNORED,
-            VK_QUEUE_FAMILY_IGNORED,
-            device_smaa_area_image,
-            {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
-    };
-    image_memory_barriers[1] = image_memory_barriers[0];
-    image_memory_barriers[1].image = device_smaa_search_image;
-
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, image_memory_barriers.size(), image_memory_barriers.data());
-    vkEndCommandBuffer(command_buffer);
-
-    VkFenceCreateInfo fence_create_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,nullptr,0 };
-    VkFence fence;
-    vkCreateFence(device, &fence_create_info, nullptr, &fence);
-
-    VkPipelineStageFlags flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    VkSubmitInfo submit_info = {
-            VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            nullptr,
-            0,
-            nullptr,
-            &flags,
-            1,
-            &command_buffer,
-            0,
-            nullptr,
-    };
-    check_error(vkQueueSubmit(queue, 1, &submit_info, fence), vulkan_helper::Error::QUEUE_SUBMIT_FAILED);
-    vkWaitForFences(device, 1, &fence, VK_TRUE, 20000000);
-
-    vkDestroyFence(device, fence, nullptr);
-    vkResetCommandPool(device, command_pool, 0);
-    vkDestroyBuffer(device, host_transition_buffer, nullptr);
-    vkFreeMemory(device, host_transition_memory, nullptr);
 }
 
 void SmaaContext::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view) {
@@ -1158,6 +996,19 @@ void SmaaContext::record_into_command_buffer(VkCommandBuffer command_buffer) {
     clear_colors[0].depthStencil = { 1.0f, 0 };
     clear_colors[1].color = { 0.0f, 0.0f, 0.0f, 0.0f };
 
+    VkViewport viewport = {
+            0.0f,
+            0.0f,
+            static_cast<float>(screen_extent.width),
+            static_cast<float>(screen_extent.height),
+            0.0f,
+            1.0f
+    };
+    VkRect2D scissor = {
+            {0,0},
+            {screen_extent.width, screen_extent.height}
+    };
+
     // Smaa edge renderpass start
     VkRenderPassBeginInfo render_pass_begin_info = {
             VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -1171,6 +1022,8 @@ void SmaaContext::record_into_command_buffer(VkCommandBuffer command_buffer) {
     vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smaa_pipelines[0]);
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smaa_pipelines_layout[0], 0, 1, &smaa_descriptor_sets[0], 0, nullptr);
     vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
@@ -1189,6 +1042,8 @@ void SmaaContext::record_into_command_buffer(VkCommandBuffer command_buffer) {
     vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smaa_pipelines[1]);
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smaa_pipelines_layout[1], 0, 1, &smaa_descriptor_sets[1], 0, nullptr);
     vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
@@ -1207,6 +1062,8 @@ void SmaaContext::record_into_command_buffer(VkCommandBuffer command_buffer) {
     vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smaa_pipelines[2]);
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smaa_pipelines_layout[2], 0, 1, &smaa_descriptor_sets[2], 0, nullptr);
     vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
