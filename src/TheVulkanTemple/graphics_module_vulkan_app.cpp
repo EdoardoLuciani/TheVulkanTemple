@@ -454,6 +454,9 @@ void GraphicsModuleVulkanApp::init_renderer() {
 
     start_one_time_command_submit(general_operation_command.command_buffers.front());
     hbao_context.record_constants_update(general_operation_command.command_buffers.front());
+    if (amd_fsr) {
+        amd_fsr->record_constants_update(general_operation_command.command_buffers.front());
+    }
     end_submit_block_and_reset_command_submit(general_operation_command.command_pool, general_operation_command.command_buffers.front(),
                                               VK_PIPELINE_STAGE_TRANSFER_BIT, general_operation_fence);
 

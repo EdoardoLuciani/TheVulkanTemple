@@ -225,7 +225,6 @@ void AmdFsr::create_resources(VkExtent2D input_image_size, VkExtent2D output_ima
 
 void AmdFsr::set_rcas_sharpness(float sharpness) {
 	FsrRcasCon(reinterpret_cast<AU1*>(&fsr_constants[4]), sharpness);
-	fsr_constants_changed = true;
 }
 
 void AmdFsr::create_image_views() {
@@ -372,32 +371,29 @@ void AmdFsr::allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageV
 	vkUpdateDescriptorSets(device, write_descriptor_set.size(), write_descriptor_set.data(), 0, nullptr);
 }
 
+void AmdFsr::record_constants_update(VkCommandBuffer cb) {
+    VkBufferMemoryBarrier buffer_memory_barrier = {
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            nullptr,
+            0,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_fsr_constants_buffer,
+            0,
+            VK_WHOLE_SIZE
+    };
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+
+    vkCmdUpdateBuffer(cb, device_fsr_constants_buffer, 0, sizeof(fsr_constants), fsr_constants.data());
+
+    buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
+}
+
 void AmdFsr::record_into_command_buffer(VkCommandBuffer command_buffer, VkImage input_image, VkImage output_image) {
-	// todo: use push contants for the fsr_constants
-	if (fsr_constants_changed) {
-		VkBufferMemoryBarrier buffer_memory_barrier = {
-				VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-				nullptr,
-				0,
-				VK_ACCESS_TRANSFER_WRITE_BIT,
-				VK_QUEUE_FAMILY_IGNORED,
-				VK_QUEUE_FAMILY_IGNORED,
-				device_fsr_constants_buffer,
-				0,
-				VK_WHOLE_SIZE
-		};
-		vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
-
-		vkCmdUpdateBuffer(command_buffer, device_fsr_constants_buffer, 0, sizeof(fsr_constants), fsr_constants.data());
-
-		buffer_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		buffer_memory_barrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
-
-		vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &buffer_memory_barrier, 0, nullptr);
-
-		fsr_constants_changed = false;
-	}
-
 	// EASU pass
 	std::array<VkImageMemoryBarrier,2> image_memory_barriers;
 	image_memory_barriers[0] = {

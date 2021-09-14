@@ -39,6 +39,7 @@ class AmdFsr {
     void create_resources(VkExtent2D input_image_size, VkExtent2D output_image_size);
     void set_rcas_sharpness(float sharpness); // If not called, 0.2 value is put by default
     void allocate_descriptor_sets(VkDescriptorPool descriptor_pool, VkImageView input_image_view, VkImageView out_image_view);
+    void record_constants_update(VkCommandBuffer cb);
     void record_into_command_buffer(VkCommandBuffer command_buffer, VkImage input_image, VkImage output_image);
 
     private:
@@ -67,8 +68,7 @@ class AmdFsr {
         VkImageView device_out_easu_image_view = VK_NULL_HANDLE;
 
         std::array<glm::uvec4, 5> fsr_constants;
-        bool fsr_constants_changed = false;
-        static constexpr int threadGroupWorkRegionDim = 16;
+        const int threadGroupWorkRegionDim = 16;
         glm::uvec3 dispatch_size;
 
         void create_pipelines(std::string shader_dir_path);
