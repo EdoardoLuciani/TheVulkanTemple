@@ -1,13 +1,14 @@
 #include "pbr_context.h"
 
 PbrContext::PbrContext(VkDevice device, VkPhysicalDeviceMemoryProperties memory_properties, VkFormat out_depth_image_format,
-                       VkFormat out_color_image_format, VkFormat out_normal_image_format) {
+                       VkFormat out_color_image_format, VkFormat out_normal_image_format, VkFormat out_velocity_image_format) {
     this->device = device;
     this->physical_device_memory_properties = memory_properties;
-    // Creating the renderpass with 3 outputs: depth, color and normal
-    std::array<VkAttachmentDescription, 3> attachment_descriptions {{{
+    // Creating the renderpass with 4 outputs: depth, color, normal and velocity
+    std::array<VkAttachmentDescription, 4> attachment_descriptions;
+    attachment_descriptions.fill({
         0,
-        out_depth_image_format,
+        VK_FORMAT_UNDEFINED,
         VK_SAMPLE_COUNT_1_BIT,
         VK_ATTACHMENT_LOAD_OP_CLEAR,
         VK_ATTACHMENT_STORE_OP_STORE,
@@ -15,39 +16,24 @@ PbrContext::PbrContext(VkDevice device, VkPhysicalDeviceMemoryProperties memory_
         VK_ATTACHMENT_STORE_OP_DONT_CARE,
         VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        },{
-        0,
-        out_color_image_format,
-        VK_SAMPLE_COUNT_1_BIT,
-        VK_ATTACHMENT_LOAD_OP_CLEAR,
-        VK_ATTACHMENT_STORE_OP_STORE,
-        VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        },{
-        0,
-        out_normal_image_format,
-        VK_SAMPLE_COUNT_1_BIT,
-        VK_ATTACHMENT_LOAD_OP_CLEAR,
-        VK_ATTACHMENT_STORE_OP_STORE,
-        VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    }
-    }};
-    std::array<VkAttachmentReference,3> attachment_references {{
+    });
+    attachment_descriptions[0].format = out_depth_image_format;
+    attachment_descriptions[1].format = out_color_image_format;
+    attachment_descriptions[2].format = out_normal_image_format;
+    attachment_descriptions[3].format = out_velocity_image_format;
+
+    std::array<VkAttachmentReference,4> attachment_references {{
         { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL },
         {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL },
-        {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL }
+        {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL },
+        {3, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL }
     }};
     VkSubpassDescription subpass_description = {
         0,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
         0,
         nullptr,
-        2,
+        3,
         &attachment_references[1],
         nullptr,
         &attachment_references[0],
@@ -230,27 +216,17 @@ void PbrContext::create_pipeline(std::string shader_dir_path, VkDescriptorSetLay
             1.0f
     };
 
-    std::array<VkPipelineColorBlendAttachmentState, 2> pipeline_color_blend_attachment_state;
-    pipeline_color_blend_attachment_state[0] = {
-            VK_FALSE,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-    };
-    pipeline_color_blend_attachment_state[1] = {
-            VK_FALSE,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_BLEND_FACTOR_ONE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-    };
+    std::array<VkPipelineColorBlendAttachmentState, 3> pipeline_color_blend_attachment_state;
+    pipeline_color_blend_attachment_state.fill({
+        VK_FALSE,
+        VK_BLEND_FACTOR_ONE,
+        VK_BLEND_FACTOR_ZERO,
+        VK_BLEND_OP_ADD,
+        VK_BLEND_FACTOR_ONE,
+        VK_BLEND_FACTOR_ZERO,
+        VK_BLEND_OP_ADD,
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    });
     VkPipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info = {
             VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
             nullptr,
@@ -312,9 +288,9 @@ void PbrContext::create_pipeline(std::string shader_dir_path, VkDescriptorSetLay
     vkDestroyShaderModule(device, fragment_shader_module, nullptr);
 }
 
-void PbrContext::set_output_images(VkExtent2D screen_res, VkImageView out_depth_image, VkImageView out_color_image, VkImageView out_normal_image) {
+void PbrContext::set_output_images(VkExtent2D screen_res, VkImageView out_depth_image, VkImageView out_color_image, VkImageView out_normal_image, VkImageView out_velocity_image) {
     this->screen_res = screen_res;
-    std::array<VkImageView, 3> attachments {out_depth_image, out_color_image, out_normal_image};
+    std::array<VkImageView, 4> attachments {out_depth_image, out_color_image, out_normal_image, out_velocity_image};
     VkFramebufferCreateInfo framebuffer_create_info = {
             VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             nullptr,
@@ -332,10 +308,11 @@ void PbrContext::set_output_images(VkExtent2D screen_res, VkImageView out_depth_
 
 void PbrContext::record_into_command_buffer(VkCommandBuffer command_buffer, VkDescriptorSet camera_descriptor_set, VkDescriptorSet light_descriptor_set,
 		const std::vector<VkModel> &vk_models, const Camera &camera) {
-    std::array<VkClearValue,3> clear_values;
+    std::array<VkClearValue,4> clear_values;
     clear_values[0].depthStencil = {1.0f, 0};
     clear_values[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
     clear_values[2].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    clear_values[3].color = {0.0f, 0.0f, 0.0f, 0.0f};
 
     VkRenderPassBeginInfo render_pass_begin_info = {
             VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,

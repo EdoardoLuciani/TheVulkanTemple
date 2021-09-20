@@ -40,7 +40,7 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
                                       VK_TRUE),
 						vma_wrapper(instance, selected_physical_device, device, vulkan_api_version, VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT, 512000000),
                         vsm_context(device, "resources//shaders"),
-                        pbr_context(device, physical_device_memory_properties, VK_FORMAT_D32_SFLOAT, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8G8B8A8_UNORM),
+                        pbr_context(device, physical_device_memory_properties, VK_FORMAT_D32_SFLOAT, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R16G16_UNORM),
                         smaa_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, "resources//shaders", "resources//textures", physical_device_memory_properties),
                         hbao_context(device, physical_device_memory_properties, window_size, VK_FORMAT_D32_SFLOAT, VK_FORMAT_R8_UNORM, "resources//shaders", false),
 						hdr_tonemap_context(device, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8B8A8_UNORM) {
@@ -117,6 +117,8 @@ GraphicsModuleVulkanApp::GraphicsModuleVulkanApp(const std::string &application_
     if (amd_fsr) {
 		allocate_and_bind_to_memory_buffer(amd_fsr_uniform_allocation, amd_fsr->get_permanent_device_buffer(), VMA_MEMORY_USAGE_GPU_ONLY);
     }
+
+    camera_allocation_data = host_uniform_allocator->suballocate(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment);
 
     // Operations that do not depend on screen resolution so need to be done only once
     start_one_time_command_submit(general_operation_command.command_buffers.front());
@@ -351,11 +353,7 @@ void GraphicsModuleVulkanApp::set_camera(Camera &&camera) {
 }
 
 void GraphicsModuleVulkanApp::init_renderer() {
-	// We check if the camera has been already allocated and if not we allocate it, while for the lights we free and reallocate directly
-	if (camera_allocation_data.allocation_host_ptr == nullptr) {
-		camera_allocation_data = host_uniform_allocator->suballocate(camera.copy_data_to_ptr(nullptr), physical_device_properties.limits.minUniformBufferOffsetAlignment);
-	}
-
+	// We free the allocation for the lights and reallocate it
 	if (lights_allocation_data.allocation_host_ptr != nullptr) {
 		host_uniform_allocator->free(lights_allocation_data);
 	}
@@ -400,6 +398,10 @@ void GraphicsModuleVulkanApp::init_renderer() {
                  1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     device_images_to_allocate.push_back(device_normal_g_image);
 
+    create_image(device_velocity_image, VK_FORMAT_R16G16_UNORM, {rendering_resolution.width, rendering_resolution.height, 1},
+                 1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    device_images_to_allocate.push_back(device_velocity_image);
+
     create_image(device_global_ao_image, VK_FORMAT_R8_UNORM, {rendering_resolution.width, rendering_resolution.height, 1},
                  1, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
     device_images_to_allocate.push_back(device_global_ao_image);
@@ -439,6 +441,7 @@ void GraphicsModuleVulkanApp::init_renderer() {
     create_image_view(device_render_target_image_views[0], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
     create_image_view(device_render_target_image_views[1], device_render_target, VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_IMAGE_ASPECT_COLOR_BIT, 1, 1);
     create_image_view(device_normal_g_image_view, device_normal_g_image, VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+    create_image_view(device_velocity_image_view, device_velocity_image, VK_FORMAT_R16G16_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
     create_image_view(device_global_ao_image_view, device_global_ao_image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
 	create_image_view(device_tonemapped_image_view, device_tonemapped_image, VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
 	if (engine_options.fsr_settings.preset != AmdFsr::Preset::NONE) {
@@ -446,11 +449,10 @@ void GraphicsModuleVulkanApp::init_renderer() {
 	}
 
     vsm_context.init_resources();
-	smaa_context.init_resources(device_render_target_image_views[1]);
-    pbr_context.set_output_images(rendering_resolution, device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view);
-
+    pbr_context.set_output_images(rendering_resolution, device_depth_image_view, device_render_target_image_views[0], device_normal_g_image_view, device_velocity_image_view);
     hbao_context.init_resources();
     hbao_context.update_constants(camera.get_proj_matrix(), 0.4f, 3.0f, 0.7f, 3.0f);
+    smaa_context.init_resources(device_render_target_image_views[1]);
 
     start_one_time_command_submit(general_operation_command.command_buffers.front());
     hbao_context.record_constants_update(general_operation_command.command_buffers.front());
@@ -800,6 +802,11 @@ void GraphicsModuleVulkanApp::start_frame_loop(std::function<void(GraphicsModule
         vsm_record_thread = std::thread(&GraphicsModuleVulkanApp::record_vsm_command_buffer, this, next_frame_data->vsm_command);
         pbr_record_thread = std::thread(&GraphicsModuleVulkanApp::record_pbr_command_buffer, this, next_frame_data->pbr_command);
 
+        camera.update_prev_matrices();
+        for (auto& model : vk_models) {
+            model.update_prev_matrix();
+        }
+
         // Start of frame present
         VkPresentInfoKHR present_info = {
                 VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -880,6 +887,8 @@ GraphicsModuleVulkanApp::~GraphicsModuleVulkanApp() {
     vkDestroyImage(device, device_render_target, nullptr);
     vkDestroyImageView(device, device_normal_g_image_view, nullptr);
     vkDestroyImage(device, device_normal_g_image, nullptr);
+    vkDestroyImageView(device, device_velocity_image_view, nullptr);
+    vkDestroyImage(device, device_velocity_image, nullptr);
     vkDestroyImageView(device, device_global_ao_image_view, nullptr);
     vkDestroyImage(device, device_global_ao_image, nullptr);
 

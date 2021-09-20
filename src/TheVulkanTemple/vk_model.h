@@ -63,6 +63,7 @@ class VkModel {
 
 		void set_model_matrix(glm::mat4 model_matrix);
 		uint32_t copy_uniform_data(uint8_t *dst_ptr) const;
+        void update_prev_matrix();
 
         // Creating the image, image view and sampler of each primitive in the model
         void vk_create_images(float mip_bias, VmaAllocator vma_allocator);
@@ -90,7 +91,8 @@ class VkModel {
 		VkDevice device;
 		VmaAllocator vma_allocator;
 		glm::mat4 model_matrix = glm::mat4(1.0f);
-		glm::mat4 normal_matrix = glm::mat4(1.0f);
+        glm::mat4 prev_model_matrix = glm::mat4(1.0f);
+		glm::mat4 inv_trans_model_matrix = glm::mat4(1.0f);
 
 		std::vector<primitive_host_data_info> host_primitives_data_info;
 		std::vector<primitive_device_data_info> device_primitives_data_info;

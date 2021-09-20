@@ -40,15 +40,20 @@ uint64_t VkModel::get_all_primitives_mesh_and_indices_size() const {
 
 void VkModel::set_model_matrix(glm::mat4 model_matrix) {
 	this->model_matrix = model_matrix;
-	this->normal_matrix = glm::transpose(glm::inverse(model_matrix));
+	this->inv_trans_model_matrix = glm::transpose(glm::inverse(model_matrix));
 }
 
 uint32_t VkModel::copy_uniform_data(uint8_t *dst_ptr) const {
 	if (dst_ptr != nullptr) {
 		memcpy(dst_ptr, &model_matrix, sizeof(glm::mat4));
-		memcpy(dst_ptr + sizeof(glm::mat4), &normal_matrix, sizeof(glm::mat4));
+        memcpy(dst_ptr + sizeof(glm::mat4), &prev_model_matrix, sizeof(glm::mat4));
+		memcpy(dst_ptr + sizeof(glm::mat4)*2, &inv_trans_model_matrix, sizeof(glm::mat4));
 	}
-	return sizeof(glm::mat4)*2;
+	return sizeof(glm::mat4)*3;
+}
+
+void VkModel::update_prev_matrix() {
+    this->prev_model_matrix = this->model_matrix;
 }
 
 void VkModel::vk_create_images(float mip_bias, VmaAllocator vma_allocator) {

@@ -9,13 +9,13 @@
 class PbrContext {
     public:
         PbrContext(VkDevice device, VkPhysicalDeviceMemoryProperties memory_properties, VkFormat out_depth_image_format,
-                   VkFormat out_color_image_format, VkFormat out_normal_image_format);
+                   VkFormat out_color_image_format, VkFormat out_normal_image_format, VkFormat out_velocity_image_format);
         ~PbrContext();
 
         void create_pipeline(std::string shader_dir_path, VkDescriptorSetLayout pbr_model_data_set_layout,
                              VkDescriptorSetLayout camera_data_set_layout, VkDescriptorSetLayout light_data_set_layout);
 
-        void set_output_images(VkExtent2D screen_res, VkImageView out_depth_image, VkImageView out_color_image, VkImageView out_normal_image);
+        void set_output_images(VkExtent2D screen_res, VkImageView out_depth_image, VkImageView out_color_image, VkImageView out_normal_image, VkImageView out_velocity_image);
         void record_into_command_buffer(VkCommandBuffer command_buffer, VkDescriptorSet camera_descriptor_set, VkDescriptorSet light_descriptor_set,
 				const std::vector<VkModel> &vk_models, const Camera &camera);
 

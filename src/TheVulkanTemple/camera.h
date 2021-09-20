@@ -1,30 +1,29 @@
 #ifndef BASE_VULKAN_APP_CAMERA_H
 #define BASE_VULKAN_APP_CAMERA_H
 #include <glm/glm.hpp>
+#include <glm/ext/matrix_transform.hpp>
 #include <array>
 
 class Camera {
     public:
-        Camera();
+        Camera() = default;
         Camera(glm::vec3 pos, glm::vec3 dir, float fov, float aspect, float znear, float zfar);
 
         // View, Projection and camera_pos
         uint32_t copy_data_to_ptr(uint8_t *ptr) const;
         bool is_sphere_visible(glm::vec3 center, float radius) const;
+        void update_prev_matrices();
 
         // Getters
-        glm::vec3 get_pos() { return pos; }
-        glm::vec3 get_dir() { return dir; }
-        float get_fov() { return fov; }
-        float get_aspect() { return aspect; }
-        float get_znear() { return znear; }
-        float get_zfar() { return zfar; }
+        glm::vec3 get_pos() const { return pos; }
+        glm::vec3 get_dir() const { return dir; }
+        float get_fov() const { return fov; }
+        float get_aspect() const { return aspect; }
+        float get_znear() const { return znear; }
+        float get_zfar() const { return zfar; }
 
-        glm::mat4 get_proj_matrix() { return proj_matrix; }
-        glm::mat4 get_view_matrix() { return view_matrix; }
-
-        glm::dvec2 get_prev_pos() { return this->prev_pos; };
-        float get_distance() { return distance; };
+        glm::mat4 get_proj_matrix() const { return proj_matrix; }
+        glm::mat4 get_view_matrix() const { return view_matrix; }
 
         // Setters
         void set_pos(glm::vec3 pos) { this->pos = pos; matrices_up_to_date = false; }
@@ -33,9 +32,6 @@ class Camera {
         void set_aspect(float aspect) { this->aspect = aspect; matrices_up_to_date = false; }
         void set_znear(float znear) { this->znear = znear; matrices_up_to_date = false; }
         void set_zfar(float zfar) { this->zfar = zfar; matrices_up_to_date = false; }
-
-        void set_ex_pos(glm::dvec2 new_ex_pos) { this->prev_pos = new_ex_pos; };
-        void set_distance(float new_distance) { this->distance = new_distance; };
 
     private:
         void update_matrices_and_planes() const;
@@ -71,8 +67,9 @@ class Camera {
         mutable glm::mat4 proj_matrix;
         mutable glm::mat4 view_matrix;
 
-        glm::dvec2 prev_pos;
-        float distance = -1;
+        // Previous frame proj and view matrix
+        glm::mat4 prev_proj_matrix = glm::identity<glm::mat4>();
+        glm::mat4 prev_view_matrix = glm::identity<glm::mat4>();
 };
 
 

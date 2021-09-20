@@ -108,6 +108,9 @@ class GraphicsModuleVulkanApp : public BaseVulkanApp {
         // Image for normal g-buffer
         VkImage device_normal_g_image = VK_NULL_HANDLE;
         VkImageView device_normal_g_image_view = VK_NULL_HANDLE;
+        // Image for normal g-buffer
+        VkImage device_velocity_image = VK_NULL_HANDLE;
+        VkImageView device_velocity_image_view = VK_NULL_HANDLE;
         // Image for hbao output
         VkImage device_global_ao_image = VK_NULL_HANDLE;
         VkImageView device_global_ao_image_view = VK_NULL_HANDLE;

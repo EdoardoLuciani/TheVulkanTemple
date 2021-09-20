@@ -10,7 +10,8 @@ layout(location = 3) in vec4 tangent;
 
 layout (set = 0, binding = 0) uniform uniform_buffer1 {
 	mat4 model;
-	mat4 normal_model;
+	mat4 prev_model;
+	mat4 inv_trans_model;
 };
 
 layout (set = 1, binding = 0) readonly buffer uniform_buffer2 {
@@ -19,16 +20,20 @@ layout (set = 1, binding = 0) readonly buffer uniform_buffer2 {
 
 layout (set = 2, binding = 0) uniform uniform_buffer3 {
     mat4 view;
-	mat4 normal_view;
+	mat4 inv_trans_view;
     mat4 projection;
+	mat4 vp_matrix;
+	mat4 prev_vp_matrix;
 	vec4 camera_pos;
 };
 
 #define MAX_LIGHT_DATA 8
 layout (location = 0) out VS_OUT {
-	vec3 position;
+	vec3 world_position;
+	vec4 clip_position;
+	vec4 prev_clip_position;
 	vec2 tex_coord;
-	vec3 N_g;
+	vec3 view_normal;
 	vec3 V;
 	vec3 L[MAX_LIGHT_DATA];
 	vec3 L_world[MAX_LIGHT_DATA];
@@ -37,7 +42,7 @@ layout (location = 0) out VS_OUT {
 
 void main() {
 	vs_out.tex_coord = tex_coord;
-	vs_out.position = vec3(model * vec4(position,1.0f));
+	vs_out.world_position = vec3(model * vec4(position,1.0f));
 
 	mat4 shadow_bias = mat4(0.5f,0.0f,0.0f,0.0f,
                         	0.0f,0.5f,0.0f,0.0f,
@@ -56,20 +61,22 @@ void main() {
 		}
 	}
 
-	vec3 N = normalize(mat3(normal_model) * normal);
-	vec3 T = normalize(mat3(normal_model) * tangent.xyz);
+	vec3 N = normalize(mat3(inv_trans_model) * normal);
+	vec3 T = normalize(mat3(inv_trans_model) * tangent.xyz);
 	T = normalize(T - dot(T, N) * N);
     vec3 B = normalize(cross(N, T)) * tangent.w;
 	mat3 tbn = mat3( 	T.x, B.x, N.x,
 						T.y, B.y, N.y,
 						T.z, B.z, N.z);
 
-    vs_out.V = tbn * (vec3(camera_pos) - vs_out.position);
-	vs_out.N_g = mat3(normal_view) * mat3(normal_model) * normal;
+    vs_out.V = tbn * (vec3(camera_pos) - vs_out.world_position);
+	vs_out.view_normal = mat3(inv_trans_view) * mat3(inv_trans_model) * normal;
 
 	for(int i=0; i<lights.length(); i++) {
-		vs_out.L_world[i] = get_L_vec(lights[i], vs_out.position);
+		vs_out.L_world[i] = get_L_vec(lights[i], vs_out.world_position);
 		vs_out.L[i] = tbn * vs_out.L_world[i];
 	}
-	gl_Position = projection * view * model * vec4(position,1.0f);
+	vs_out.prev_clip_position = prev_vp_matrix * prev_model * vec4(position,1.0f);
+	gl_Position = vp_matrix * vec4(vs_out.world_position,1.0f);
+	vs_out.clip_position = gl_Position;
 }

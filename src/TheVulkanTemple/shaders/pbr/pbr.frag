@@ -13,9 +13,11 @@ layout (set = 1, binding = 1) uniform sampler2D shadow_maps[];
 
 #define MAX_LIGHT_DATA 8
 layout (location = 0) in VS_OUT {
-    vec3 position;
+    vec3 world_position;
+    vec4 clip_position;
+    vec4 prev_clip_position;
     vec2 tex_coord;
-    vec3 N_g;
+    vec3 view_normal;
     vec3 V;
     vec3 L[MAX_LIGHT_DATA];
     vec3 L_world[MAX_LIGHT_DATA];
@@ -24,6 +26,12 @@ layout (location = 0) in VS_OUT {
 
 layout (location = 0) out vec4 frag_color;
 layout (location = 1) out vec4 normal_g_image;
+layout (location = 2) out vec2 velocity_image;
+
+vec2 get_encoded_2d_velocity(vec4 current_pos, vec4 prev_pos) {
+    vec2 vel_2d = (current_pos.xy / current_pos.w) - (prev_pos.xy / prev_pos.w);
+    return vel_2d * (0.499f * 0.5f) + 32767.0f / 65535.0f;
+}
 
 void main() {
     vec3 albedo     = pow(texture(images, vec3(fs_in.tex_coord, 0)).rgb, vec3(2.2));
@@ -66,7 +74,7 @@ void main() {
                                                 fs_in.shadow_coord[i].xy/fs_in.shadow_coord[i].w, fs_in.shadow_coord[i].z);
         }
 
-        vec3 radiance = get_light_radiance(lights[i], fs_in.position, normalize(fs_in.L_world[i]));
+        vec3 radiance = get_light_radiance(lights[i], fs_in.world_position, normalize(fs_in.L_world[i]));
         rho += (rho_s + rho_d) * radiance * NdotL * shadow;
     }
 
@@ -85,6 +93,6 @@ void main() {
     // gamma correction is applied in the tonemap stage
     frag_color = vec4(color, 1.0);
 
-    vec3 normal_to_write = (normalize(-fs_in.N_g)*0.5 + 0.5);
-    normal_g_image = vec4(normal_to_write, 0.0);
+    normal_g_image = vec4((normalize(-fs_in.view_normal)*0.5 + 0.5), 0.0);
+    velocity_image = get_encoded_2d_velocity(fs_in.clip_position, fs_in.prev_clip_position);
 }

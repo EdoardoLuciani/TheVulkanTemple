@@ -2,11 +2,10 @@
 #include <cstring>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <xmmintrin.h>
 
-Camera::Camera() {};
-
-Camera::Camera(glm::vec3 pos, glm::vec3 dir, float fov, float aspect, float znear, float zfar) : pos{pos}, dir{dir}, fov{fov}, aspect{aspect}, znear{znear}, zfar{zfar} {}
+Camera::Camera(glm::vec3 pos, glm::vec3 dir, float fov, float aspect, float znear, float zfar) : pos{pos}, dir{dir}, fov{fov}, aspect{aspect}, znear{znear}, zfar{zfar} {
+    update_matrices_and_planes();
+}
 
 uint32_t Camera::copy_data_to_ptr(uint8_t *ptr) const {
     update_matrices_and_planes();
@@ -14,9 +13,11 @@ uint32_t Camera::copy_data_to_ptr(uint8_t *ptr) const {
         memcpy(ptr, glm::value_ptr(view_matrix), sizeof(glm::mat4));
         memcpy(ptr+sizeof(glm::mat4), glm::value_ptr(glm::transpose(glm::inverse(view_matrix))), sizeof(glm::mat4));
         memcpy(ptr+sizeof(glm::mat4)*2, glm::value_ptr(proj_matrix), sizeof(glm::mat4));
-        memcpy(ptr+sizeof(glm::mat4)*3, glm::value_ptr(glm::vec4(pos, 0.0f)), sizeof(glm::vec4));
+        memcpy(ptr+sizeof(glm::mat4)*3, glm::value_ptr(proj_matrix * view_matrix), sizeof(glm::mat4));
+        memcpy(ptr+sizeof(glm::mat4)*4, glm::value_ptr(prev_proj_matrix * prev_view_matrix), sizeof(glm::mat4));
+        memcpy(ptr+sizeof(glm::mat4)*5, glm::value_ptr(glm::vec4(pos, 0.0f)), sizeof(glm::vec4));
     }
-    return sizeof(glm::mat4)*3+sizeof(glm::vec4);
+    return sizeof(glm::mat4)*5+sizeof(glm::vec4);
 }
 
 bool Camera::is_sphere_visible(glm::vec3 s_center, float s_radius) const {
@@ -64,4 +65,9 @@ void Camera::update_matrices_and_planes() const {
 
         matrices_up_to_date = true;
     }
+}
+
+void Camera::update_prev_matrices() {
+    prev_proj_matrix = proj_matrix;
+    prev_view_matrix = view_matrix;
 }

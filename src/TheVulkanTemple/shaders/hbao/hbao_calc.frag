@@ -134,7 +134,6 @@ float ComputeCoarseAO(vec2 FullResUV, float RadiusPixels, vec4 Rand, vec3 ViewPo
         // Jitter starting sample within the first step
         float RayPixels = (Rand.z * StepSizePixels + 1.0);
 
-
         [[unroll]] for (float StepIndex = 0; StepIndex < NUM_STEPS; ++StepIndex) {
             vec2 SnappedUV = round(RayPixels * Direction) * control.InvQuarterResolution + FullResUV;
             vec3 S = FetchQuarterResViewPos(SnappedUV);
